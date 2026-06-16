@@ -1,0 +1,41 @@
+{
+  "name": "sunshine-staff-portal",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:stable": "node scripts/next-dev-stable.mjs",
+    "build": "next build",
+    "build:stable": "node scripts/next-build-stable.mjs",
+    "start": "next start",
+    "start:stable": "node scripts/next-start-stable.mjs",
+    "lint": "next lint",
+    "node:setup": "node scripts/bootstrap-project-node.mjs",
+    "firebase:check": "node scripts/check-firebase-config.mjs",
+    "firebase:rules": "node scripts/firebase-cli.mjs deploy --only firestore:rules",
+    "firebase:indexes": "node scripts/firebase-cli.mjs deploy --only firestore:indexes",
+    "firebase:emulators": "node scripts/firebase-cli.mjs emulators:start --only auth,firestore"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "@firebase/app": "0.14.13",
+    "@firebase/auth": "1.13.2",
+    "@firebase/firestore": "4.15.0",
+    "next": "14.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.20",
+    "autoprefixer": "^10.4.17",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^14.1.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1"
+  },
+  "overrides": {
+    "@types/node": "22.19.20"
+  }
+}

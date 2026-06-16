@@ -1,0 +1,275 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasUserDoc() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return hasUserDoc() && userData().isSuperAdmin == true;
+    }
+
+    function isManager() {
+      return hasUserDoc() && userData().jobLevel == "manager";
+    }
+
+    function isSupervisor() {
+      return hasUserDoc() && userData().jobLevel == "supervisor";
+    }
+
+    function isLead() {
+      return isManager() || isSupervisor();
+    }
+
+    function belongsTo(departmentId) {
+      return hasUserDoc() && userData().departmentKey == departmentId;
+    }
+
+    function isFrontOfficeManager() {
+      return belongsTo("front_office") && isLead();
+    }
+
+    function isHousekeepingManager() {
+      return belongsTo("housekeeping") && isLead();
+    }
+
+    function isMaintenanceManager() {
+      return belongsTo("maintainance") && isLead();
+    }
+
+    function isHumanResourceManager() {
+      return belongsTo("human_resource") && isLead();
+    }
+
+    function isNightDutyManager() {
+      return belongsTo("night_duty") && isLead();
+    }
+
+    function isStoreStaff() {
+      return belongsTo("store");
+    }
+
+    function housekeepingManagerCanUpdateFrontOfficeDesk() {
+      return isHousekeepingManager() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "cleanedRoomNumbers",
+          "cleanedRooms",
+          "housekeepingUpdatedAt",
+          "housekeepingUpdatedByUid",
+          "housekeepingUpdatedByName",
+          "housekeepingUpdatedByDepartment"
+        ]);
+    }
+
+    function housekeepingManagerCanCreateFrontOfficeDesk() {
+      return isHousekeepingManager() &&
+        request.resource.data.keys().hasOnly([
+          "cleanedRoomNumbers",
+          "cleanedRooms",
+          "housekeepingUpdatedAt",
+          "housekeepingUpdatedByUid",
+          "housekeepingUpdatedByName",
+          "housekeepingUpdatedByDepartment"
+        ]);
+    }
+
+    function housekeepingManagerCanUpdateMaintenanceRooms() {
+      return isHousekeepingManager() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "roomIssues",
+          "roomIssuesUpdatedAt",
+          "roomIssuesUpdatedByUid",
+          "roomIssuesUpdatedByName",
+          "roomIssuesUpdatedByDepartment"
+        ]);
+    }
+
+    function housekeepingManagerCanCreateMaintenanceDesk() {
+      return isHousekeepingManager() &&
+        request.resource.data.keys().hasOnly([
+          "roomIssues",
+          "roomIssuesUpdatedAt",
+          "roomIssuesUpdatedByUid",
+          "roomIssuesUpdatedByName",
+          "roomIssuesUpdatedByDepartment"
+        ]);
+    }
+
+    function nightDutyManagerCanUpdateMaintenanceUtilities() {
+      return isNightDutyManager() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "utilities",
+          "utilitiesUpdatedAt",
+          "utilitiesUpdatedByUid",
+          "utilitiesUpdatedByName",
+          "utilitiesUpdatedByDepartment"
+        ]);
+    }
+
+    function nightDutyManagerCanCreateMaintenanceUtilities() {
+      return isNightDutyManager() &&
+        request.resource.data.keys().hasOnly([
+          "utilities",
+          "utilitiesUpdatedAt",
+          "utilitiesUpdatedByUid",
+          "utilitiesUpdatedByName",
+          "utilitiesUpdatedByDepartment"
+        ]);
+    }
+
+    function roomComplaintLeadCanUpdateComplaints() {
+      return (
+        isFrontOfficeManager() ||
+        isHousekeepingManager() ||
+        isMaintenanceManager()
+      ) &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "roomComplaints",
+          "roomComplaintsUpdatedAt",
+          "roomComplaintsUpdatedByUid",
+          "roomComplaintsUpdatedByName",
+          "roomComplaintsUpdatedByDepartment"
+        ]);
+    }
+
+    function roomComplaintLeadCanCreateComplaints() {
+      return (
+        isFrontOfficeManager() ||
+        isHousekeepingManager() ||
+        isMaintenanceManager()
+      ) &&
+        request.resource.data.keys().hasOnly([
+          "roomComplaints",
+          "roomComplaintsUpdatedAt",
+          "roomComplaintsUpdatedByUid",
+          "roomComplaintsUpdatedByName",
+          "roomComplaintsUpdatedByDepartment"
+        ]);
+    }
+
+    match /users/{userId} {
+      allow create: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn();
+      allow update: if signedIn() && (
+        request.auth.uid == userId ||
+        isSuperAdmin() ||
+        isHumanResourceManager() ||
+        (isLead() && resource.data.departmentKey == userData().departmentKey)
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    match /portal/highlights {
+      allow read: if signedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /portal/siteContent {
+      allow read: if signedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /portal/frontOffice {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        isFrontOfficeManager() ||
+        (belongsTo("food_beverages") && isLead()) ||
+        (belongsTo("night_duty") && isLead()) ||
+        isHousekeepingManager()
+      );
+      allow create: if signedIn() && (
+        isSuperAdmin() ||
+        isFrontOfficeManager() ||
+        housekeepingManagerCanCreateFrontOfficeDesk()
+      );
+      allow update: if signedIn() && (
+        isSuperAdmin() ||
+        isFrontOfficeManager() ||
+        housekeepingManagerCanUpdateFrontOfficeDesk()
+      );
+    }
+
+    match /portal/maintenance {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        isLead()
+      );
+      allow create: if signedIn() && (
+        isSuperAdmin() ||
+        isMaintenanceManager() ||
+        housekeepingManagerCanCreateMaintenanceDesk() ||
+        nightDutyManagerCanCreateMaintenanceUtilities() ||
+        roomComplaintLeadCanCreateComplaints()
+      );
+      allow update: if signedIn() && (
+        isSuperAdmin() ||
+        isMaintenanceManager() ||
+        housekeepingManagerCanUpdateMaintenanceRooms() ||
+        nightDutyManagerCanUpdateMaintenanceUtilities() ||
+        roomComplaintLeadCanUpdateComplaints()
+      );
+    }
+
+    match /portal/eventsBookings {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        isLead()
+      );
+      allow write: if signedIn() && (
+        isSuperAdmin() ||
+        isFrontOfficeManager()
+      );
+    }
+
+    match /portal/housekeepingReports {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        isHousekeepingManager()
+      );
+      allow write: if signedIn() && (
+        isSuperAdmin() ||
+        isHousekeepingManager()
+      );
+    }
+
+    match /portal/storeInventory {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        isStoreStaff()
+      );
+      allow write: if signedIn() && (
+        isSuperAdmin() ||
+        isStoreStaff()
+      );
+    }
+
+    match /portal/nightDuty {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        isNightDutyManager()
+      );
+      allow write: if signedIn() && (
+        isSuperAdmin() ||
+        isNightDutyManager()
+      );
+    }
+
+    match /departments/{departmentId} {
+      allow read: if signedIn();
+      allow write: if signedIn() && (
+        isSuperAdmin() ||
+        (belongsTo(departmentId) && isLead())
+      );
+    }
+  }
+}
