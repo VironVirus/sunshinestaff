@@ -109,9 +109,42 @@ function buildReportLines({ periodLabel, operationalDateKey, sections, summary }
   return lines;
 }
 
-function StatusBadge({ statusLabel }) {
+function getStatusBadgeClass(status) {
+  switch (status) {
+    case "occupied":
+      return "border-[#d7e4ef] bg-[#eef6fb] text-[#21486a]";
+    case "vacant_cleaned":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "out_of_order":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "vacant_uncleaned":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-slate-200 bg-white text-slate-700";
+  }
+}
+
+function FloorBoardTab({ active, label, count, onClick }) {
   return (
-    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+    <button
+      type="button"
+      onClick={onClick}
+      className={`mobile-section-tab ${
+        active ? "mobile-section-tab-active" : ""
+      }`}
+    >
+      {label} ({count})
+    </button>
+  );
+}
+
+function StatusBadge({ status, statusLabel }) {
+  return (
+    <span
+      className={`rounded-full border px-3 py-1 text-xs font-semibold ${getStatusBadgeClass(
+        status,
+      )}`}
+    >
       {statusLabel}
     </span>
   );
@@ -130,6 +163,8 @@ export default function HousekeepingStatusPanel({
   const [saving, setSaving] = useState(false);
   const [clearingRoom, setClearingRoom] = useState("");
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [activeBoardFloor, setActiveBoardFloor] = useState("");
+  const [activeBoardRoom, setActiveBoardRoom] = useState("");
 
   const reportEntries = useMemo(
     () => getHousekeepingEntriesForPeriod(housekeepingReports, activePeriod),
@@ -146,6 +181,24 @@ export default function HousekeepingStatusPanel({
   const summary = useMemo(
     () => buildHousekeepingStatusSummary(reportEntries),
     [reportEntries],
+  );
+  const reportedSections = useMemo(
+    () => sections.filter((section) => section.rooms.length > 0),
+    [sections],
+  );
+  const activeSection = useMemo(
+    () =>
+      reportedSections.find((section) => section.key === activeBoardFloor) ??
+      reportedSections[0] ??
+      null,
+    [activeBoardFloor, reportedSections],
+  );
+  const activeRoom = useMemo(
+    () =>
+      activeSection?.rooms.find((room) => room.roomNumber === activeBoardRoom) ??
+      activeSection?.rooms[0] ??
+      null,
+    [activeBoardRoom, activeSection],
   );
   const reportLabel =
     housekeepingReportPeriods.find((period) => period.value === activePeriod)?.label ??
@@ -166,6 +219,29 @@ export default function HousekeepingStatusPanel({
       setSelectedRoom("");
     }
   }, [roomOptions, selectedRoom]);
+
+  useEffect(() => {
+    if (reportedSections.length === 0) {
+      setActiveBoardFloor("");
+      setActiveBoardRoom("");
+      return;
+    }
+
+    if (!reportedSections.some((section) => section.key === activeBoardFloor)) {
+      setActiveBoardFloor(reportedSections[0].key);
+    }
+  }, [activeBoardFloor, reportedSections]);
+
+  useEffect(() => {
+    if (!activeSection) {
+      setActiveBoardRoom("");
+      return;
+    }
+
+    if (!activeSection.rooms.some((room) => room.roomNumber === activeBoardRoom)) {
+      setActiveBoardRoom(activeSection.rooms[0]?.roomNumber ?? "");
+    }
+  }, [activeBoardRoom, activeSection]);
 
   if (!access.canViewPanel) {
     return null;
@@ -366,47 +442,146 @@ export default function HousekeepingStatusPanel({
           </button>
         </form>
 
-        <div className="space-y-4">
-          {sections.some((section) => section.rooms.length > 0) ? (
-            sections.map((section) =>
-              section.rooms.length > 0 ? (
-                <div key={section.key} className="subpanel">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="metric-label">{section.label}</p>
-                    <span className="badge">{section.summary.totalReported}</span>
+        <div className="subpanel">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="metric-label">Reported rooms board</p>
+              <p className="mt-2 text-sm text-slate-500">
+                Switch floors to review room updates without a long running list.
+              </p>
+            </div>
+            {activeSection ? <span className="badge">{activeSection.label}</span> : null}
+          </div>
+
+          {reportedSections.length > 0 ? (
+            <>
+              <div className="mobile-section-tabs mt-4 no-print">
+                {reportedSections.map((section) => (
+                  <FloorBoardTab
+                    key={section.key}
+                    active={activeSection?.key === section.key}
+                    label={section.label}
+                    count={section.summary.totalReported}
+                    onClick={() => {
+                      setActiveBoardFloor(section.key);
+                      setActiveBoardRoom(section.rooms[0]?.roomNumber ?? "");
+                    }}
+                  />
+                ))}
+              </div>
+
+              {activeSection ? (
+                <>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                      <p className="metric-label">Reported</p>
+                      <p className="mt-2 font-display text-2xl text-[#162338]">
+                        {activeSection.summary.totalReported}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                      <p className="metric-label">Occupied</p>
+                      <p className="mt-2 font-display text-2xl text-[#162338]">
+                        {activeSection.summary.occupied}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                      <p className="metric-label">Vacant and Cleaned</p>
+                      <p className="mt-2 font-display text-2xl text-[#162338]">
+                        {activeSection.summary.vacantCleaned}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                      <p className="metric-label">Needs attention</p>
+                      <p className="mt-2 font-display text-2xl text-[#162338]">
+                        {activeSection.summary.outOfOrder + activeSection.summary.vacantUncleaned}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="mt-4 space-y-3">
-                    {section.rooms.map((room) => (
-                      <div
-                        key={room.roomNumber}
-                        className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-                      >
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {activeSection.rooms.map((room) => {
+                      const selected = activeRoom?.roomNumber === room.roomNumber;
+
+                      return (
+                        <button
+                          key={room.roomNumber}
+                          type="button"
+                          onClick={() => setActiveBoardRoom(room.roomNumber)}
+                          className={`rounded-2xl border px-4 py-3 text-left transition ${
+                            selected
+                              ? "border-[#162338] bg-[#162338] text-white shadow-lg shadow-slate-300/40"
+                              : "border-slate-200 bg-white text-slate-800 hover:border-[#c59d40]"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold">{room.roomNumber}</p>
+                              <p
+                                className={`mt-1 text-xs ${
+                                  selected ? "text-slate-200" : "text-slate-500"
+                                }`}
+                              >
+                                {room.floorLabel}
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${
+                                selected
+                                  ? "border-white/30 bg-white/10 text-white"
+                                  : getStatusBadgeClass(room.status)
+                              }`}
+                            >
+                              {room.statusLabel}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {activeRoom ? (
+                    <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50/80 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <p className="font-semibold text-[#162338]">{room.roomNumber}</p>
-                          <p className="mt-1 text-sm text-slate-500">{section.label}</p>
+                          <p className="metric-label">Selected room</p>
+                          <h3 className="mt-2 font-display text-3xl text-[#162338]">
+                            {activeRoom.roomNumber}
+                          </h3>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Updated by {activeRoom.updatedByName || "HouseKeeping"}{" "}
+                            {activeRoom.updatedAt
+                              ? `on ${formatFriendlyDate(new Date(activeRoom.updatedAt), {
+                                  dateStyle: "medium",
+                                  timeStyle: "short",
+                                })}`
+                              : ""}
+                          </p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3">
-                          <StatusBadge statusLabel={room.statusLabel} />
+                          <StatusBadge
+                            status={activeRoom.status}
+                            statusLabel={activeRoom.statusLabel}
+                          />
                           <button
                             type="button"
-                            onClick={() => handleClearRoom(room.roomNumber)}
-                            disabled={saving || clearingRoom === room.roomNumber}
+                            onClick={() => handleClearRoom(activeRoom.roomNumber)}
+                            disabled={saving || clearingRoom === activeRoom.roomNumber}
                             className="button-secondary no-print"
                           >
-                            {clearingRoom === room.roomNumber ? "Clearing..." : "Clear"}
+                            {clearingRoom === activeRoom.roomNumber ? "Clearing..." : "Clear room"}
                           </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null,
-            )
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </>
           ) : (
-            <div className="subpanel">
-              <p className="text-sm text-slate-500">No rooms added yet for this report.</p>
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+              No rooms added yet for this report.
             </div>
           )}
         </div>

@@ -282,6 +282,20 @@ function RoomSelect({ label, value, onChange, rooms, disabled }) {
   );
 }
 
+function FloorBoardTab({ active, label, count, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`mobile-section-tab ${
+        active ? "mobile-section-tab-active" : ""
+      }`}
+    >
+      {label} ({count})
+    </button>
+  );
+}
+
 function ReportActionGroup({ title, actions }) {
   return (
     <div className="subpanel no-print">
@@ -358,50 +372,151 @@ function OccupiedRoomsOverview({ sections }) {
 
 function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
   const visibleSections = sections.filter((section) => section.rooms.length > 0);
+  const [activeSectionKey, setActiveSectionKey] = useState("");
+  const [activeRoomNumber, setActiveRoomNumber] = useState("");
+  const activeSection = useMemo(
+    () =>
+      visibleSections.find((section) => section.key === activeSectionKey) ??
+      visibleSections[0] ??
+      null,
+    [activeSectionKey, visibleSections],
+  );
+  const activeRoom = useMemo(
+    () =>
+      activeSection?.rooms.find((roomNumber) => roomNumber === activeRoomNumber) ??
+      activeSection?.rooms[0] ??
+      "",
+    [activeRoomNumber, activeSection],
+  );
+
+  useEffect(() => {
+    if (visibleSections.length === 0) {
+      setActiveSectionKey("");
+      setActiveRoomNumber("");
+      return;
+    }
+
+    if (!visibleSections.some((section) => section.key === activeSectionKey)) {
+      setActiveSectionKey(visibleSections[0].key);
+    }
+  }, [activeSectionKey, visibleSections]);
+
+  useEffect(() => {
+    if (!activeSection) {
+      setActiveRoomNumber("");
+      return;
+    }
+
+    if (!activeSection.rooms.some((roomNumber) => roomNumber === activeRoomNumber)) {
+      setActiveRoomNumber(activeSection.rooms[0] ?? "");
+    }
+  }, [activeRoomNumber, activeSection]);
 
   return (
     <div className="subpanel">
-      <div className="flex items-center justify-between gap-3">
-        <p className="metric-label">Recently cleaned rooms</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="metric-label">Freshly cleaned rooms</p>
+          <p className="mt-2 text-sm text-slate-500">
+            HouseKeeping-posted rooms are grouped floor by floor to keep the board compact.
+          </p>
+        </div>
         <span className="badge">
           {visibleSections.reduce((total, section) => total + section.rooms.length, 0)}
         </span>
       </div>
 
       {visibleSections.length > 0 ? (
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          {visibleSections.map((section) => (
-            <div
-              key={section.key}
-              className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-semibold text-[#162338]">{section.label}</p>
-                <span className="text-xs font-semibold text-slate-500">
-                  {section.rooms.length} room(s)
-                </span>
+        <>
+          <div className="mobile-section-tabs mt-4 no-print">
+            {visibleSections.map((section) => (
+              <FloorBoardTab
+                key={section.key}
+                active={activeSection?.key === section.key}
+                label={section.label}
+                count={section.rooms.length}
+                onClick={() => {
+                  setActiveSectionKey(section.key);
+                  setActiveRoomNumber(section.rooms[0] ?? "");
+                }}
+              />
+            ))}
+          </div>
+
+          {activeSection ? (
+            <>
+              <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50/80 p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="metric-label">Active floor</p>
+                    <h3 className="mt-2 font-display text-3xl text-[#162338]">
+                      {activeSection.label}
+                    </h3>
+                  </div>
+                  <span className="badge">{activeSection.rooms.length} room(s)</span>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {activeSection.rooms.map((roomNumber) => {
+                    const selected = activeRoom === roomNumber;
+
+                    return (
+                      <button
+                        key={roomNumber}
+                        type="button"
+                        onClick={() => setActiveRoomNumber(roomNumber)}
+                        className={`rounded-2xl border px-4 py-3 text-left transition ${
+                          selected
+                            ? "border-emerald-500 bg-emerald-600 text-white shadow-lg shadow-emerald-200/50"
+                            : "border-slate-200 bg-white text-slate-800 hover:border-emerald-300"
+                        }`}
+                      >
+                        <p className="font-semibold">{roomNumber}</p>
+                        <p
+                          className={`mt-1 text-xs ${
+                            selected ? "text-emerald-50" : "text-emerald-700"
+                          }`}
+                        >
+                          Freshly cleaned
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {section.rooms.map((roomNumber) => (
-                  <button
-                    key={roomNumber}
-                    type="button"
-                    onClick={canRemove ? () => onRemove(roomNumber) : undefined}
-                    className={`rounded-full border px-3 py-2 text-sm ${
-                      canRemove
-                        ? "border-[#c59d40] bg-[#f9f2e4] text-[#5f4a18]"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    {roomNumber}
-                    {canRemove ? " - clear" : ""}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+              {activeRoom ? (
+                <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="metric-label">Selected cleaned room</p>
+                      <h3 className="mt-2 font-display text-3xl text-[#162338]">
+                        {activeRoom}
+                      </h3>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Ready for front office to assign.
+                      </p>
+                    </div>
+
+                    {canRemove ? (
+                      <button
+                        type="button"
+                        onClick={() => onRemove(activeRoom)}
+                        className="button-secondary no-print"
+                      >
+                        Clear room
+                      </button>
+                    ) : (
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+                        Freshly cleaned
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </>
       ) : (
         <p className="mt-3 text-sm text-slate-500">No cleaned rooms reported.</p>
       )}
@@ -487,16 +602,27 @@ export default function OperationsPanel({
     [cleanedRoomNumbers, occupiedRoomNumbers, outOfOrderRoomNumbers],
   );
   const availableFrontOfficeRooms = useMemo(
-    () =>
-      getRoomOptionsForFloor(selectedOccupiedFloor, [
+    () => {
+      const rooms = getRoomOptionsForFloor(selectedOccupiedFloor, [
         ...occupiedRoomNumbers,
         ...outOfOrderRoomNumbers,
-      ]).map((room) => ({
+      ]).map((room, index) => ({
         ...room,
-        label: cleanedRoomSet.has(room.value)
-          ? `${room.label} - recently cleaned`
-          : room.label,
-      })),
+        isFreshlyCleaned: cleanedRoomSet.has(room.value),
+        sortIndex: index,
+      }));
+
+      return rooms
+        .sort(
+          (left, right) =>
+            Number(right.isFreshlyCleaned) - Number(left.isFreshlyCleaned) ||
+            left.sortIndex - right.sortIndex,
+        )
+        .map(({ isFreshlyCleaned, sortIndex, ...room }) => ({
+          ...room,
+          label: isFreshlyCleaned ? `${room.label} - freshly cleaned` : room.label,
+        }));
+    },
     [cleanedRoomSet, occupiedRoomNumbers, outOfOrderRoomNumbers, selectedOccupiedFloor],
   );
   const availableCheckoutRooms = useMemo(
@@ -764,7 +890,7 @@ export default function OperationsPanel({
 
           {canViewCleanedRooms ? (
             <ReportActionGroup
-              title="Cleaned Rooms Report"
+              title="HouseKeeping Cleaned Rooms Report"
               actions={[
                 {
                   label: "Print cleaned rooms",
