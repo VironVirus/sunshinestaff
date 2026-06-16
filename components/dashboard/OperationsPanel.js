@@ -12,9 +12,10 @@ import {
 import { getRoomComplaintLabel } from "@/data/propertyStatus";
 import { formatFriendlyDate } from "@/lib/format";
 import {
+  compareDateKeys,
   formatDateKey,
   getOperationalDateKey,
-  isWithinOperationalDate,
+  listDateKeysInRange,
 } from "@/lib/hotelTime";
 import { downloadTextPdf } from "@/lib/pdf";
 import { getOperationsAccess, operationsMetricConfig } from "@/lib/roles";
@@ -67,9 +68,35 @@ function downloadPdf(filename, title, lines) {
   });
 }
 
-function buildEventReportLines(eventsBookings, operationalDateKey) {
+function getReportDateBounds(startDateKey, endDateKey) {
+  return compareDateKeys(startDateKey, endDateKey) <= 0
+    ? [startDateKey, endDateKey]
+    : [endDateKey, startDateKey];
+}
+
+function getOperationsSnapshotForDate(operations, targetDateKey) {
+  if (!targetDateKey) {
+    return null;
+  }
+
+  if (targetDateKey === operations?.operationalDateKey) {
+    return {
+      dateKey: targetDateKey,
+      inHouse: operations?.inHouse ?? 0,
+      availableRooms: operations?.availableRooms ?? 0,
+      breakfastEntitled: operations?.breakfastEntitled ?? 0,
+      cleanedRooms: operations?.cleanedRooms ?? 0,
+    };
+  }
+
+  return (operations?.reportHistory ?? []).find(
+    (reportEntry) => reportEntry.dateKey === targetDateKey,
+  ) ?? null;
+}
+
+function buildEventReportLines(eventsBookings, targetDateKey) {
   const todaysEvents = (eventsBookings?.events ?? []).filter(
-    (eventEntry) => eventEntry.eventDate === operationalDateKey,
+    (eventEntry) => eventEntry.eventDate === targetDateKey,
   );
 
   if (todaysEvents.length === 0) {
@@ -87,10 +114,52 @@ function buildEventReportLines(eventsBookings, operationalDateKey) {
   });
 }
 
-function buildComplaintReportLines(propertyStatus, operationalDateKey) {
-  const todaysComplaints = (propertyStatus?.roomComplaints ?? []).filter((complaint) =>
-    isWithinOperationalDate(complaint.reportedAt, operationalDateKey),
-  );
+function getComplaintStatusForDate(complaint, targetDateKey) {
+  if (!targetDateKey) {
+    return null;
+  }
+
+  const reportedDateKey = complaint?.reportedAt
+    ? getOperationalDateKey(complaint.reportedAt)
+    : "";
+
+  if (!reportedDateKey || compareDateKeys(reportedDateKey, targetDateKey) > 0) {
+    return null;
+  }
+
+  if (!complaint?.resolvedAt) {
+    return "Open";
+  }
+
+  const resolvedDateKey = getOperationalDateKey(complaint.resolvedAt);
+  const dateComparison = compareDateKeys(targetDateKey, resolvedDateKey);
+
+  if (dateComparison > 0) {
+    return null;
+  }
+
+  return dateComparison === 0 ? "Fixed" : "Open";
+}
+
+function getComplaintsForDate(propertyStatus, targetDateKey) {
+  return (propertyStatus?.roomComplaints ?? [])
+    .map((complaint) => {
+      const complaintStatus = getComplaintStatusForDate(complaint, targetDateKey);
+
+      if (!complaintStatus) {
+        return null;
+      }
+
+      return {
+        ...complaint,
+        complaintStatus,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildComplaintReportLines(propertyStatus, targetDateKey) {
+  const todaysComplaints = getComplaintsForDate(propertyStatus, targetDateKey);
 
   if (todaysComplaints.length === 0) {
     return ["None"];
@@ -101,7 +170,40 @@ function buildComplaintReportLines(propertyStatus, operationalDateKey) {
       `${index + 1}. ${complaint.roomNumber}`,
       getRoomComplaintLabel(complaint.complaintType),
       complaint.complaintNote,
-      complaint.resolvedAt ? "Resolved" : "Open",
+      complaint.complaintStatus,
+    ].filter(Boolean);
+
+    return details.join(" - ");
+  });
+}
+
+function getRoomMovesForDate(operations, targetDateKey) {
+  return (operations?.roomMoves ?? []).filter((roomMove) => {
+    const roomMoveDateKey =
+      roomMove?.operationalDateKey ??
+      (roomMove?.movedAt ? getOperationalDateKey(roomMove.movedAt) : "");
+
+    return roomMoveDateKey === targetDateKey;
+  });
+}
+
+function buildRoomMoveReportLines(operations, targetDateKey) {
+  const roomMoves = getRoomMovesForDate(operations, targetDateKey);
+
+  if (roomMoves.length === 0) {
+    return ["None"];
+  }
+
+  return roomMoves.map((roomMove, index) => {
+    const details = [
+      `${index + 1}. ${roomMove.fromRoomNumber} to ${roomMove.toRoomNumber}`,
+      roomMove.movedByName,
+      roomMove.movedAt
+        ? formatFriendlyDate(new Date(roomMove.movedAt), {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })
+        : "",
     ].filter(Boolean);
 
     return details.join(" - ");
@@ -144,26 +246,104 @@ function buildRoomNumberSections(roomNumbers = []) {
   }));
 }
 
-function buildDailyReportLines({ operations, eventsBookings, propertyStatus }) {
-  const operationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
+function buildDailyReportSectionLines({
+  operations,
+  eventsBookings,
+  propertyStatus,
+  targetDateKey,
+}) {
+  const snapshot = getOperationsSnapshotForDate(operations, targetDateKey);
+  const lines = [
+    `Operational day: ${formatDateKey(targetDateKey)}`,
+    "",
+  ];
+
+  if (snapshot) {
+    lines.push(`In-house rooms: ${snapshot.inHouse ?? 0}`);
+    lines.push(`Available rooms: ${snapshot.availableRooms ?? 0}`);
+    lines.push(`Breakfast entitlement: ${snapshot.breakfastEntitled ?? 0}`);
+    lines.push(`Cleaned rooms: ${snapshot.cleanedRooms ?? 0}`);
+  } else {
+    lines.push("No front office snapshot recorded for this day.");
+  }
+
+  lines.push("");
+  lines.push("Events:");
+  lines.push(...buildEventReportLines(eventsBookings, targetDateKey));
+  lines.push("");
+  lines.push("Room moves:");
+  lines.push(...buildRoomMoveReportLines(operations, targetDateKey));
+  lines.push("");
+  lines.push("Complaint follow-up:");
+  lines.push(...buildComplaintReportLines(propertyStatus, targetDateKey));
+
+  return lines;
+}
+
+function buildDailyReportLines({
+  operations,
+  eventsBookings,
+  propertyStatus,
+  targetDateKey = operations?.operationalDateKey ?? getOperationalDateKey(),
+}) {
+  const operationalDateKey = targetDateKey;
 
   return [
-    `Operational day: ${formatDateKey(operationalDateKey)}`,
     `Generated: ${formatFriendlyDate(new Date(), {
       dateStyle: "full",
       timeStyle: "short",
     })}`,
     "",
-    `In-house rooms: ${operations?.inHouse ?? 0}`,
-    `Available rooms: ${operations?.availableRooms ?? 0}`,
-    `Breakfast entitlement: ${operations?.breakfastEntitled ?? 0}`,
-    "",
-    "Today's events:",
-    ...buildEventReportLines(eventsBookings, operationalDateKey),
-    "",
-    "Today's complaints:",
-    ...buildComplaintReportLines(propertyStatus, operationalDateKey),
+    ...buildDailyReportSectionLines({
+      operations,
+      eventsBookings,
+      propertyStatus,
+      targetDateKey: operationalDateKey,
+    }),
   ];
+}
+
+function buildRangeReportLines({
+  operations,
+  eventsBookings,
+  propertyStatus,
+  startDateKey,
+  endDateKey,
+}) {
+  const [rangeStart, rangeEnd] = getReportDateBounds(startDateKey, endDateKey);
+  const dateKeys = listDateKeysInRange(rangeStart, rangeEnd);
+  const lines = [
+    `Report range: ${formatDateKey(rangeStart)} to ${formatDateKey(rangeEnd)}`,
+    `Generated: ${formatFriendlyDate(new Date(), {
+      dateStyle: "full",
+      timeStyle: "short",
+    })}`,
+    "",
+  ];
+
+  if (dateKeys.length === 0) {
+    lines.push("No report dates selected.");
+    return lines;
+  }
+
+  dateKeys.forEach((dateKey, index) => {
+    lines.push(
+      ...buildDailyReportSectionLines({
+        operations,
+        eventsBookings,
+        propertyStatus,
+        targetDateKey: dateKey,
+      }),
+    );
+
+    if (index < dateKeys.length - 1) {
+      lines.push("");
+      lines.push("----------------------------------------");
+      lines.push("");
+    }
+  });
+
+  return lines;
 }
 
 function buildInHouseReportLines(operations) {
@@ -300,6 +480,46 @@ function ReportActionGroup({ title, actions }) {
   return (
     <div className="subpanel no-print">
       <p className="metric-label">{title}</p>
+      <div className="mt-4 flex flex-wrap gap-3">
+        {actions.map((action) => (
+          <button
+            key={action.label}
+            type="button"
+            onClick={action.onClick}
+            className="button-secondary"
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReportRangeActionGroup({
+  title,
+  startDate,
+  endDate,
+  onStartDateChange,
+  onEndDateChange,
+  actions,
+}) {
+  return (
+    <div className="subpanel no-print">
+      <p className="metric-label">{title}</p>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <label className="field">
+          <span>From</span>
+          <input type="date" value={startDate} onChange={onStartDateChange} />
+        </label>
+
+        <label className="field">
+          <span>To</span>
+          <input type="date" value={endDate} onChange={onEndDateChange} />
+        </label>
+      </div>
+
       <div className="mt-4 flex flex-wrap gap-3">
         {actions.map((action) => (
           <button
@@ -456,7 +676,7 @@ function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
                   <span className="badge">{activeSection.rooms.length} room(s)</span>
                 </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                   {activeSection.rooms.map((roomNumber) => {
                     const selected = activeRoom === roomNumber;
 
@@ -465,13 +685,13 @@ function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
                         key={roomNumber}
                         type="button"
                         onClick={() => setActiveRoomNumber(roomNumber)}
-                        className={`rounded-2xl border px-4 py-3 text-left transition ${
+                        className={`rounded-2xl border px-3 py-2 text-left transition ${
                           selected
                             ? "border-emerald-500 bg-emerald-600 text-white shadow-lg shadow-emerald-200/50"
                             : "border-slate-200 bg-white text-slate-800 hover:border-emerald-300"
                         }`}
                       >
-                        <p className="font-semibold">{roomNumber}</p>
+                        <p className="text-sm font-semibold">{roomNumber}</p>
                         <p
                           className={`mt-1 text-xs ${
                             selected ? "text-emerald-50" : "text-emerald-700"
@@ -539,6 +759,7 @@ export default function OperationsPanel({
   onSaveHousekeeping,
 }) {
   const access = getOperationsAccess(profile);
+  const operationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
   const occupiedRooms = useMemo(() => operations?.occupiedRooms ?? [], [operations?.occupiedRooms]);
   const occupiedRoomNumbers = useMemo(
     () => occupiedRooms.map((room) => room.roomNumber),
@@ -562,8 +783,14 @@ export default function OperationsPanel({
   const [selectedOccupiedRoom, setSelectedOccupiedRoom] = useState("");
   const [selectedCheckoutFloor, setSelectedCheckoutFloor] = useState("");
   const [selectedCheckoutRoom, setSelectedCheckoutRoom] = useState("");
+  const [selectedMoveFromFloor, setSelectedMoveFromFloor] = useState("");
+  const [selectedMoveFromRoom, setSelectedMoveFromRoom] = useState("");
+  const [selectedMoveToFloor, setSelectedMoveToFloor] = useState("");
+  const [selectedMoveToRoom, setSelectedMoveToRoom] = useState("");
   const [selectedCleanedFloor, setSelectedCleanedFloor] = useState("");
   const [selectedCleanedRoom, setSelectedCleanedRoom] = useState("");
+  const [reportStartDate, setReportStartDate] = useState(operationalDateKey);
+  const [reportEndDate, setReportEndDate] = useState(operationalDateKey);
   const [feedback, setFeedback] = useState({
     frontOffice: { type: "", message: "" },
     housekeeping: { type: "", message: "" },
@@ -635,6 +862,42 @@ export default function OperationsPanel({
         })),
     [occupiedRooms, selectedCheckoutFloor],
   );
+  const availableMoveFromRooms = useMemo(
+    () =>
+      occupiedRooms
+        .filter((room) => room.floorKey === selectedMoveFromFloor)
+        .map((room) => ({
+          value: room.roomNumber,
+          label: `${room.roomNumber} - ${room.remainingDays ?? room.bookedDays ?? 1} day(s) left`,
+        })),
+    [occupiedRooms, selectedMoveFromFloor],
+  );
+  const availableMoveToRooms = useMemo(() => {
+    const rooms = getRoomOptionsForFloor(selectedMoveToFloor, [
+      ...occupiedRoomNumbers,
+      ...outOfOrderRoomNumbers,
+    ]).map((room, index) => ({
+      ...room,
+      isFreshlyCleaned: cleanedRoomSet.has(room.value),
+      sortIndex: index,
+    }));
+
+    return rooms
+      .sort(
+        (left, right) =>
+          Number(right.isFreshlyCleaned) - Number(left.isFreshlyCleaned) ||
+          left.sortIndex - right.sortIndex,
+      )
+      .map(({ isFreshlyCleaned, sortIndex, ...room }) => ({
+        ...room,
+        label: isFreshlyCleaned ? `${room.label} - freshly cleaned` : room.label,
+      }));
+  }, [
+    cleanedRoomSet,
+    occupiedRoomNumbers,
+    outOfOrderRoomNumbers,
+    selectedMoveToFloor,
+  ]);
   const availableCleanRooms = useMemo(
     () =>
       getRoomOptionsForFloor(selectedCleanedFloor, [
@@ -648,6 +911,27 @@ export default function OperationsPanel({
     () => buildDailyReportLines({ operations, eventsBookings, propertyStatus }),
     [eventsBookings, operations, propertyStatus],
   );
+  const rangeReportLines = useMemo(
+    () =>
+      buildRangeReportLines({
+        operations,
+        eventsBookings,
+        propertyStatus,
+        startDateKey: reportStartDate,
+        endDateKey: reportEndDate,
+      }),
+    [eventsBookings, operations, propertyStatus, reportEndDate, reportStartDate],
+  );
+  const rangeReportTitle = useMemo(() => {
+    const [rangeStart, rangeEnd] = getReportDateBounds(
+      reportStartDate || operationalDateKey,
+      reportEndDate || operationalDateKey,
+    );
+
+    return rangeStart === rangeEnd
+      ? `Sunshine Hotel Daily Operations Report - ${formatDateKey(rangeStart)}`
+      : `Sunshine Hotel Daily Operations Range Report - ${formatDateKey(rangeStart)} to ${formatDateKey(rangeEnd)}`;
+  }, [operationalDateKey, reportEndDate, reportStartDate]);
   const inHouseReportLines = useMemo(
     () => buildInHouseReportLines(operations),
     [operations],
@@ -679,6 +963,26 @@ export default function OperationsPanel({
 
   useEffect(() => {
     if (
+      selectedMoveFromFloor &&
+      !checkoutFloorOptions.some((floor) => floor.value === selectedMoveFromFloor)
+    ) {
+      setSelectedMoveFromFloor("");
+      setSelectedMoveFromRoom("");
+    }
+  }, [checkoutFloorOptions, selectedMoveFromFloor]);
+
+  useEffect(() => {
+    if (
+      selectedMoveToFloor &&
+      !frontOfficeFloorOptions.some((floor) => floor.value === selectedMoveToFloor)
+    ) {
+      setSelectedMoveToFloor("");
+      setSelectedMoveToRoom("");
+    }
+  }, [frontOfficeFloorOptions, selectedMoveToFloor]);
+
+  useEffect(() => {
+    if (
       selectedCleanedFloor &&
       !housekeepingFloorOptions.some((floor) => floor.value === selectedCleanedFloor)
     ) {
@@ -707,12 +1011,40 @@ export default function OperationsPanel({
 
   useEffect(() => {
     if (
+      selectedMoveFromRoom &&
+      !availableMoveFromRooms.some((room) => room.value === selectedMoveFromRoom)
+    ) {
+      setSelectedMoveFromRoom("");
+    }
+  }, [availableMoveFromRooms, selectedMoveFromRoom]);
+
+  useEffect(() => {
+    if (
+      selectedMoveToRoom &&
+      !availableMoveToRooms.some((room) => room.value === selectedMoveToRoom)
+    ) {
+      setSelectedMoveToRoom("");
+    }
+  }, [availableMoveToRooms, selectedMoveToRoom]);
+
+  useEffect(() => {
+    if (
       selectedCleanedRoom &&
       !availableCleanRooms.some((room) => room.value === selectedCleanedRoom)
     ) {
       setSelectedCleanedRoom("");
     }
   }, [availableCleanRooms, selectedCleanedRoom]);
+
+  useEffect(() => {
+    if (!reportStartDate) {
+      setReportStartDate(operationalDateKey);
+    }
+
+    if (!reportEndDate) {
+      setReportEndDate(operationalDateKey);
+    }
+  }, [operationalDateKey, reportEndDate, reportStartDate]);
 
   if (!access.canViewPanel) {
     return null;
@@ -729,6 +1061,8 @@ export default function OperationsPanel({
       await onSaveFrontOffice(payload);
       setSelectedOccupiedRoom("");
       setSelectedCheckoutRoom("");
+      setSelectedMoveFromRoom("");
+      setSelectedMoveToRoom("");
       setBreakfastIncluded(false);
       setBreakfastCount("1");
       setStayDuration("1");
@@ -736,6 +1070,8 @@ export default function OperationsPanel({
         ...current,
         frontOffice: { type: "success", message },
       }));
+      setSelectedMoveFromFloor("");
+      setSelectedMoveToFloor("");
     } catch (error) {
       setFeedback((current) => ({
         ...current,
@@ -819,6 +1155,64 @@ export default function OperationsPanel({
     );
   }
 
+  async function handleMoveRoom(event) {
+    event.preventDefault();
+
+    if (
+      !selectedMoveFromFloor ||
+      !selectedMoveFromRoom ||
+      !selectedMoveToFloor ||
+      !selectedMoveToRoom ||
+      selectedMoveFromRoom === selectedMoveToRoom
+    ) {
+      return;
+    }
+
+    const sourceRoom = occupiedRooms.find(
+      (room) => room.roomNumber === selectedMoveFromRoom,
+    );
+
+    if (!sourceRoom) {
+      return;
+    }
+
+    const movedAt = new Date().toISOString();
+    const nextRoomMoves = [
+      {
+        id: `move-${Date.now()}`,
+        operationalDateKey,
+        fromRoomNumber: selectedMoveFromRoom,
+        toRoomNumber: selectedMoveToRoom,
+        movedAt,
+        movedByName: profile?.fullName ?? "",
+        movedByDepartment: profile?.departmentName ?? "",
+      },
+      ...(operations?.roomMoves ?? []),
+    ];
+
+    const nextOccupiedRooms = [
+      ...occupiedRooms.filter((room) => room.roomNumber !== selectedMoveFromRoom),
+      {
+        roomNumber: selectedMoveToRoom,
+        breakfastIncluded: sourceRoom.breakfastIncluded,
+        breakfastCount: sourceRoom.breakfastCount ?? 0,
+        bookedDays: sourceRoom.bookedDays ?? sourceRoom.remainingDays ?? 1,
+        bookedOnDateKey: sourceRoom.bookedOnDateKey ?? operationalDateKey,
+      },
+    ];
+
+    await saveFrontOffice(
+      {
+        occupiedRooms: nextOccupiedRooms,
+        cleanedRoomNumbers: cleanedRoomNumbers.filter(
+          (roomNumber) => roomNumber !== selectedMoveToRoom,
+        ),
+        roomMoves: nextRoomMoves,
+      },
+      `${selectedMoveFromRoom} moved to ${selectedMoveToRoom}.`,
+    );
+  }
+
   async function handleMarkCleaned(event) {
     event.preventDefault();
 
@@ -868,7 +1262,7 @@ export default function OperationsPanel({
       </div>
 
       {access.canPrint ? (
-        <div className="mt-6 grid gap-4 xl:grid-cols-3">
+        <div className="mt-6 grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
           <ReportActionGroup
             title="In House Report"
             actions={[
@@ -911,28 +1305,53 @@ export default function OperationsPanel({
           ) : null}
 
           {access.canEditFrontOffice ? (
-            <ReportActionGroup
-              title="Daily Report"
-              actions={[
-                {
-                  label: "Print daily report",
-                  onClick: () =>
-                    printTextReport(
-                      "Sunshine Hotel Daily Operations Report",
-                      dailyReportLines,
-                    ),
-                },
-                {
-                  label: "Download PDF",
-                  onClick: () =>
-                    downloadPdf(
-                      "sunshine-daily-operations-report.pdf",
-                      "Sunshine Hotel Daily Operations Report",
-                      dailyReportLines,
-                    ),
-                },
-              ]}
-            />
+            <>
+              <ReportActionGroup
+                title="Daily Report"
+                actions={[
+                  {
+                    label: "Print daily report",
+                    onClick: () =>
+                      printTextReport(
+                        "Sunshine Hotel Daily Operations Report",
+                        dailyReportLines,
+                      ),
+                  },
+                  {
+                    label: "Download PDF",
+                    onClick: () =>
+                      downloadPdf(
+                        "sunshine-daily-operations-report.pdf",
+                        "Sunshine Hotel Daily Operations Report",
+                        dailyReportLines,
+                      ),
+                  },
+                ]}
+              />
+
+              <ReportRangeActionGroup
+                title="Date Range Report"
+                startDate={reportStartDate}
+                endDate={reportEndDate}
+                onStartDateChange={(event) => setReportStartDate(event.target.value)}
+                onEndDateChange={(event) => setReportEndDate(event.target.value)}
+                actions={[
+                  {
+                    label: "Print range report",
+                    onClick: () => printTextReport(rangeReportTitle, rangeReportLines),
+                  },
+                  {
+                    label: "Download PDF",
+                    onClick: () =>
+                      downloadPdf(
+                        "sunshine-daily-operations-range-report.pdf",
+                        rangeReportTitle,
+                        rangeReportLines,
+                      ),
+                  },
+                ]}
+              />
+            </>
           ) : null}
         </div>
       ) : null}
@@ -1072,6 +1491,65 @@ export default function OperationsPanel({
                   className="button-primary mt-5 w-full"
                 >
                   {frontOfficeSaving ? "Publishing..." : "Mark checked out"}
+                </button>
+              </form>
+
+              <form onSubmit={handleMoveRoom} className="subpanel no-print">
+                <p className="metric-label">Room move</p>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <FloorSelect
+                    label="Current floor"
+                    value={selectedMoveFromFloor}
+                    onChange={(event) => {
+                      setSelectedMoveFromFloor(event.target.value);
+                      setSelectedMoveFromRoom("");
+                    }}
+                    floors={checkoutFloorOptions}
+                    disabled={frontOfficeSaving}
+                  />
+                  <RoomSelect
+                    label="Occupied room"
+                    value={selectedMoveFromRoom}
+                    onChange={(event) => setSelectedMoveFromRoom(event.target.value)}
+                    rooms={availableMoveFromRooms}
+                    disabled={frontOfficeSaving || !selectedMoveFromFloor}
+                  />
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <FloorSelect
+                    label="New floor"
+                    value={selectedMoveToFloor}
+                    onChange={(event) => {
+                      setSelectedMoveToFloor(event.target.value);
+                      setSelectedMoveToRoom("");
+                    }}
+                    floors={frontOfficeFloorOptions}
+                    disabled={frontOfficeSaving}
+                  />
+                  <RoomSelect
+                    label="Unoccupied room"
+                    value={selectedMoveToRoom}
+                    onChange={(event) => setSelectedMoveToRoom(event.target.value)}
+                    rooms={availableMoveToRooms}
+                    disabled={frontOfficeSaving || !selectedMoveToFloor}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={
+                    frontOfficeSaving ||
+                    !selectedMoveFromFloor ||
+                    !selectedMoveFromRoom ||
+                    !selectedMoveToFloor ||
+                    !selectedMoveToRoom ||
+                    selectedMoveFromRoom === selectedMoveToRoom
+                  }
+                  className="button-primary mt-5 w-full"
+                >
+                  {frontOfficeSaving ? "Publishing..." : "Move guest"}
                 </button>
               </form>
             </div>

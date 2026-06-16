@@ -21,6 +21,8 @@ export const defaultBirthdays = [];
 export const defaultFrontOfficeSnapshot = {
   occupiedRooms: [],
   occupiedRoomNumbers: [],
+  roomMoves: [],
+  reportHistory: [],
   inHouse: 0,
   availableRooms: 0,
   breakfastEntitled: 0,

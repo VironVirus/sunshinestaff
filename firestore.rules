@@ -64,6 +64,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).changedKeys().hasOnly([
           "cleanedRoomNumbers",
           "cleanedRooms",
+          "reportHistory",
           "housekeepingUpdatedAt",
           "housekeepingUpdatedByUid",
           "housekeepingUpdatedByName",
@@ -76,6 +77,7 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly([
           "cleanedRoomNumbers",
           "cleanedRooms",
+          "reportHistory",
           "housekeepingUpdatedAt",
           "housekeepingUpdatedByUid",
           "housekeepingUpdatedByName",

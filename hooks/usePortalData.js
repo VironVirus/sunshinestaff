@@ -48,6 +48,64 @@ const defaultPortalState = {
   departmentShifts: [],
 };
 
+const MAX_REPORT_HISTORY_DAYS = 120;
+
+function normalizeOperationsRoomMoves(roomMoves = []) {
+  return roomMoves
+    .filter(
+      (roomMove) =>
+        roomMove?.id &&
+        roomMove?.fromRoomNumber &&
+        roomMove?.toRoomNumber &&
+        roomMove?.operationalDateKey,
+    )
+    .sort((left, right) => {
+      const leftTime = new Date(left.movedAt ?? 0).getTime();
+      const rightTime = new Date(right.movedAt ?? 0).getTime();
+      return rightTime - leftTime;
+    })
+    .slice(0, 500);
+}
+
+function normalizeOperationsReportHistory(reportHistory = []) {
+  return reportHistory
+    .filter((reportEntry) => reportEntry?.dateKey)
+    .sort((left, right) => right.dateKey.localeCompare(left.dateKey))
+    .filter(
+      (reportEntry, index, current) =>
+        current.findIndex((candidate) => candidate.dateKey === reportEntry.dateKey) === index,
+    )
+    .slice(0, MAX_REPORT_HISTORY_DAYS);
+}
+
+function buildDailyReportEntry(snapshot, profile) {
+  return {
+    dateKey: snapshot.operationalDateKey,
+    inHouse: snapshot.inHouse ?? 0,
+    availableRooms: snapshot.availableRooms ?? 0,
+    breakfastEntitled: snapshot.breakfastEntitled ?? 0,
+    cleanedRooms: snapshot.cleanedRooms ?? 0,
+    occupiedRoomNumbers: snapshot.occupiedRoomNumbers ?? [],
+    cleanedRoomNumbers: snapshot.cleanedRoomNumbers ?? [],
+    updatedAt: new Date().toISOString(),
+    updatedByName: profile?.fullName ?? "",
+    updatedByDepartment: profile?.departmentName ?? "",
+  };
+}
+
+function upsertOperationsReportHistory(reportHistory = [], snapshot, profile) {
+  if (!snapshot?.operationalDateKey) {
+    return normalizeOperationsReportHistory(reportHistory);
+  }
+
+  const nextEntry = buildDailyReportEntry(snapshot, profile);
+
+  return normalizeOperationsReportHistory([
+    nextEntry,
+    ...reportHistory.filter((reportEntry) => reportEntry.dateKey !== nextEntry.dateKey),
+  ]);
+}
+
 function mergeHighlights(payload = {}) {
   return {
     ...defaultHighlights,
@@ -437,9 +495,17 @@ export function usePortalData(profile) {
       {
         occupiedRooms: nextOperations.occupiedRooms,
         occupiedRoomNumbers: nextOperations.occupiedRoomNumbers,
+        roomMoves: normalizeOperationsRoomMoves(nextOperations.roomMoves ?? []),
+        reportHistory: upsertOperationsReportHistory(
+          portalState.operations.reportHistory ?? [],
+          visibleOperations,
+          profile,
+        ),
         inHouse: nextOperations.inHouse,
         availableRooms: visibleOperations.availableRooms,
         breakfastEntitled: nextOperations.breakfastEntitled,
+        cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
+        cleanedRooms: nextOperations.cleanedRooms,
         notes: nextOperations.notes ?? "",
         updatedAt: serverTimestamp(),
         updatedByUid: profile?.uid ?? null,
@@ -459,12 +525,21 @@ export function usePortalData(profile) {
       ...portalState.operations,
       ...values,
     });
+    const visibleOperations = mergeOperationsWithPropertyStatus(
+      nextOperations,
+      portalState.propertyStatus,
+    );
 
     await setDoc(
       doc(db, "portal", "frontOffice"),
       {
         cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
         cleanedRooms: nextOperations.cleanedRooms,
+        reportHistory: upsertOperationsReportHistory(
+          portalState.operations.reportHistory ?? [],
+          visibleOperations,
+          profile,
+        ),
         housekeepingUpdatedAt: serverTimestamp(),
         housekeepingUpdatedByUid: profile?.uid ?? null,
         housekeepingUpdatedByName: profile?.fullName ?? "HouseKeeping",
