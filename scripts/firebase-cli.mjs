@@ -37,9 +37,14 @@ async function loadProjectId() {
 }
 
 const projectId = await loadProjectId();
-const command = "npx";
 const loginLikeCommand = args[0] === "login";
-const finalArgs = ["firebase-tools", ...args, "--config", "firebase.json"];
+const firebaseCommand = path.join(
+  root,
+  "node_modules",
+  ".bin",
+  process.platform === "win32" ? "firebase.cmd" : "firebase",
+);
+const finalArgs = [...args, "--config", "firebase.json"];
 
 if (projectId && !loginLikeCommand) {
   finalArgs.push("--project", projectId);
@@ -51,11 +56,17 @@ if (!projectId && !loginLikeCommand) {
   process.exit(1);
 }
 
-const child = spawn(command, finalArgs, {
-  cwd: root,
-  stdio: "inherit",
-  shell: process.platform === "win32",
-});
+const child = process.platform === "win32"
+  ? spawn("cmd.exe", ["/c", firebaseCommand, ...finalArgs], {
+      cwd: root,
+      stdio: "inherit",
+      shell: false,
+    })
+  : spawn(firebaseCommand, finalArgs, {
+      cwd: root,
+      stdio: "inherit",
+      shell: false,
+    });
 
 child.on("exit", (code) => {
   process.exit(code ?? 0);

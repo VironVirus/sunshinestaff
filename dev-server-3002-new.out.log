@@ -1,0 +1,12 @@
+
+> sunshine-staff-portal@0.1.0 dev
+> next dev --port 3002
+
+   ▲ Next.js 14.1.0
+   - Local:        http://localhost:3002
+   - Environments: .env.local
+
+ ✓ Ready in 34.3s
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 78.2s (692 modules)
+ ✓ Compiled in 321ms

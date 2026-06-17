@@ -22,6 +22,8 @@ const emptyRegisterForm = {
   email: "",
   password: "",
   birthday: "",
+  phoneNumber: "",
+  homeAddress: "",
   departmentKey: "it",
   jobLevel: "manager",
   staffTitle: getDefaultStaffTitle("it", "manager"),
@@ -118,7 +120,9 @@ export default function HomePage() {
 
       setFeedback({
         type: "success",
-        message: nextProfile.isSuperAdmin
+        message: nextProfile.approvalStatus === "pending"
+          ? "Your account is pending approval. The Super Admin or HR Manager must approve it before you can log in."
+          : nextProfile.isSuperAdmin
           ? `${nextProfile.staffTitle} account is now active as a super admin.`
           : "Your staff account has been created. Opening your dashboard now.",
       });
@@ -151,6 +155,8 @@ export default function HomePage() {
       const restoredProfile = await restoreProfile({
         fullName: registerForm.fullName || user?.displayName || user?.email || "Staff Member",
         birthday: registerForm.birthday,
+        phoneNumber: registerForm.phoneNumber,
+        homeAddress: registerForm.homeAddress,
         departmentKey: registerForm.departmentKey,
         jobLevel: registerForm.jobLevel,
         staffTitle: registerForm.staffTitle,
@@ -158,7 +164,9 @@ export default function HomePage() {
 
       setFeedback({
         type: "success",
-        message: restoredProfile.restoredLocally
+        message: restoredProfile.approvalStatus === "pending"
+          ? "Your staff profile is saved and now pending approval from the Super Admin or HR Manager before you can log in."
+          : restoredProfile.restoredLocally
           ? "Your staff profile was restored in this browser. The dashboard is opening, but Firebase permissions still need to be fixed for shared sync."
           : restoredProfile.isSuperAdmin
             ? `${restoredProfile.staffTitle} profile has been restored as a super admin.`
@@ -250,6 +258,28 @@ export default function HomePage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="field">
+                <span>Phone number</span>
+                <input
+                  type="tel"
+                  value={registerForm.phoneNumber}
+                  onChange={(event) => updateRegisterForm("phoneNumber", event.target.value)}
+                  required
+                />
+              </label>
+
+              <label className="field">
+                <span>Home address</span>
+                <input
+                  type="text"
+                  value={registerForm.homeAddress}
+                  onChange={(event) => updateRegisterForm("homeAddress", event.target.value)}
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="field">
                 <span>Department</span>
                 <select
                   value={registerForm.departmentKey}
@@ -291,7 +321,7 @@ export default function HomePage() {
                 disabled={busy || !hasFirebaseConfig}
                 className="button-primary flex-1"
               >
-                {busy ? "Restoring profile..." : "Restore profile and open dashboard"}
+                {busy ? "Restoring profile..." : "Restore profile"}
               </button>
               <button
                 type="button"
@@ -453,6 +483,28 @@ export default function HomePage() {
                   required
                 />
               </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="field">
+                  <span>Phone number</span>
+                  <input
+                    type="tel"
+                    value={registerForm.phoneNumber}
+                    onChange={(event) => updateRegisterForm("phoneNumber", event.target.value)}
+                    required
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Home address</span>
+                  <input
+                    type="text"
+                    value={registerForm.homeAddress}
+                    onChange={(event) => updateRegisterForm("homeAddress", event.target.value)}
+                    required
+                  />
+                </label>
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="field">

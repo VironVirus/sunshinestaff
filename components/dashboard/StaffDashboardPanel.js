@@ -23,10 +23,27 @@ function formatShiftDate(value) {
 
 export default function StaffDashboardPanel({ profile, departmentShifts }) {
   const myShifts = (departmentShifts ?? []).filter((shift) => shift.userId === profile?.uid);
+  const hasProfileNotification =
+    Boolean(profile?.lastProfileNotification?.trim());
 
   return (
     <section className="panel p-6">
       <h2 className="section-title">Staff Dashboard</h2>
+
+      {hasProfileNotification ? (
+        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+          <p className="font-semibold">Notification</p>
+          <p className="mt-2">{profile.lastProfileNotification}</p>
+          {profile.lastProfileNotificationAt ? (
+            <p className="mt-2 text-xs text-amber-700">
+              {formatFriendlyDate(new Date(profile.lastProfileNotificationAt), {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <DetailRow label="Department" value={profile?.departmentName ?? "Not set"} />
@@ -38,7 +55,9 @@ export default function StaffDashboardPanel({ profile, departmentShifts }) {
         />
       </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <DetailRow label="Phone number" value={profile?.phoneNumber?.trim() || "Not set"} />
+        <DetailRow label="Home address" value={profile?.homeAddress?.trim() || "Not set"} />
         <DetailRow label="Surcharges" value={profile?.surcharges?.trim() || "Not set"} />
         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
           <p className="metric-label">My shifts</p>

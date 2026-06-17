@@ -22,6 +22,7 @@ export const defaultFrontOfficeSnapshot = {
   occupiedRooms: [],
   occupiedRoomNumbers: [],
   roomMoves: [],
+  activityEntries: [],
   reportHistory: [],
   inHouse: 0,
   availableRooms: 0,

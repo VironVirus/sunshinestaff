@@ -51,6 +51,10 @@ service cloud.firestore {
       return belongsTo("human_resource") && isLead();
     }
 
+    function isAuditManager() {
+      return belongsTo("audit") && isLead();
+    }
+
     function isNightDutyManager() {
       return belongsTo("night_duty") && isLead();
     }
@@ -159,14 +163,28 @@ service cloud.firestore {
         ]);
     }
 
+    function canWriteTrackedEntries() {
+      return isSuperAdmin() || isLead() || isStoreStaff();
+    }
+
+    function selfProfileCanUpdate(userId) {
+      return request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "fullName",
+          "birthday",
+          "phoneNumber",
+          "homeAddress",
+          "updatedAt"
+        ]);
+    }
+
     match /users/{userId} {
       allow create: if signedIn() && request.auth.uid == userId;
       allow read: if signedIn();
       allow update: if signedIn() && (
-        request.auth.uid == userId ||
         isSuperAdmin() ||
         isHumanResourceManager() ||
-        (isLead() && resource.data.departmentKey == userData().departmentKey)
+        selfProfileCanUpdate(userId)
       );
       allow delete: if isSuperAdmin();
     }
@@ -264,6 +282,20 @@ service cloud.firestore {
         isSuperAdmin() ||
         isNightDutyManager()
       );
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && canWriteTrackedEntries();
+    }
+
+    match /activityLogs/{logId} {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        isHumanResourceManager() ||
+        isAuditManager()
+      );
+      allow create: if signedIn() && canWriteTrackedEntries();
     }
 
     match /departments/{departmentId} {

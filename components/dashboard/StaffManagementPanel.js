@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { departmentOptions } from "@/data/departments";
 import {
+  accountApprovalOptions,
   executiveSuperAdminTitles,
   getDefaultStaffTitle,
   getDepartmentName,
@@ -12,17 +13,10 @@ import {
   jobLevelOptions,
 } from "@/lib/roles";
 
-function buildAccessLevel({ departmentKey, jobLevel, staffTitle }) {
+function buildAccessLevel({ staffTitle, currentIsSuperAdmin, jobLevel }) {
   const executiveSuperAdmin = executiveSuperAdminTitles.includes(staffTitle);
 
-  if (executiveSuperAdmin) {
-    return {
-      isSuperAdmin: true,
-      accessLevel: "super_admin",
-    };
-  }
-
-  if (departmentKey === "it" && jobLevel === "manager" && staffTitle === getDefaultStaffTitle("it", "manager")) {
+  if (executiveSuperAdmin || currentIsSuperAdmin) {
     return {
       isSuperAdmin: true,
       accessLevel: "super_admin",
@@ -36,7 +30,7 @@ function buildAccessLevel({ departmentKey, jobLevel, staffTitle }) {
         ? "department_manager"
         : jobLevel === "supervisor"
           ? "department_supervisor"
-          : "line_staff",
+        : "line_staff",
   };
 }
 
@@ -58,12 +52,15 @@ export default function StaffManagementPanel({
   const [form, setForm] = useState({
     fullName: "",
     birthday: "",
+    phoneNumber: "",
+    homeAddress: "",
     departmentKey: "",
     jobLevel: "line_staff",
     staffTitle: "",
     surcharges: "",
     leaveEligibility: "",
     employmentStatus: "active",
+    approvalStatus: "approved",
   });
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -99,6 +96,8 @@ export default function StaffManagementPanel({
     setForm({
       fullName: selectedStaff.fullName ?? "",
       birthday: selectedStaff.birthday ?? "",
+      phoneNumber: selectedStaff.phoneNumber ?? "",
+      homeAddress: selectedStaff.homeAddress ?? "",
       departmentKey: selectedStaff.departmentKey ?? "",
       jobLevel: selectedStaff.jobLevel ?? "line_staff",
       staffTitle:
@@ -107,6 +106,7 @@ export default function StaffManagementPanel({
       surcharges: selectedStaff.surcharges ?? "",
       leaveEligibility: selectedStaff.leaveEligibility ?? "",
       employmentStatus: selectedStaff.employmentStatus ?? "active",
+      approvalStatus: selectedStaff.approvalStatus ?? "approved",
     });
   }, [selectedStaff]);
 
@@ -158,12 +158,17 @@ export default function StaffManagementPanel({
       ...form,
       ...overrides,
     };
-    const accessValues = buildAccessLevel(nextValues);
+    const accessValues = buildAccessLevel({
+      ...nextValues,
+      currentIsSuperAdmin: Boolean(selectedStaff.isSuperAdmin),
+    });
 
     try {
       await onSaveStaffProfile(selectedStaff.uid, {
         fullName: nextValues.fullName.trim(),
         birthday: nextValues.birthday,
+        phoneNumber: nextValues.phoneNumber.trim(),
+        homeAddress: nextValues.homeAddress.trim(),
         departmentKey: nextValues.departmentKey,
         departmentName: getDepartmentName(nextValues.departmentKey),
         jobLevel: nextValues.jobLevel,
@@ -171,6 +176,7 @@ export default function StaffManagementPanel({
         surcharges: nextValues.surcharges.trim(),
         leaveEligibility: nextValues.leaveEligibility.trim(),
         employmentStatus: nextValues.employmentStatus,
+        approvalStatus: nextValues.approvalStatus,
         isSuperAdmin: accessValues.isSuperAdmin,
         accessLevel: accessValues.accessLevel,
         privileges: getPrivilegeList(nextValues.departmentKey, nextValues.jobLevel),
@@ -225,6 +231,18 @@ export default function StaffManagementPanel({
   async function handleReactivateStaff() {
     await saveStaff("Staff reactivated.", {
       employmentStatus: "active",
+    });
+  }
+
+  async function handleApproveStaff() {
+    await saveStaff("Staff account approved.", {
+      approvalStatus: "approved",
+    });
+  }
+
+  async function handleSetPendingApproval() {
+    await saveStaff("Staff account moved back to pending approval.", {
+      approvalStatus: "pending",
     });
   }
 
@@ -304,6 +322,30 @@ export default function StaffManagementPanel({
 
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="field">
+                  <span>Phone number</span>
+                  <input
+                    type="tel"
+                    value={form.phoneNumber}
+                    onChange={(event) => updateField("phoneNumber", event.target.value)}
+                    disabled={saving}
+                    required
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Home address</span>
+                  <input
+                    type="text"
+                    value={form.homeAddress}
+                    onChange={(event) => updateField("homeAddress", event.target.value)}
+                    disabled={saving}
+                    required
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="field">
                   <span>Department</span>
                   <select
                     value={form.departmentKey}
@@ -364,6 +406,37 @@ export default function StaffManagementPanel({
                 </label>
               </div>
 
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="field">
+                  <span>Approval</span>
+                  <select
+                    value={form.approvalStatus}
+                    onChange={(event) => updateField("approvalStatus", event.target.value)}
+                    disabled={saving}
+                  >
+                    {accountApprovalOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+                  <p>
+                    Approval status:{" "}
+                    <span className="font-semibold text-[#162338]">
+                      {form.approvalStatus === "approved" ? "Approved" : "Pending approval"}
+                    </span>
+                  </p>
+                  {selectedStaff?.approvedByName ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Approved by {selectedStaff.approvedByName}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
               <label className="field mt-4">
                 <span>Surcharges</span>
                 <textarea
@@ -389,7 +462,7 @@ export default function StaffManagementPanel({
               </div>
 
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-                Suspended and sacked staff are removed from active teams, birthdays, and future dashboard access.
+                Suspended and sacked staff are removed from active teams, birthdays, and future dashboard access. Pending accounts cannot log in until HR or a super admin approves them.
               </div>
 
               {feedback.message ? (
@@ -407,6 +480,18 @@ export default function StaffManagementPanel({
               <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <button type="submit" disabled={saving} className="button-primary flex-1">
                   {saving ? "Saving..." : "Save staff"}
+                </button>
+                <button
+                  type="button"
+                  onClick={form.approvalStatus === "approved" ? handleSetPendingApproval : handleApproveStaff}
+                  disabled={saving}
+                  className="button-secondary flex-1"
+                >
+                  {saving
+                    ? "Saving..."
+                    : form.approvalStatus === "approved"
+                      ? "Set pending approval"
+                      : "Approve account"}
                 </button>
                 <button
                   type="button"

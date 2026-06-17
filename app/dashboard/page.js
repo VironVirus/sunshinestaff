@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PortalLogo from "@/components/PortalLogo";
+import ActivityLogPanel from "@/components/dashboard/ActivityLogPanel";
 import EventsBookingsPanel from "@/components/dashboard/EventsBookingsPanel";
 import HousekeepingStatusPanel from "@/components/dashboard/HousekeepingStatusPanel";
 import InformationPanel from "@/components/dashboard/InformationPanel";
 import InventoryPanel from "@/components/dashboard/InventoryPanel";
 import NightDutyPanel from "@/components/dashboard/NightDutyPanel";
+import NotificationsPanel from "@/components/dashboard/NotificationsPanel";
 import OperationsPanel from "@/components/dashboard/OperationsPanel";
 import PropertyPanel from "@/components/dashboard/PropertyPanel";
 import RoomComplaintsPanel from "@/components/dashboard/RoomComplaintsPanel";
@@ -18,6 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 import { usePortalData } from "@/hooks/usePortalData";
 import { toInitials } from "@/lib/format";
 import {
+  getAuditLogAccess,
   formatJobLevel,
   getAccessLabel,
   getDepartment,
@@ -89,6 +92,8 @@ export default function DashboardPage() {
     storeInventory,
     nightDutyData,
     siteContent,
+    notifications,
+    activityLogs,
     staffDirectory,
     teamMembers,
     departmentShifts,
@@ -122,6 +127,7 @@ export default function DashboardPage() {
   const housekeepingReportAccess = getHousekeepingReportAccess(profile);
   const nightDutyAccess = getNightDutyAccess(profile);
   const managerWorkspaceAccess = getManagerWorkspaceAccess(profile);
+  const auditLogAccess = getAuditLogAccess(profile);
   const canViewManagerTabs = managerWorkspaceAccess.canViewTabs;
   const canViewEventsTab = managerWorkspaceAccess.canViewEvents;
   const canViewStorePanel = managerWorkspaceAccess.canViewStore;
@@ -393,6 +399,15 @@ export default function DashboardPage() {
             },
           ]
         : []),
+      ...(auditLogAccess.canViewPanel
+        ? [
+            {
+              key: "activity-log",
+              label: "Time Stamp Log",
+              content: <ActivityLogPanel activityLogs={activityLogs} />,
+            },
+          ]
+        : []),
     ];
     const activeSection =
       sections.find((section) => section.key === activeWorkSection) ?? sections[0];
@@ -578,6 +593,10 @@ export default function DashboardPage() {
         {summaryCards.map((card) => (
           <MetricCard key={card.label} label={card.label} value={card.value} />
         ))}
+      </section>
+
+      <section className="mt-6">
+        <NotificationsPanel profile={profile} notifications={notifications} />
       </section>
 
       <section className="mt-6">

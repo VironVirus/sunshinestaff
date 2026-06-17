@@ -63,13 +63,30 @@ function sanitizeProfileForFirestore(profile = {}) {
   return safeProfile;
 }
 
+function normalizeLoadedProfile(profile = null) {
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    ...profile,
+    approvalStatus: profile.approvalStatus ?? "approved",
+    approvedAt: profile.approvedAt ?? "",
+    approvedByName: profile.approvedByName ?? "",
+    phoneNumber: profile.phoneNumber ?? "",
+    homeAddress: profile.homeAddress ?? "",
+    lastProfileNotification: profile.lastProfileNotification ?? "",
+    lastProfileNotificationAt: profile.lastProfileNotificationAt ?? "",
+  };
+}
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function loadProfile(uid) {
-    const cachedProfile = readCachedProfile(uid);
+    const cachedProfile = normalizeLoadedProfile(readCachedProfile(uid));
 
     if (!db) {
       setProfile(cachedProfile);
@@ -95,7 +112,7 @@ export const AuthProvider = ({ children }) => {
             const restoredSnapshot = await getDoc(doc(db, "users", uid));
 
             if (restoredSnapshot.exists()) {
-              const restoredProfile = restoredSnapshot.data();
+              const restoredProfile = normalizeLoadedProfile(restoredSnapshot.data());
               setProfile(restoredProfile);
               writeCachedProfile(restoredProfile);
               return restoredProfile;
@@ -109,7 +126,7 @@ export const AuthProvider = ({ children }) => {
         return cachedProfile;
       }
 
-      const profileData = profileSnapshot.data();
+      const profileData = normalizeLoadedProfile(profileSnapshot.data());
       setProfile(profileData);
       writeCachedProfile(profileData);
       return profileData;
@@ -134,7 +151,13 @@ export const AuthProvider = ({ children }) => {
         try {
           const nextProfile = await loadProfile(currentUser.uid);
 
-          if (nextProfile && nextProfile.employmentStatus && nextProfile.employmentStatus !== "active") {
+          if (
+            nextProfile &&
+            (
+              (nextProfile.employmentStatus && nextProfile.employmentStatus !== "active") ||
+              nextProfile.approvalStatus === "pending"
+            )
+          ) {
             await signOut(auth);
             setUser(null);
             setProfile(null);
@@ -183,6 +206,15 @@ export const AuthProvider = ({ children }) => {
         throw new Error("This staff account is no longer active. Please contact Human Resource.");
       }
 
+      if (loadedProfile.approvalStatus === "pending") {
+        await signOut(auth);
+        setUser(null);
+        setProfile(null);
+        throw new Error(
+          "Account is pending approval. Please wait for the Super Admin or HR Manager to approve your access.",
+        );
+      }
+
       return loadedProfile;
     } catch (error) {
       setProfile(null);
@@ -197,6 +229,8 @@ export const AuthProvider = ({ children }) => {
     email,
     password,
     birthday,
+    phoneNumber,
+    homeAddress,
     departmentKey,
     jobLevel,
     staffTitle,
@@ -223,6 +257,8 @@ export const AuthProvider = ({ children }) => {
       fullName,
       email,
       birthday,
+      phoneNumber,
+      homeAddress,
       departmentKey,
       jobLevel,
       staffTitle,
@@ -235,20 +271,31 @@ export const AuthProvider = ({ children }) => {
       updatedAt: serverTimestamp(),
     });
 
-    setUser(credential.user);
-    setProfile({
+    const localProfile = normalizeLoadedProfile({
       ...baseProfile,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    writeCachedProfile(baseProfile);
+    writeCachedProfile(localProfile);
 
-    return baseProfile;
+    if (baseProfile.approvalStatus === "approved") {
+      setUser(credential.user);
+      setProfile(localProfile);
+      return localProfile;
+    }
+
+    await signOut(auth);
+    setUser(null);
+    setProfile(null);
+
+    return localProfile;
   }
 
   async function restoreProfile({
     fullName,
     birthday,
+    phoneNumber,
+    homeAddress,
     departmentKey,
     jobLevel,
     staffTitle,
@@ -275,6 +322,8 @@ export const AuthProvider = ({ children }) => {
       fullName,
       email: user.email ?? "",
       birthday,
+      phoneNumber,
+      homeAddress,
       departmentKey,
       jobLevel,
       staffTitle,
@@ -297,12 +346,18 @@ export const AuthProvider = ({ children }) => {
       restoredLocally = true;
     }
 
-    const restoredProfile = {
+    const restoredProfile = normalizeLoadedProfile({
       ...baseProfile,
       restoredLocally,
-    };
+    });
 
-    setProfile(restoredProfile);
+    if (restoredProfile.approvalStatus === "approved") {
+      setProfile(restoredProfile);
+    } else {
+      await signOut(auth);
+      setUser(null);
+      setProfile(null);
+    }
     writeCachedProfile(restoredProfile);
     return restoredProfile;
   }

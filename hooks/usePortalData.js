@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import {
   collection,
   doc,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
-  setDoc,
+  writeBatch,
 } from "@firebase/firestore";
 import {
   defaultBirthdays,
@@ -25,6 +28,7 @@ import { defaultStoreInventory, mergeStoreInventory } from "@/data/storeInventor
 import { defaultNightDutyData, mergeNightDutyData } from "@/data/nightDuty";
 import { db, hasFirebaseConfig } from "@/lib/firebase";
 import {
+  getAuditLogAccess,
   getHousekeepingReportAccess,
   getNightDutyAccess,
   getManagerWorkspaceAccess,
@@ -43,12 +47,16 @@ const defaultPortalState = {
   storeInventory: mergeStoreInventory(defaultStoreInventory),
   nightDutyData: mergeNightDutyData(defaultNightDutyData),
   siteContent: defaultSiteContent,
+  notifications: [],
+  activityLogs: [],
   staffDirectory: [],
   teamMembers: [],
   departmentShifts: [],
 };
 
 const MAX_REPORT_HISTORY_DAYS = 120;
+const MAX_OPERATIONS_ACTIVITY = 600;
+const MAX_VISIBLE_NOTIFICATIONS = 160;
 
 function normalizeOperationsRoomMoves(roomMoves = []) {
   return roomMoves
@@ -65,6 +73,26 @@ function normalizeOperationsRoomMoves(roomMoves = []) {
       return rightTime - leftTime;
     })
     .slice(0, 500);
+}
+
+function normalizeOperationsActivityEntries(activityEntries = []) {
+  return activityEntries
+    .filter((entry) => entry?.id && entry?.actionType && entry?.createdAt)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, MAX_OPERATIONS_ACTIVITY);
+}
+
+function normalizeNotifications(entries = []) {
+  return entries
+    .filter((entry) => entry?.createdAt && entry?.message)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, MAX_VISIBLE_NOTIFICATIONS);
+}
+
+function normalizeActivityLogs(entries = []) {
+  return entries
+    .filter((entry) => entry?.createdAt && entry?.message)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
 function normalizeOperationsReportHistory(reportHistory = []) {
@@ -122,10 +150,15 @@ function mergeHighlights(payload = {}) {
 }
 
 function mergeOperations(payload = {}) {
-  return deriveOperationsSnapshot({
+  const mergedOperations = deriveOperationsSnapshot({
     ...defaultFrontOfficeSnapshot,
     ...payload,
   });
+
+  return {
+    ...mergedOperations,
+    activityEntries: normalizeOperationsActivityEntries(payload.activityEntries ?? []),
+  };
 }
 
 function mergeSiteContent(payload = {}) {
@@ -211,6 +244,10 @@ function isActiveStaff(user = {}) {
   return (user.employmentStatus ?? "active") === "active";
 }
 
+function isApprovedStaff(user = {}) {
+  return (user.approvalStatus ?? "approved") === "approved";
+}
+
 export function usePortalData(profile) {
   const [portalState, setPortalState] = useState(defaultPortalState);
   const [syncing, setSyncing] = useState(hasFirebaseConfig);
@@ -221,6 +258,7 @@ export function usePortalData(profile) {
   const housekeepingReportAccess = getHousekeepingReportAccess(profile);
   const storeAccess = getStoreAccess(profile);
   const nightDutyAccess = getNightDutyAccess(profile);
+  const auditLogAccess = getAuditLogAccess(profile);
 
   useEffect(() => {
     if (!hasFirebaseConfig || !db) {
@@ -232,14 +270,15 @@ export function usePortalData(profile) {
     setError("");
 
     let pendingListeners =
-      3 +
+      4 +
       (operationsAccess.canViewPanel ? 1 : 0) +
       (profile?.departmentKey ? 1 : 0) +
       (propertyAccess.canViewPanel ? 1 : 0) +
       (managerWorkspaceAccess.canViewEvents ? 1 : 0) +
       (housekeepingReportAccess.canViewPanel ? 1 : 0) +
       (storeAccess.canViewPanel ? 1 : 0) +
-      (nightDutyAccess.canViewPanel ? 1 : 0);
+      (nightDutyAccess.canViewPanel ? 1 : 0) +
+      (auditLogAccess.canViewPanel ? 1 : 0);
 
     const markResolved = () => {
       if (pendingListeners <= 0) {
@@ -279,7 +318,9 @@ export function usePortalData(profile) {
               ...document.data(),
             }))
             .sort((left, right) => left.fullName.localeCompare(right.fullName));
-          const activeUsers = users.filter((user) => isActiveStaff(user));
+          const activeUsers = users.filter(
+            (user) => isActiveStaff(user) && isApprovedStaff(user),
+          );
 
           setPortalState((current) => ({
             ...current,
@@ -327,6 +368,25 @@ export function usePortalData(profile) {
             siteContent: snapshot.exists()
               ? mergeSiteContent(snapshot.data())
               : defaultSiteContent,
+          }));
+          markResolved();
+        },
+        (snapshotError) => {
+          setError(snapshotError.message);
+          markResolved();
+        },
+      ),
+      onSnapshot(
+        query(collection(db, "notifications"), orderBy("createdAt", "desc"), limit(160)),
+        (snapshot) => {
+          setPortalState((current) => ({
+            ...current,
+            notifications: normalizeNotifications(
+              snapshot.docs.map((document) => ({
+                id: document.id,
+                ...document.data(),
+              })),
+            ),
           }));
           markResolved();
         },
@@ -441,6 +501,29 @@ export function usePortalData(profile) {
             ),
           ]
         : []),
+      ...(auditLogAccess.canViewPanel
+        ? [
+            onSnapshot(
+              query(collection(db, "activityLogs"), orderBy("createdAt", "desc"), limit(400)),
+              (snapshot) => {
+                setPortalState((current) => ({
+                  ...current,
+                  activityLogs: normalizeActivityLogs(
+                    snapshot.docs.map((document) => ({
+                      id: document.id,
+                      ...document.data(),
+                    })),
+                  ),
+                }));
+                markResolved();
+              },
+              (snapshotError) => {
+                setError(snapshotError.message);
+                markResolved();
+              },
+            ),
+          ]
+        : []),
       ...(profile?.departmentKey
         ? [
             onSnapshot(
@@ -471,49 +554,149 @@ export function usePortalData(profile) {
     operationsAccess.canViewPanel,
     managerWorkspaceAccess.canViewEvents,
     nightDutyAccess.canViewPanel,
+    auditLogAccess.canViewPanel,
     profile?.departmentKey,
     propertyAccess.canViewPanel,
     storeAccess.canViewPanel,
   ]);
+
+  function buildActorFields() {
+    return {
+      actorUid: profile?.uid ?? "",
+      actorName: profile?.fullName ?? "",
+      actorDepartment: profile?.departmentName ?? "",
+      actorDepartmentKey: profile?.departmentKey ?? "",
+    };
+  }
+
+  function buildNotificationEntry({
+    audienceTag = "all",
+    title,
+    message,
+    relatedRoomNumber = "",
+    relatedUserId = "",
+  }) {
+    const createdAt = new Date().toISOString();
+
+    return {
+      ...buildActorFields(),
+      audienceTag,
+      title: title?.trim() ?? "",
+      message: message?.trim() ?? "",
+      relatedRoomNumber,
+      relatedUserId,
+      createdAt,
+      createdDateKey: createdAt.slice(0, 10),
+      operationalDateKey: getOperationalDateKey(createdAt),
+    };
+  }
+
+  function buildActivityLogEntry({
+    area,
+    actionType,
+    message,
+    targetUserId = "",
+    targetRoomNumber = "",
+    metadata = {},
+  }) {
+    const createdAt = new Date().toISOString();
+
+    return {
+      ...buildActorFields(),
+      area,
+      actionType,
+      message,
+      targetUserId,
+      targetRoomNumber,
+      metadata,
+      createdAt,
+      createdDateKey: createdAt.slice(0, 10),
+      operationalDateKey: getOperationalDateKey(createdAt),
+    };
+  }
+
+  async function commitTrackedWrite({
+    writes,
+    notification,
+    activity,
+  }) {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    const batch = writeBatch(db);
+
+    writes.forEach(({ ref, data, options }) => {
+      batch.set(ref, data, options ?? { merge: true });
+    });
+
+    if (notification) {
+      batch.set(doc(collection(db, "notifications")), notification);
+    }
+
+    if (activity) {
+      batch.set(doc(collection(db, "activityLogs")), activity);
+    }
+
+    await batch.commit();
+  }
 
   async function saveOperations(values) {
     if (!db) {
       throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
     }
 
+    const {
+      activityEntry,
+      notificationEntry,
+      ...operationValues
+    } = values;
     const nextOperations = mergeOperations({
       ...portalState.operations,
-      ...values,
+      ...operationValues,
     });
     const visibleOperations = mergeOperationsWithPropertyStatus(
       nextOperations,
       portalState.propertyStatus,
     );
-
-    await setDoc(
-      doc(db, "portal", "frontOffice"),
-      {
-        occupiedRooms: nextOperations.occupiedRooms,
-        occupiedRoomNumbers: nextOperations.occupiedRoomNumbers,
-        roomMoves: normalizeOperationsRoomMoves(nextOperations.roomMoves ?? []),
-        reportHistory: upsertOperationsReportHistory(
-          portalState.operations.reportHistory ?? [],
-          visibleOperations,
-          profile,
-        ),
-        inHouse: nextOperations.inHouse,
-        availableRooms: visibleOperations.availableRooms,
-        breakfastEntitled: nextOperations.breakfastEntitled,
-        cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
-        cleanedRooms: nextOperations.cleanedRooms,
-        notes: nextOperations.notes ?? "",
-        updatedAt: serverTimestamp(),
-        updatedByUid: profile?.uid ?? null,
-        updatedByName: profile?.fullName ?? "Front Office",
-        updatedByDepartment: profile?.departmentName ?? "Front Office",
-      },
-      { merge: true },
+    const normalizedActivityEntries = normalizeOperationsActivityEntries(
+      nextOperations.activityEntries ?? [],
     );
+
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "frontOffice"),
+          data: {
+            occupiedRooms: nextOperations.occupiedRooms,
+            occupiedRoomNumbers: nextOperations.occupiedRoomNumbers,
+            roomMoves: normalizeOperationsRoomMoves(nextOperations.roomMoves ?? []),
+            activityEntries: normalizedActivityEntries,
+            reportHistory: upsertOperationsReportHistory(
+              portalState.operations.reportHistory ?? [],
+              {
+                ...visibleOperations,
+                activityEntries: normalizedActivityEntries,
+              },
+              profile,
+            ),
+            inHouse: nextOperations.inHouse,
+            availableRooms: visibleOperations.availableRooms,
+            breakfastEntitled: nextOperations.breakfastEntitled,
+            cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
+            cleanedRooms: nextOperations.cleanedRooms,
+            notes: nextOperations.notes ?? "",
+            updatedAt: serverTimestamp(),
+            updatedByUid: profile?.uid ?? null,
+            updatedByName: profile?.fullName ?? "Front Office",
+            updatedByDepartment: profile?.departmentName ?? "Front Office",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: notificationEntry ? buildNotificationEntry(notificationEntry) : null,
+      activity: activityEntry ? buildActivityLogEntry(activityEntry) : null,
+    });
   }
 
   async function saveHousekeepingProgress(values) {
@@ -521,32 +704,50 @@ export function usePortalData(profile) {
       throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
     }
 
+    const {
+      activityEntry,
+      notificationEntry,
+      ...operationValues
+    } = values;
     const nextOperations = mergeOperations({
       ...portalState.operations,
-      ...values,
+      ...operationValues,
     });
     const visibleOperations = mergeOperationsWithPropertyStatus(
       nextOperations,
       portalState.propertyStatus,
     );
-
-    await setDoc(
-      doc(db, "portal", "frontOffice"),
-      {
-        cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
-        cleanedRooms: nextOperations.cleanedRooms,
-        reportHistory: upsertOperationsReportHistory(
-          portalState.operations.reportHistory ?? [],
-          visibleOperations,
-          profile,
-        ),
-        housekeepingUpdatedAt: serverTimestamp(),
-        housekeepingUpdatedByUid: profile?.uid ?? null,
-        housekeepingUpdatedByName: profile?.fullName ?? "HouseKeeping",
-        housekeepingUpdatedByDepartment: profile?.departmentName ?? "HouseKeeping",
-      },
-      { merge: true },
+    const normalizedActivityEntries = normalizeOperationsActivityEntries(
+      nextOperations.activityEntries ?? portalState.operations.activityEntries ?? [],
     );
+
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "frontOffice"),
+          data: {
+            cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
+            cleanedRooms: nextOperations.cleanedRooms,
+            activityEntries: normalizedActivityEntries,
+            reportHistory: upsertOperationsReportHistory(
+              portalState.operations.reportHistory ?? [],
+              {
+                ...visibleOperations,
+                activityEntries: normalizedActivityEntries,
+              },
+              profile,
+            ),
+            housekeepingUpdatedAt: serverTimestamp(),
+            housekeepingUpdatedByUid: profile?.uid ?? null,
+            housekeepingUpdatedByName: profile?.fullName ?? "HouseKeeping",
+            housekeepingUpdatedByDepartment: profile?.departmentName ?? "HouseKeeping",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: notificationEntry ? buildNotificationEntry(notificationEntry) : null,
+      activity: activityEntry ? buildActivityLogEntry(activityEntry) : null,
+    });
   }
 
   async function saveRoomIssues(values) {
@@ -559,17 +760,31 @@ export function usePortalData(profile) {
       ...values,
     });
 
-    await setDoc(
-      doc(db, "portal", "maintenance"),
-      {
-        roomIssues: nextPropertyStatus.roomIssues,
-        roomIssuesUpdatedAt: serverTimestamp(),
-        roomIssuesUpdatedByUid: profile?.uid ?? null,
-        roomIssuesUpdatedByName: profile?.fullName ?? "",
-        roomIssuesUpdatedByDepartment: profile?.departmentName ?? "",
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "maintenance"),
+          data: {
+            roomIssues: nextPropertyStatus.roomIssues,
+            roomIssuesUpdatedAt: serverTimestamp(),
+            roomIssuesUpdatedByUid: profile?.uid ?? null,
+            roomIssuesUpdatedByName: profile?.fullName ?? "",
+            roomIssuesUpdatedByDepartment: profile?.departmentName ?? "",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: buildNotificationEntry({
+        audienceTag: "property",
+        title: "Room issue update",
+        message: `${profile?.departmentName ?? "Property"} updated room issue status.`,
+      }),
+      activity: buildActivityLogEntry({
+        area: "property",
+        actionType: "room_issue_update",
+        message: `${profile?.departmentName ?? "Property"} updated room issues.`,
+      }),
+    });
   }
 
   async function saveRoomComplaints(values) {
@@ -582,17 +797,31 @@ export function usePortalData(profile) {
       ...values,
     });
 
-    await setDoc(
-      doc(db, "portal", "maintenance"),
-      {
-        roomComplaints: nextPropertyStatus.roomComplaints,
-        roomComplaintsUpdatedAt: serverTimestamp(),
-        roomComplaintsUpdatedByUid: profile?.uid ?? null,
-        roomComplaintsUpdatedByName: profile?.fullName ?? "",
-        roomComplaintsUpdatedByDepartment: profile?.departmentName ?? "",
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "maintenance"),
+          data: {
+            roomComplaints: nextPropertyStatus.roomComplaints,
+            roomComplaintsUpdatedAt: serverTimestamp(),
+            roomComplaintsUpdatedByUid: profile?.uid ?? null,
+            roomComplaintsUpdatedByName: profile?.fullName ?? "",
+            roomComplaintsUpdatedByDepartment: profile?.departmentName ?? "",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: buildNotificationEntry({
+        audienceTag: "operations",
+        title: "Room complaint update",
+        message: `${profile?.departmentName ?? "Operations"} updated room complaints.`,
+      }),
+      activity: buildActivityLogEntry({
+        area: "complaints",
+        actionType: "room_complaint_update",
+        message: `${profile?.departmentName ?? "Operations"} updated room complaints.`,
+      }),
+    });
   }
 
   async function saveUtilities(values) {
@@ -605,17 +834,31 @@ export function usePortalData(profile) {
       ...values,
     });
 
-    await setDoc(
-      doc(db, "portal", "maintenance"),
-      {
-        utilities: nextPropertyStatus.utilities,
-        utilitiesUpdatedAt: serverTimestamp(),
-        utilitiesUpdatedByUid: profile?.uid ?? null,
-        utilitiesUpdatedByName: profile?.fullName ?? "",
-        utilitiesUpdatedByDepartment: profile?.departmentName ?? "",
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "maintenance"),
+          data: {
+            utilities: nextPropertyStatus.utilities,
+            utilitiesUpdatedAt: serverTimestamp(),
+            utilitiesUpdatedByUid: profile?.uid ?? null,
+            utilitiesUpdatedByName: profile?.fullName ?? "",
+            utilitiesUpdatedByDepartment: profile?.departmentName ?? "",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: buildNotificationEntry({
+        audienceTag: "property",
+        title: "Utility update",
+        message: `${profile?.departmentName ?? "Property"} updated utility levels.`,
+      }),
+      activity: buildActivityLogEntry({
+        area: "property",
+        actionType: "utility_update",
+        message: `${profile?.departmentName ?? "Property"} updated utility levels.`,
+      }),
+    });
   }
 
   async function saveEventBooking(values) {
@@ -628,17 +871,31 @@ export function usePortalData(profile) {
       ...values,
     });
 
-    await setDoc(
-      doc(db, "portal", "eventsBookings"),
-      {
-        events: nextEventsBookings.events,
-        updatedAt: serverTimestamp(),
-        updatedByUid: profile?.uid ?? null,
-        updatedByName: profile?.fullName ?? "",
-        updatedByDepartment: profile?.departmentName ?? "",
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "eventsBookings"),
+          data: {
+            events: nextEventsBookings.events,
+            updatedAt: serverTimestamp(),
+            updatedByUid: profile?.uid ?? null,
+            updatedByName: profile?.fullName ?? "",
+            updatedByDepartment: profile?.departmentName ?? "",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: buildNotificationEntry({
+        audienceTag: "events",
+        title: "Events and bookings update",
+        message: `${profile?.fullName ?? "Front Office"} updated the events and bookings board.`,
+      }),
+      activity: buildActivityLogEntry({
+        area: "events",
+        actionType: "events_update",
+        message: `${profile?.fullName ?? "Front Office"} updated events and bookings.`,
+      }),
+    });
   }
 
   async function saveHousekeepingReports(values) {
@@ -651,23 +908,37 @@ export function usePortalData(profile) {
       ...values,
     });
 
-    await setDoc(
-      doc(db, "portal", "housekeepingReports"),
-      {
-        operationalDateKey: nextHousekeepingReports.operationalDateKey,
-        morningRooms: nextHousekeepingReports.morningRooms,
-        afternoonRooms: nextHousekeepingReports.afternoonRooms,
-        morningUpdatedByName: nextHousekeepingReports.morningUpdatedByName ?? "",
-        morningUpdatedByDepartment: nextHousekeepingReports.morningUpdatedByDepartment ?? "",
-        afternoonUpdatedByName: nextHousekeepingReports.afternoonUpdatedByName ?? "",
-        afternoonUpdatedByDepartment: nextHousekeepingReports.afternoonUpdatedByDepartment ?? "",
-        updatedAt: serverTimestamp(),
-        updatedByUid: profile?.uid ?? null,
-        updatedByName: profile?.fullName ?? "",
-        updatedByDepartment: profile?.departmentName ?? "",
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "housekeepingReports"),
+          data: {
+            operationalDateKey: nextHousekeepingReports.operationalDateKey,
+            morningRooms: nextHousekeepingReports.morningRooms,
+            afternoonRooms: nextHousekeepingReports.afternoonRooms,
+            morningUpdatedByName: nextHousekeepingReports.morningUpdatedByName ?? "",
+            morningUpdatedByDepartment: nextHousekeepingReports.morningUpdatedByDepartment ?? "",
+            afternoonUpdatedByName: nextHousekeepingReports.afternoonUpdatedByName ?? "",
+            afternoonUpdatedByDepartment: nextHousekeepingReports.afternoonUpdatedByDepartment ?? "",
+            updatedAt: serverTimestamp(),
+            updatedByUid: profile?.uid ?? null,
+            updatedByName: profile?.fullName ?? "",
+            updatedByDepartment: profile?.departmentName ?? "",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: buildNotificationEntry({
+        audienceTag: "housekeeping_reports",
+        title: "HouseKeeping report updated",
+        message: `${profile?.fullName ?? "HouseKeeping"} updated the room inspection report.`,
+      }),
+      activity: buildActivityLogEntry({
+        area: "housekeeping_reports",
+        actionType: "housekeeping_report_update",
+        message: `${profile?.fullName ?? "HouseKeeping"} updated housekeeping room reports.`,
+      }),
+    });
   }
 
   async function saveStoreInventorySection(fieldName, values) {
@@ -679,18 +950,39 @@ export function usePortalData(profile) {
       ...portalState.storeInventory,
       ...values,
     });
+    const fieldLabelMap = {
+      acquisitions: "acquisitions",
+      requisitions: "requisitions",
+      returns: "returns",
+      adjustments: "adjustments",
+    };
+    const sectionLabel = fieldLabelMap[fieldName] ?? "inventory";
 
-    await setDoc(
-      doc(db, "portal", "storeInventory"),
-      {
-        [fieldName]: nextStoreInventory[fieldName],
-        updatedAt: serverTimestamp(),
-        updatedByUid: profile?.uid ?? null,
-        updatedByName: profile?.fullName ?? "",
-        updatedByDepartment: profile?.departmentName ?? "",
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "storeInventory"),
+          data: {
+            [fieldName]: nextStoreInventory[fieldName],
+            updatedAt: serverTimestamp(),
+            updatedByUid: profile?.uid ?? null,
+            updatedByName: profile?.fullName ?? "",
+            updatedByDepartment: profile?.departmentName ?? "",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: buildNotificationEntry({
+        audienceTag: "store",
+        title: "Store update",
+        message: `${profile?.fullName ?? "Store"} updated ${sectionLabel}.`,
+      }),
+      activity: buildActivityLogEntry({
+        area: "store",
+        actionType: `store_${fieldName}`,
+        message: `${profile?.fullName ?? "Store"} updated ${sectionLabel}.`,
+      }),
+    });
   }
 
   async function saveStoreAcquisition(values) {
@@ -719,20 +1011,34 @@ export function usePortalData(profile) {
       ...values,
     });
 
-    await setDoc(
-      doc(db, "portal", "nightDuty"),
-      {
-        operationalDateKey: nextNightDutyData.operationalDateKey,
-        income: nextNightDutyData.income,
-        onDutyStaff: nextNightDutyData.onDutyStaff,
-        cookingGas: nextNightDutyData.cookingGas,
-        updatedAt: serverTimestamp(),
-        updatedByUid: profile?.uid ?? null,
-        updatedByName: profile?.fullName ?? "",
-        updatedByDepartment: profile?.departmentName ?? "",
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "portal", "nightDuty"),
+          data: {
+            operationalDateKey: nextNightDutyData.operationalDateKey,
+            income: nextNightDutyData.income,
+            onDutyStaff: nextNightDutyData.onDutyStaff,
+            cookingGas: nextNightDutyData.cookingGas,
+            updatedAt: serverTimestamp(),
+            updatedByUid: profile?.uid ?? null,
+            updatedByName: profile?.fullName ?? "",
+            updatedByDepartment: profile?.departmentName ?? "",
+          },
+          options: { merge: true },
+        },
+      ],
+      notification: buildNotificationEntry({
+        audienceTag: "night-duty",
+        title: "Night Duty update",
+        message: `${profile?.fullName ?? "Night Duty"} updated the night duty board.`,
+      }),
+      activity: buildActivityLogEntry({
+        area: "night_duty",
+        actionType: "night_duty_update",
+        message: `${profile?.fullName ?? "Night Duty"} updated night duty records.`,
+      }),
+    });
   }
 
   async function saveStaffProfile(userId, values) {
@@ -750,14 +1056,73 @@ export function usePortalData(profile) {
       throw new Error("The selected staff account was not found.");
     }
 
-    await setDoc(
-      doc(db, "users", userId),
-      {
-        ...values,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
+    const nextProfile = {
+      ...targetProfile,
+      ...values,
+    };
+    const approvalStatus = nextProfile.approvalStatus ?? targetProfile.approvalStatus ?? "approved";
+    const approvalJustChanged =
+      approvalStatus !== (targetProfile.approvalStatus ?? "approved");
+    const profileNoteTimestamp = new Date().toISOString();
+    let lastProfileNotification = nextProfile.lastProfileNotification ?? targetProfile.lastProfileNotification ?? "";
+    let lastProfileNotificationAt =
+      nextProfile.lastProfileNotificationAt ?? targetProfile.lastProfileNotificationAt ?? "";
+
+    if (values.surcharges !== undefined && values.surcharges !== targetProfile.surcharges) {
+      lastProfileNotification = "Your surcharge list was updated. Open My Dashboard to review it.";
+      lastProfileNotificationAt = profileNoteTimestamp;
+    } else if (approvalJustChanged && approvalStatus === "approved") {
+      lastProfileNotification = "Your account has been approved. You can now log in.";
+      lastProfileNotificationAt = profileNoteTimestamp;
+    } else if (
+      values.employmentStatus &&
+      values.employmentStatus !== targetProfile.employmentStatus &&
+      values.employmentStatus !== "active"
+    ) {
+      lastProfileNotification = "Your staff access status was updated. Please contact Human Resource.";
+      lastProfileNotificationAt = profileNoteTimestamp;
+    }
+
+    const activityMessage =
+      approvalJustChanged && approvalStatus === "approved"
+        ? `Approved staff account for ${nextProfile.fullName}.`
+        : values.surcharges !== undefined && values.surcharges !== targetProfile.surcharges
+          ? `Updated surcharge list for ${nextProfile.fullName}.`
+          : values.jobLevel && values.jobLevel !== targetProfile.jobLevel
+            ? `Updated role level for ${nextProfile.fullName}.`
+            : values.departmentKey && values.departmentKey !== targetProfile.departmentKey
+              ? `Moved ${nextProfile.fullName} to ${nextProfile.departmentName}.`
+              : `Updated staff record for ${nextProfile.fullName}.`;
+
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "users", userId),
+          data: {
+            ...values,
+            approvalStatus,
+            approvedAt:
+              approvalStatus === "approved"
+                ? (approvalJustChanged ? profileNoteTimestamp : nextProfile.approvedAt ?? "")
+                : "",
+            approvedByName:
+              approvalStatus === "approved"
+                ? (approvalJustChanged ? profile?.fullName ?? "" : nextProfile.approvedByName ?? "")
+                : "",
+            lastProfileNotification,
+            lastProfileNotificationAt,
+            updatedAt: serverTimestamp(),
+          },
+          options: { merge: true },
+        },
+      ],
+      activity: buildActivityLogEntry({
+        area: "staff",
+        actionType: "staff_profile_update",
+        message: activityMessage,
+        targetUserId: userId,
+      }),
+    });
   }
 
   async function saveShiftAssignment(values) {
@@ -786,16 +1151,26 @@ export function usePortalData(profile) {
       },
     ]);
 
-    await setDoc(
-      doc(db, "departments", profile.departmentKey),
-      {
-        shifts: nextShifts,
-        updatedAt: serverTimestamp(),
-        updatedByUid: profile.uid,
-        updatedByName: profile.fullName,
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "departments", profile.departmentKey),
+          data: {
+            shifts: nextShifts,
+            updatedAt: serverTimestamp(),
+            updatedByUid: profile.uid,
+            updatedByName: profile.fullName,
+          },
+          options: { merge: true },
+        },
+      ],
+      activity: buildActivityLogEntry({
+        area: "team",
+        actionType: "shift_assignment",
+        message: `Assigned shift on ${values.shiftDate} to ${staffMember.fullName}.`,
+        targetUserId: values.userId,
+      }),
+    });
   }
 
   async function removeShiftAssignment(shiftId) {
@@ -805,16 +1180,25 @@ export function usePortalData(profile) {
 
     const nextShifts = portalState.departmentShifts.filter((shift) => shift.id !== shiftId);
 
-    await setDoc(
-      doc(db, "departments", profile.departmentKey),
-      {
-        shifts: nextShifts,
-        updatedAt: serverTimestamp(),
-        updatedByUid: profile.uid,
-        updatedByName: profile.fullName,
-      },
-      { merge: true },
-    );
+    await commitTrackedWrite({
+      writes: [
+        {
+          ref: doc(db, "departments", profile.departmentKey),
+          data: {
+            shifts: nextShifts,
+            updatedAt: serverTimestamp(),
+            updatedByUid: profile.uid,
+            updatedByName: profile.fullName,
+          },
+          options: { merge: true },
+        },
+      ],
+      activity: buildActivityLogEntry({
+        area: "team",
+        actionType: "shift_remove",
+        message: `Removed shift assignment ${shiftId}.`,
+      }),
+    });
   }
 
   return {

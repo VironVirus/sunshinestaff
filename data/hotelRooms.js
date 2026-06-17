@@ -1,7 +1,4 @@
-import {
-  getDaysBetweenDateKeys,
-  getOperationalDateKey,
-} from "@/lib/hotelTime";
+import { getOperationalDateKey } from "@/lib/hotelTime";
 
 const mainFloorRoomPattern = [
   "01/03",
@@ -155,15 +152,6 @@ export function normalizeOccupiedRooms(
         roomEntry?.bookedOnDateKey ??
         roomEntry?.bookingDateKey ??
         operationalDateKey;
-      const elapsedDays = Math.max(
-        getDaysBetweenDateKeys(bookedOnDateKey, operationalDateKey),
-        0,
-      );
-      const remainingDays = bookedDays - elapsedDays;
-
-      if (remainingDays <= 0) {
-        return null;
-      }
 
       return {
         roomNumber: roomRecord.label,
@@ -175,7 +163,10 @@ export function normalizeOccupiedRooms(
           : 0,
         bookedDays,
         bookedOnDateKey,
-        remainingDays,
+        remainingDays: bookedDays,
+        guestType: roomEntry?.guestType ?? "walk_in",
+        checkInCategory: roomEntry?.checkInCategory ?? "normal_check_in",
+        lastCheckoutCategory: roomEntry?.lastCheckoutCategory ?? "",
       };
     })
     .filter(Boolean)

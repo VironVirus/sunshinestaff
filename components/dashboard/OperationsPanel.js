@@ -14,6 +14,7 @@ import { formatFriendlyDate } from "@/lib/format";
 import {
   compareDateKeys,
   formatDateKey,
+  getHotelHour,
   getOperationalDateKey,
   listDateKeysInRange,
 } from "@/lib/hotelTime";
@@ -27,6 +28,17 @@ function escapeHtml(value = "") {
     .replaceAll(">", "&gt;");
 }
 
+function createReportLine(text = "", options = {}) {
+  return {
+    text,
+    bold: Boolean(options.bold),
+  };
+}
+
+function getReportLineText(line) {
+  return typeof line === "string" ? line : line?.text ?? "";
+}
+
 function printTextReport(title, reportLines) {
   if (typeof window === "undefined") {
     return;
@@ -38,6 +50,15 @@ function printTextReport(title, reportLines) {
     return;
   }
 
+  const lineMarkup = reportLines
+    .map((line) => {
+      const text = escapeHtml(getReportLineText(line)) || "&nbsp;";
+      const fontWeight = typeof line === "string" || !line?.bold ? "400" : "700";
+
+      return `<div style="font-weight:${fontWeight}; white-space:pre-wrap; line-height:1.8; font-size:14px;">${text}</div>`;
+    })
+    .join("");
+
   reportWindow.document.write(`
     <html>
       <head>
@@ -45,12 +66,11 @@ function printTextReport(title, reportLines) {
         <style>
           body { font-family: Arial, sans-serif; color: #1f2937; margin: 32px; }
           h1 { color: #162338; margin-bottom: 12px; }
-          pre { white-space: pre-wrap; line-height: 1.8; font-size: 14px; }
         </style>
       </head>
       <body>
         <h1>${escapeHtml(title)}</h1>
-        <pre>${escapeHtml(reportLines.join("\n"))}</pre>
+        ${lineMarkup}
       </body>
     </html>
   `);
@@ -66,6 +86,12 @@ function downloadPdf(filename, title, lines) {
     title,
     lines,
   });
+}
+
+function getOperationsActivitiesForDate(operations, targetDateKey, actionType) {
+  return (operations?.activityEntries ?? []).filter(
+    (entry) => entry?.operationalDateKey === targetDateKey && entry?.actionType === actionType,
+  );
 }
 
 function getReportDateBounds(startDateKey, endDateKey) {
@@ -100,7 +126,7 @@ function buildEventReportLines(eventsBookings, targetDateKey) {
   );
 
   if (todaysEvents.length === 0) {
-    return ["None"];
+    return [createReportLine("None")];
   }
 
   return todaysEvents.map((eventEntry, index) => {
@@ -110,7 +136,7 @@ function buildEventReportLines(eventsBookings, targetDateKey) {
       eventEntry.expectedGuests > 0 ? `${eventEntry.expectedGuests} guests` : "",
     ].filter(Boolean);
 
-    return details.join(" - ");
+    return createReportLine(details.join(" - "));
   });
 }
 
@@ -162,7 +188,7 @@ function buildComplaintReportLines(propertyStatus, targetDateKey) {
   const todaysComplaints = getComplaintsForDate(propertyStatus, targetDateKey);
 
   if (todaysComplaints.length === 0) {
-    return ["None"];
+    return [createReportLine("None")];
   }
 
   return todaysComplaints.map((complaint, index) => {
@@ -173,41 +199,77 @@ function buildComplaintReportLines(propertyStatus, targetDateKey) {
       complaint.complaintStatus,
     ].filter(Boolean);
 
-    return details.join(" - ");
-  });
-}
-
-function getRoomMovesForDate(operations, targetDateKey) {
-  return (operations?.roomMoves ?? []).filter((roomMove) => {
-    const roomMoveDateKey =
-      roomMove?.operationalDateKey ??
-      (roomMove?.movedAt ? getOperationalDateKey(roomMove.movedAt) : "");
-
-    return roomMoveDateKey === targetDateKey;
+    return createReportLine(details.join(" - "));
   });
 }
 
 function buildRoomMoveReportLines(operations, targetDateKey) {
-  const roomMoves = getRoomMovesForDate(operations, targetDateKey);
+  const roomMoves = getOperationsActivitiesForDate(operations, targetDateKey, "room_move");
 
   if (roomMoves.length === 0) {
-    return ["None"];
+    return [createReportLine("None")];
   }
 
   return roomMoves.map((roomMove, index) => {
     const details = [
       `${index + 1}. ${roomMove.fromRoomNumber} to ${roomMove.toRoomNumber}`,
-      roomMove.movedByName,
-      roomMove.movedAt
-        ? formatFriendlyDate(new Date(roomMove.movedAt), {
+      roomMove.destinationCondition
+        ? `Destination ${roomMove.destinationCondition}`
+        : "",
+      roomMove.actorName ?? roomMove.movedByName,
+      roomMove.createdAt
+        ? formatFriendlyDate(new Date(roomMove.createdAt), {
             dateStyle: "medium",
             timeStyle: "short",
           })
         : "",
     ].filter(Boolean);
 
-    return details.join(" - ");
+    return createReportLine(details.join(" - "));
   });
+}
+
+function buildCheckInReportLines(operations, targetDateKey) {
+  const checkIns = getOperationsActivitiesForDate(operations, targetDateKey, "check_in");
+
+  if (checkIns.length === 0) {
+    return [createReportLine("None")];
+  }
+
+  return checkIns.map((entry, index) =>
+    createReportLine(
+      [
+        `${index + 1}. ${entry.roomNumber}`,
+        entry.checkInCategory === "early_check_in" ? "EARLY CHECK IN" : "Check in",
+        entry.guestType === "corporate" ? "Corporate" : "Walk in",
+        `${entry.breakfastCount ?? 0} breakfast`,
+        `${entry.bookedDays ?? 1} day(s)`,
+      ].join(" - "),
+      {
+        bold: entry.checkInCategory === "early_check_in",
+      },
+    ),
+  );
+}
+
+function buildCheckOutReportLines(operations, targetDateKey) {
+  const checkOuts = getOperationsActivitiesForDate(operations, targetDateKey, "check_out");
+
+  if (checkOuts.length === 0) {
+    return [createReportLine("None")];
+  }
+
+  return checkOuts.map((entry, index) =>
+    createReportLine(
+      [
+        `${index + 1}. ${entry.roomNumber}`,
+        entry.checkoutCategory === "late_check_out" ? "LATE CHECK OUT" : "Check out",
+      ].join(" - "),
+      {
+        bold: entry.checkoutCategory === "late_check_out",
+      },
+    ),
+  );
 }
 
 function buildOccupiedRoomSections(occupiedRooms = []) {
@@ -254,27 +316,33 @@ function buildDailyReportSectionLines({
 }) {
   const snapshot = getOperationsSnapshotForDate(operations, targetDateKey);
   const lines = [
-    `Operational day: ${formatDateKey(targetDateKey)}`,
-    "",
+    createReportLine(`Operational day: ${formatDateKey(targetDateKey)}`),
+    createReportLine(""),
   ];
 
   if (snapshot) {
-    lines.push(`In-house rooms: ${snapshot.inHouse ?? 0}`);
-    lines.push(`Available rooms: ${snapshot.availableRooms ?? 0}`);
-    lines.push(`Breakfast entitlement: ${snapshot.breakfastEntitled ?? 0}`);
-    lines.push(`Cleaned rooms: ${snapshot.cleanedRooms ?? 0}`);
+    lines.push(createReportLine(`In-house rooms: ${snapshot.inHouse ?? 0}`));
+    lines.push(createReportLine(`Available rooms: ${snapshot.availableRooms ?? 0}`));
+    lines.push(createReportLine(`Breakfast entitlement: ${snapshot.breakfastEntitled ?? 0}`));
+    lines.push(createReportLine(`Cleaned rooms: ${snapshot.cleanedRooms ?? 0}`));
   } else {
-    lines.push("No front office snapshot recorded for this day.");
+    lines.push(createReportLine("No front office snapshot recorded for this day."));
   }
 
-  lines.push("");
-  lines.push("Events:");
+  lines.push(createReportLine(""));
+  lines.push(createReportLine("Check-ins:"));
+  lines.push(...buildCheckInReportLines(operations, targetDateKey));
+  lines.push(createReportLine(""));
+  lines.push(createReportLine("Check-outs:"));
+  lines.push(...buildCheckOutReportLines(operations, targetDateKey));
+  lines.push(createReportLine(""));
+  lines.push(createReportLine("Events:"));
   lines.push(...buildEventReportLines(eventsBookings, targetDateKey));
-  lines.push("");
-  lines.push("Room moves:");
+  lines.push(createReportLine(""));
+  lines.push(createReportLine("Room moves:"));
   lines.push(...buildRoomMoveReportLines(operations, targetDateKey));
-  lines.push("");
-  lines.push("Complaint follow-up:");
+  lines.push(createReportLine(""));
+  lines.push(createReportLine("Complaint follow-up:"));
   lines.push(...buildComplaintReportLines(propertyStatus, targetDateKey));
 
   return lines;
@@ -289,11 +357,11 @@ function buildDailyReportLines({
   const operationalDateKey = targetDateKey;
 
   return [
-    `Generated: ${formatFriendlyDate(new Date(), {
+    createReportLine(`Generated: ${formatFriendlyDate(new Date(), {
       dateStyle: "full",
       timeStyle: "short",
-    })}`,
-    "",
+    })}`),
+    createReportLine(""),
     ...buildDailyReportSectionLines({
       operations,
       eventsBookings,
@@ -313,16 +381,16 @@ function buildRangeReportLines({
   const [rangeStart, rangeEnd] = getReportDateBounds(startDateKey, endDateKey);
   const dateKeys = listDateKeysInRange(rangeStart, rangeEnd);
   const lines = [
-    `Report range: ${formatDateKey(rangeStart)} to ${formatDateKey(rangeEnd)}`,
-    `Generated: ${formatFriendlyDate(new Date(), {
+    createReportLine(`Report range: ${formatDateKey(rangeStart)} to ${formatDateKey(rangeEnd)}`),
+    createReportLine(`Generated: ${formatFriendlyDate(new Date(), {
       dateStyle: "full",
       timeStyle: "short",
-    })}`,
-    "",
+    })}`),
+    createReportLine(""),
   ];
 
   if (dateKeys.length === 0) {
-    lines.push("No report dates selected.");
+    lines.push(createReportLine("No report dates selected."));
     return lines;
   }
 
@@ -337,9 +405,9 @@ function buildRangeReportLines({
     );
 
     if (index < dateKeys.length - 1) {
-      lines.push("");
-      lines.push("----------------------------------------");
-      lines.push("");
+      lines.push(createReportLine(""));
+      lines.push(createReportLine("----------------------------------------"));
+      lines.push(createReportLine(""));
     }
   });
 
@@ -407,6 +475,42 @@ function buildCleanedRoomsReportLines(operations) {
     lines.push(section.label);
     lines.push(section.rooms.join(", "));
     lines.push(`Summary: ${section.rooms.length} cleaned room(s)`);
+    lines.push("");
+  });
+
+  return lines;
+}
+
+function buildBreakfastSummaryLines(operations) {
+  const operationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
+  const sections = buildOccupiedRoomSections(operations?.occupiedRooms ?? []);
+  const occupiedSections = sections.filter((section) => section.rooms.length > 0);
+  const lines = [
+    "Sunshine Hotel F&B Breakfast Summary",
+    `Operational day: ${formatDateKey(operationalDateKey)}`,
+    `Generated: ${formatFriendlyDate(new Date(), {
+      dateStyle: "full",
+      timeStyle: "short",
+    })}`,
+    "",
+    `Summary: ${operations?.inHouse ?? 0} occupied room(s), ${operations?.breakfastEntitled ?? 0} people entitled to breakfast`,
+    "",
+  ];
+
+  if (occupiedSections.length === 0) {
+    lines.push("No occupied rooms.");
+    return lines;
+  }
+
+  occupiedSections.forEach((section) => {
+    lines.push(section.label);
+    lines.push("S/N | Room | Breakfast");
+    section.rooms.forEach((room) => {
+      lines.push(`${room.serialNumber} | ${room.roomNumber} | ${room.breakfastCount}`);
+    });
+    lines.push(
+      `Summary: ${section.rooms.length} occupied room(s), ${section.breakfastTotal} people entitled to breakfast`,
+    );
     lines.push("");
   });
 
@@ -571,7 +675,7 @@ function OccupiedRoomsOverview({ sections }) {
                     <div>
                       <p className="font-semibold text-[#162338]">{room.roomNumber}</p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {room.remainingDays} day(s) left
+                        Booked for {room.bookedDays ?? room.remainingDays ?? 1} day(s)
                       </p>
                     </div>
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -744,6 +848,60 @@ function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
   );
 }
 
+function BreakfastSummaryBoard({ sections, breakfastTotal, inHouse }) {
+  const visibleSections = sections.filter((section) => section.rooms.length > 0);
+
+  return (
+    <div className="subpanel">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="metric-label">F&B Breakfast Summary</p>
+          <p className="mt-2 text-sm text-slate-500">
+            Room-by-room breakfast entitlement for occupied rooms.
+          </p>
+        </div>
+        <span className="badge">
+          {inHouse} rooms / {breakfastTotal} breakfast
+        </span>
+      </div>
+
+      {visibleSections.length > 0 ? (
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {visibleSections.map((section) => (
+            <div
+              key={section.key}
+              className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold text-[#162338]">{section.label}</p>
+                <span className="text-xs font-semibold text-slate-500">
+                  {section.breakfastTotal} breakfast
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {section.rooms.map((room) => (
+                  <div
+                    key={room.roomNumber}
+                    className="rounded-2xl border border-slate-200 bg-white px-3 py-3"
+                  >
+                    <p className="text-sm font-semibold text-[#162338]">{room.roomNumber}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Breakfast: {room.breakfastCount}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">No occupied rooms right now.</p>
+      )}
+    </div>
+  );
+}
+
 function getFloorsWithAvailableRooms(excludedRooms = []) {
   return roomFloorOptions.filter(
     (floor) => getRoomOptionsForFloor(floor.value, excludedRooms).length > 0,
@@ -774,19 +932,24 @@ export default function OperationsPanel({
     [operations?.cleanedRoomNumbers],
   );
   const canViewCleanedRooms = access.canEditFrontOffice || access.canEditHousekeeping;
+  const canViewBreakfastBoard =
+    profile?.departmentKey === "food_beverages" || profile?.isSuperAdmin;
   const [frontOfficeSaving, setFrontOfficeSaving] = useState(false);
   const [housekeepingSaving, setHousekeepingSaving] = useState(false);
   const [breakfastIncluded, setBreakfastIncluded] = useState(false);
   const [breakfastCount, setBreakfastCount] = useState("1");
   const [stayDuration, setStayDuration] = useState("1");
+  const [guestType, setGuestType] = useState("walk_in");
   const [selectedOccupiedFloor, setSelectedOccupiedFloor] = useState("");
   const [selectedOccupiedRoom, setSelectedOccupiedRoom] = useState("");
   const [selectedCheckoutFloor, setSelectedCheckoutFloor] = useState("");
   const [selectedCheckoutRoom, setSelectedCheckoutRoom] = useState("");
+  const [checkoutType, setCheckoutType] = useState("normal_check_out");
   const [selectedMoveFromFloor, setSelectedMoveFromFloor] = useState("");
   const [selectedMoveFromRoom, setSelectedMoveFromRoom] = useState("");
   const [selectedMoveToFloor, setSelectedMoveToFloor] = useState("");
   const [selectedMoveToRoom, setSelectedMoveToRoom] = useState("");
+  const [moveDestinationCondition, setMoveDestinationCondition] = useState("clean");
   const [selectedCleanedFloor, setSelectedCleanedFloor] = useState("");
   const [selectedCleanedRoom, setSelectedCleanedRoom] = useState("");
   const [reportStartDate, setReportStartDate] = useState(operationalDateKey);
@@ -858,7 +1021,7 @@ export default function OperationsPanel({
         .filter((room) => room.floorKey === selectedCheckoutFloor)
         .map((room) => ({
           value: room.roomNumber,
-          label: `${room.roomNumber} - ${room.remainingDays ?? room.bookedDays ?? 1} day(s) left`,
+          label: `${room.roomNumber} - booked for ${room.bookedDays ?? room.remainingDays ?? 1} day(s)`,
         })),
     [occupiedRooms, selectedCheckoutFloor],
   );
@@ -868,7 +1031,7 @@ export default function OperationsPanel({
         .filter((room) => room.floorKey === selectedMoveFromFloor)
         .map((room) => ({
           value: room.roomNumber,
-          label: `${room.roomNumber} - ${room.remainingDays ?? room.bookedDays ?? 1} day(s) left`,
+          label: `${room.roomNumber} - booked for ${room.bookedDays ?? room.remainingDays ?? 1} day(s)`,
         })),
     [occupiedRooms, selectedMoveFromFloor],
   );
@@ -938,6 +1101,10 @@ export default function OperationsPanel({
   );
   const cleanedReportLines = useMemo(
     () => buildCleanedRoomsReportLines(operations),
+    [operations],
+  );
+  const breakfastSummaryLines = useMemo(
+    () => buildBreakfastSummaryLines(operations),
     [operations],
   );
 
@@ -1066,6 +1233,9 @@ export default function OperationsPanel({
       setBreakfastIncluded(false);
       setBreakfastCount("1");
       setStayDuration("1");
+      setGuestType("walk_in");
+      setCheckoutType("normal_check_out");
+      setMoveDestinationCondition("clean");
       setFeedback((current) => ({
         ...current,
         frontOffice: { type: "success", message },
@@ -1117,6 +1287,11 @@ export default function OperationsPanel({
       ? Math.max(Number(breakfastCount) || 0, 1)
       : 0;
     const nextStayDuration = Math.max(Number(stayDuration) || 1, 1);
+    const hotelHour = getHotelHour(new Date());
+    const checkInCategory = hotelHour >= 5 && hotelHour < 9
+      ? "early_check_in"
+      : "normal_check_in";
+    const activityCreatedAt = new Date().toISOString();
 
     const nextOccupiedRooms = [
       ...occupiedRooms.filter((room) => room.roomNumber !== selectedOccupiedRoom),
@@ -1126,6 +1301,8 @@ export default function OperationsPanel({
         breakfastCount: nextBreakfastCount,
         bookedDays: nextStayDuration,
         bookedOnDateKey: operations?.operationalDateKey ?? getOperationalDateKey(),
+        guestType,
+        checkInCategory,
       },
     ];
 
@@ -1135,6 +1312,40 @@ export default function OperationsPanel({
         cleanedRoomNumbers: cleanedRoomNumbers.filter(
           (roomNumber) => roomNumber !== selectedOccupiedRoom,
         ),
+        activityEntries: [
+          {
+            id: `activity-${Date.now()}`,
+            actionType: "check_in",
+            operationalDateKey,
+            createdAt: activityCreatedAt,
+            roomNumber: selectedOccupiedRoom,
+            breakfastCount: nextBreakfastCount,
+            bookedDays: nextStayDuration,
+            guestType,
+            checkInCategory,
+            actorName: profile?.fullName ?? "",
+            actorDepartment: profile?.departmentName ?? "",
+          },
+          ...(operations?.activityEntries ?? []),
+        ],
+        activityEntry: {
+          area: "front_office",
+          actionType: "check_in",
+          message: `${selectedOccupiedRoom} checked in as ${guestType === "corporate" ? "Corporate" : "Walk in"}${checkInCategory === "early_check_in" ? " (early check in)" : ""}.`,
+          targetRoomNumber: selectedOccupiedRoom,
+          metadata: {
+            breakfastCount: nextBreakfastCount,
+            bookedDays: nextStayDuration,
+            guestType,
+            checkInCategory,
+          },
+        },
+        notificationEntry: {
+          audienceTag: "operations",
+          title: "Front Office update",
+          message: `${selectedOccupiedRoom} was checked in${checkInCategory === "early_check_in" ? " as an early check in" : ""}.`,
+          relatedRoomNumber: selectedOccupiedRoom,
+        },
       },
       `${selectedOccupiedRoom} checked in.`,
     );
@@ -1147,9 +1358,39 @@ export default function OperationsPanel({
       return;
     }
 
+    const activityCreatedAt = new Date().toISOString();
+
     await saveFrontOffice(
       {
         occupiedRooms: occupiedRooms.filter((room) => room.roomNumber !== selectedCheckoutRoom),
+        activityEntries: [
+          {
+            id: `activity-${Date.now()}`,
+            actionType: "check_out",
+            operationalDateKey,
+            createdAt: activityCreatedAt,
+            roomNumber: selectedCheckoutRoom,
+            checkoutCategory: checkoutType,
+            actorName: profile?.fullName ?? "",
+            actorDepartment: profile?.departmentName ?? "",
+          },
+          ...(operations?.activityEntries ?? []),
+        ],
+        activityEntry: {
+          area: "front_office",
+          actionType: "check_out",
+          message: `${selectedCheckoutRoom} checked out${checkoutType === "late_check_out" ? " (late check out)" : ""}.`,
+          targetRoomNumber: selectedCheckoutRoom,
+          metadata: {
+            checkoutType,
+          },
+        },
+        notificationEntry: {
+          audienceTag: "operations",
+          title: "Front Office update",
+          message: `${selectedCheckoutRoom} was checked out${checkoutType === "late_check_out" ? " as a late check out" : ""}.`,
+          relatedRoomNumber: selectedCheckoutRoom,
+        },
       },
       `${selectedCheckoutRoom} checked out.`,
     );
@@ -1184,8 +1425,10 @@ export default function OperationsPanel({
         fromRoomNumber: selectedMoveFromRoom,
         toRoomNumber: selectedMoveToRoom,
         movedAt,
+        createdAt: movedAt,
         movedByName: profile?.fullName ?? "",
         movedByDepartment: profile?.departmentName ?? "",
+        destinationCondition: moveDestinationCondition,
       },
       ...(operations?.roomMoves ?? []),
     ];
@@ -1198,6 +1441,8 @@ export default function OperationsPanel({
         breakfastCount: sourceRoom.breakfastCount ?? 0,
         bookedDays: sourceRoom.bookedDays ?? sourceRoom.remainingDays ?? 1,
         bookedOnDateKey: sourceRoom.bookedOnDateKey ?? operationalDateKey,
+        guestType: sourceRoom.guestType ?? "walk_in",
+        checkInCategory: sourceRoom.checkInCategory ?? "normal_check_in",
       },
     ];
 
@@ -1208,6 +1453,37 @@ export default function OperationsPanel({
           (roomNumber) => roomNumber !== selectedMoveToRoom,
         ),
         roomMoves: nextRoomMoves,
+        activityEntries: [
+          {
+            id: `activity-${Date.now()}`,
+            actionType: "room_move",
+            operationalDateKey,
+            createdAt: movedAt,
+            fromRoomNumber: selectedMoveFromRoom,
+            toRoomNumber: selectedMoveToRoom,
+            destinationCondition: moveDestinationCondition,
+            actorName: profile?.fullName ?? "",
+            actorDepartment: profile?.departmentName ?? "",
+          },
+          ...(operations?.activityEntries ?? []),
+        ],
+        activityEntry: {
+          area: "front_office",
+          actionType: "room_move",
+          message: `${selectedMoveFromRoom} moved to ${selectedMoveToRoom} (${moveDestinationCondition}).`,
+          targetRoomNumber: selectedMoveToRoom,
+          metadata: {
+            fromRoomNumber: selectedMoveFromRoom,
+            toRoomNumber: selectedMoveToRoom,
+            destinationCondition: moveDestinationCondition,
+          },
+        },
+        notificationEntry: {
+          audienceTag: "operations",
+          title: "Room move",
+          message: `${selectedMoveFromRoom} was moved to ${selectedMoveToRoom} (${moveDestinationCondition}).`,
+          relatedRoomNumber: selectedMoveToRoom,
+        },
       },
       `${selectedMoveFromRoom} moved to ${selectedMoveToRoom}.`,
     );
@@ -1223,6 +1499,18 @@ export default function OperationsPanel({
     await saveHousekeeping(
       {
         cleanedRoomNumbers: [...cleanedRoomNumbers, selectedCleanedRoom],
+        activityEntry: {
+          area: "housekeeping",
+          actionType: "cleaned_room_publish",
+          message: `${selectedCleanedRoom} was published as freshly cleaned.`,
+          targetRoomNumber: selectedCleanedRoom,
+        },
+        notificationEntry: {
+          audienceTag: "operations",
+          title: "Freshly cleaned room",
+          message: `${selectedCleanedRoom} was published as freshly cleaned.`,
+          relatedRoomNumber: selectedCleanedRoom,
+        },
       },
       `${selectedCleanedRoom} marked as cleaned.`,
     );
@@ -1232,6 +1520,12 @@ export default function OperationsPanel({
     await saveHousekeeping(
       {
         cleanedRoomNumbers: cleanedRoomNumbers.filter((item) => item !== roomNumber),
+        activityEntry: {
+          area: "housekeeping",
+          actionType: "cleaned_room_clear",
+          message: `${roomNumber} was removed from freshly cleaned rooms.`,
+          targetRoomNumber: roomNumber,
+        },
       },
       `${roomNumber} removed from cleaned rooms.`,
     );
@@ -1304,6 +1598,31 @@ export default function OperationsPanel({
             />
           ) : null}
 
+          {canViewBreakfastBoard ? (
+            <ReportActionGroup
+              title="F&B Breakfast Summary"
+              actions={[
+                {
+                  label: "Print breakfast summary",
+                  onClick: () =>
+                    printTextReport(
+                      "Sunshine Hotel F&B Breakfast Summary",
+                      breakfastSummaryLines,
+                    ),
+                },
+                {
+                  label: "Download PDF",
+                  onClick: () =>
+                    downloadPdf(
+                      "sunshine-f-and-b-breakfast-summary.pdf",
+                      "Sunshine Hotel F&B Breakfast Summary",
+                      breakfastSummaryLines,
+                    ),
+                },
+              ]}
+            />
+          ) : null}
+
           {access.canEditFrontOffice ? (
             <>
               <ReportActionGroup
@@ -1358,6 +1677,13 @@ export default function OperationsPanel({
 
       <div className="mt-6 space-y-4">
         <OccupiedRoomsOverview sections={occupiedSections} />
+        {canViewBreakfastBoard ? (
+          <BreakfastSummaryBoard
+            sections={occupiedSections}
+            breakfastTotal={operations?.breakfastEntitled ?? 0}
+            inHouse={operations?.inHouse ?? 0}
+          />
+        ) : null}
         {canViewCleanedRooms ? (
           <CleanedRoomsOverview
             sections={cleanedSections}
@@ -1394,7 +1720,7 @@ export default function OperationsPanel({
                   />
                 </div>
 
-                <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <label className="field">
                     <span>Booked for</span>
                     <select
@@ -1407,6 +1733,18 @@ export default function OperationsPanel({
                           {dayCount} day{dayCount === 1 ? "" : "s"}
                         </option>
                       ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Guest type</span>
+                    <select
+                      value={guestType}
+                      onChange={(event) => setGuestType(event.target.value)}
+                      disabled={frontOfficeSaving}
+                    >
+                      <option value="walk_in">Walk in</option>
+                      <option value="corporate">Corporate</option>
                     </select>
                   </label>
 
@@ -1485,6 +1823,20 @@ export default function OperationsPanel({
                   />
                 </div>
 
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="field">
+                    <span>Checkout type</span>
+                    <select
+                      value={checkoutType}
+                      onChange={(event) => setCheckoutType(event.target.value)}
+                      disabled={frontOfficeSaving}
+                    >
+                      <option value="normal_check_out">Normal check out</option>
+                      <option value="late_check_out">Late check out</option>
+                    </select>
+                  </label>
+                </div>
+
                 <button
                   type="submit"
                   disabled={frontOfficeSaving || !selectedCheckoutFloor || !selectedCheckoutRoom}
@@ -1535,6 +1887,20 @@ export default function OperationsPanel({
                     rooms={availableMoveToRooms}
                     disabled={frontOfficeSaving || !selectedMoveToFloor}
                   />
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="field">
+                    <span>Destination condition</span>
+                    <select
+                      value={moveDestinationCondition}
+                      onChange={(event) => setMoveDestinationCondition(event.target.value)}
+                      disabled={frontOfficeSaving}
+                    >
+                      <option value="clean">Clean</option>
+                      <option value="dirty">Dirty</option>
+                    </select>
+                  </label>
                 </div>
 
                 <button

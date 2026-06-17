@@ -7,6 +7,7 @@ import { getManagerWorkspaceAccess } from "@/lib/roles";
 const emptyEventForm = {
   eventDate: "",
   venue: "",
+  otherVenue: "",
   eventType: "",
   expectedGuests: "",
   cateringServices: "",
@@ -16,6 +17,18 @@ const emptyEventForm = {
   soundSystemRequired: "no",
   staffInCharge: "",
 };
+
+const venueOptions = [
+  "DA Nwandu hall",
+  "Skyview hall",
+  "Ekwy Restaurant",
+  "Courtyard",
+  "Skyview lounge",
+  "Skyview Courtyard",
+  "Tropics",
+  "Restaurant",
+  "others",
+];
 
 function formatEventDate(value) {
   if (!value) {
@@ -74,7 +87,7 @@ export default function EventsBookingsPanel({
       {
         id: eventId,
         eventDate: eventForm.eventDate,
-        venue: eventForm.venue,
+        venue: eventForm.venue === "others" ? eventForm.otherVenue : eventForm.venue,
         eventType: eventForm.eventType,
         expectedGuests: eventForm.expectedGuests,
         cateringServices: eventForm.cateringServices,
@@ -223,15 +236,34 @@ export default function EventsBookingsPanel({
 
               <label className="field">
                 <span>Venue</span>
-                <input
-                  type="text"
+                <select
                   value={eventForm.venue}
                   onChange={(event) => updateEventForm("venue", event.target.value)}
                   disabled={saving}
                   required
-                />
+                >
+                  <option value="">Select venue</option>
+                  {venueOptions.map((venueOption) => (
+                    <option key={venueOption} value={venueOption}>
+                      {venueOption}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
+
+            {eventForm.venue === "others" ? (
+              <label className="field">
+                <span>Type venue name</span>
+                <input
+                  type="text"
+                  value={eventForm.otherVenue}
+                  onChange={(event) => updateEventForm("otherVenue", event.target.value)}
+                  disabled={saving}
+                  required
+                />
+              </label>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="field">
