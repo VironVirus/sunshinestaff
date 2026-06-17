@@ -243,7 +243,6 @@ function buildCheckInReportLines(operations, targetDateKey) {
         entry.checkInCategory === "early_check_in" ? "EARLY CHECK IN" : "Check in",
         entry.guestType === "corporate" ? "Corporate" : "Walk in",
         `${entry.breakfastCount ?? 0} breakfast`,
-        `${entry.bookedDays ?? 1} day(s)`,
       ].join(" - "),
       {
         bold: entry.checkInCategory === "early_check_in",
@@ -281,13 +280,12 @@ function buildOccupiedRoomSections(occupiedRooms = []) {
       .map((roomNumber, index) => {
         const room = occupiedMap.get(roomNumber);
 
-        return {
-          serialNumber: index + 1,
-          roomNumber,
-          breakfastCount: room?.breakfastIncluded ? room.breakfastCount ?? 0 : 0,
-          remainingDays: room?.remainingDays ?? room?.bookedDays ?? 1,
-        };
-      });
+      return {
+        serialNumber: index + 1,
+        roomNumber,
+        breakfastCount: room?.breakfastIncluded ? room.breakfastCount ?? 0 : 0,
+      };
+    });
 
     return {
       key: group.key,
@@ -566,20 +564,6 @@ function RoomSelect({ label, value, onChange, rooms, disabled }) {
   );
 }
 
-function FloorBoardTab({ active, label, count, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`mobile-section-tab ${
-        active ? "mobile-section-tab-active" : ""
-      }`}
-    >
-      {label} ({count})
-    </button>
-  );
-}
-
 function ReportActionGroup({ title, actions }) {
   return (
     <div className="subpanel no-print">
@@ -653,7 +637,7 @@ function OccupiedRoomsOverview({ sections }) {
       </div>
 
       {visibleSections.length > 0 ? (
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="mt-4 space-y-4">
           {visibleSections.map((section) => (
             <div
               key={section.key}
@@ -666,20 +650,15 @@ function OccupiedRoomsOverview({ sections }) {
                 </span>
               </div>
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {section.rooms.map((room) => (
                   <div
                     key={room.roomNumber}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                   >
-                    <div>
-                      <p className="font-semibold text-[#162338]">{room.roomNumber}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Booked for {room.bookedDays ?? room.remainingDays ?? 1} day(s)
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                      Breakfast: {room.breakfastCount}
+                    <p className="font-semibold text-[#162338]">{room.roomNumber}</p>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                      {room.breakfastCount > 0 ? `Breakfast ${room.breakfastCount}` : "No breakfast"}
                     </span>
                   </div>
                 ))}
@@ -696,45 +675,6 @@ function OccupiedRoomsOverview({ sections }) {
 
 function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
   const visibleSections = sections.filter((section) => section.rooms.length > 0);
-  const [activeSectionKey, setActiveSectionKey] = useState("");
-  const [activeRoomNumber, setActiveRoomNumber] = useState("");
-  const activeSection = useMemo(
-    () =>
-      visibleSections.find((section) => section.key === activeSectionKey) ??
-      visibleSections[0] ??
-      null,
-    [activeSectionKey, visibleSections],
-  );
-  const activeRoom = useMemo(
-    () =>
-      activeSection?.rooms.find((roomNumber) => roomNumber === activeRoomNumber) ??
-      activeSection?.rooms[0] ??
-      "",
-    [activeRoomNumber, activeSection],
-  );
-
-  useEffect(() => {
-    if (visibleSections.length === 0) {
-      setActiveSectionKey("");
-      setActiveRoomNumber("");
-      return;
-    }
-
-    if (!visibleSections.some((section) => section.key === activeSectionKey)) {
-      setActiveSectionKey(visibleSections[0].key);
-    }
-  }, [activeSectionKey, visibleSections]);
-
-  useEffect(() => {
-    if (!activeSection) {
-      setActiveRoomNumber("");
-      return;
-    }
-
-    if (!activeSection.rooms.some((roomNumber) => roomNumber === activeRoomNumber)) {
-      setActiveRoomNumber(activeSection.rooms[0] ?? "");
-    }
-  }, [activeRoomNumber, activeSection]);
 
   return (
     <div className="subpanel">
@@ -751,96 +691,41 @@ function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
       </div>
 
       {visibleSections.length > 0 ? (
-        <>
-          <div className="mobile-section-tabs mt-4 no-print">
-            {visibleSections.map((section) => (
-              <FloorBoardTab
-                key={section.key}
-                active={activeSection?.key === section.key}
-                label={section.label}
-                count={section.rooms.length}
-                onClick={() => {
-                  setActiveSectionKey(section.key);
-                  setActiveRoomNumber(section.rooms[0] ?? "");
-                }}
-              />
-            ))}
-          </div>
-
-          {activeSection ? (
-            <>
-              <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50/80 p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="metric-label">Active floor</p>
-                    <h3 className="mt-2 font-display text-3xl text-[#162338]">
-                      {activeSection.label}
-                    </h3>
-                  </div>
-                  <span className="badge">{activeSection.rooms.length} room(s)</span>
-                </div>
-
-                <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {activeSection.rooms.map((roomNumber) => {
-                    const selected = activeRoom === roomNumber;
-
-                    return (
-                      <button
-                        key={roomNumber}
-                        type="button"
-                        onClick={() => setActiveRoomNumber(roomNumber)}
-                        className={`rounded-2xl border px-3 py-2 text-left transition ${
-                          selected
-                            ? "border-emerald-500 bg-emerald-600 text-white shadow-lg shadow-emerald-200/50"
-                            : "border-slate-200 bg-white text-slate-800 hover:border-emerald-300"
-                        }`}
-                      >
-                        <p className="text-sm font-semibold">{roomNumber}</p>
-                        <p
-                          className={`mt-1 text-xs ${
-                            selected ? "text-emerald-50" : "text-emerald-700"
-                          }`}
-                        >
-                          Freshly cleaned
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
+        <div className="mt-4 space-y-4">
+          {visibleSections.map((section) => (
+            <div
+              key={section.key}
+              className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold text-emerald-900">{section.label}</p>
+                <span className="text-xs font-semibold text-emerald-700">
+                  {section.rooms.length} room(s)
+                </span>
               </div>
 
-              {activeRoom ? (
-                <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="metric-label">Selected cleaned room</p>
-                      <h3 className="mt-2 font-display text-3xl text-[#162338]">
-                        {activeRoom}
-                      </h3>
-                      <p className="mt-2 text-sm text-slate-500">
-                        Ready for front office to assign.
-                      </p>
-                    </div>
-
+              <div className="mt-3 flex flex-wrap gap-2">
+                {section.rooms.map((roomNumber) => (
+                  <div
+                    key={roomNumber}
+                    className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white"
+                  >
+                    <span>{roomNumber}</span>
                     {canRemove ? (
                       <button
                         type="button"
-                        onClick={() => onRemove(activeRoom)}
-                        className="button-secondary no-print"
+                        onClick={() => onRemove(roomNumber)}
+                        className="rounded-full border border-white/40 px-1.5 py-0.5 text-[10px] font-bold text-white"
                       >
-                        Clear room
+                        x
                       </button>
-                    ) : (
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
-                        Freshly cleaned
-                      </span>
-                    )}
+                    ) : null}
                   </div>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <p className="mt-3 text-sm text-slate-500">No cleaned rooms reported.</p>
       )}
@@ -933,12 +818,13 @@ export default function OperationsPanel({
   );
   const canViewCleanedRooms = access.canEditFrontOffice || access.canEditHousekeeping;
   const canViewBreakfastBoard =
-    profile?.departmentKey === "food_beverages" || profile?.isSuperAdmin;
+    profile?.departmentKey === "food_beverages" ||
+    profile?.isSuperAdmin ||
+    access.canEditFrontOffice;
   const [frontOfficeSaving, setFrontOfficeSaving] = useState(false);
   const [housekeepingSaving, setHousekeepingSaving] = useState(false);
   const [breakfastIncluded, setBreakfastIncluded] = useState(false);
   const [breakfastCount, setBreakfastCount] = useState("1");
-  const [stayDuration, setStayDuration] = useState("1");
   const [guestType, setGuestType] = useState("walk_in");
   const [selectedOccupiedFloor, setSelectedOccupiedFloor] = useState("");
   const [selectedOccupiedRoom, setSelectedOccupiedRoom] = useState("");
@@ -1021,7 +907,7 @@ export default function OperationsPanel({
         .filter((room) => room.floorKey === selectedCheckoutFloor)
         .map((room) => ({
           value: room.roomNumber,
-          label: `${room.roomNumber} - booked for ${room.bookedDays ?? room.remainingDays ?? 1} day(s)`,
+          label: room.roomNumber,
         })),
     [occupiedRooms, selectedCheckoutFloor],
   );
@@ -1031,7 +917,7 @@ export default function OperationsPanel({
         .filter((room) => room.floorKey === selectedMoveFromFloor)
         .map((room) => ({
           value: room.roomNumber,
-          label: `${room.roomNumber} - booked for ${room.bookedDays ?? room.remainingDays ?? 1} day(s)`,
+          label: room.roomNumber,
         })),
     [occupiedRooms, selectedMoveFromFloor],
   );
@@ -1232,7 +1118,6 @@ export default function OperationsPanel({
       setSelectedMoveToRoom("");
       setBreakfastIncluded(false);
       setBreakfastCount("1");
-      setStayDuration("1");
       setGuestType("walk_in");
       setCheckoutType("normal_check_out");
       setMoveDestinationCondition("clean");
@@ -1286,7 +1171,6 @@ export default function OperationsPanel({
     const nextBreakfastCount = breakfastIncluded
       ? Math.max(Number(breakfastCount) || 0, 1)
       : 0;
-    const nextStayDuration = Math.max(Number(stayDuration) || 1, 1);
     const hotelHour = getHotelHour(new Date());
     const checkInCategory = hotelHour >= 5 && hotelHour < 9
       ? "early_check_in"
@@ -1299,7 +1183,7 @@ export default function OperationsPanel({
         roomNumber: selectedOccupiedRoom,
         breakfastIncluded,
         breakfastCount: nextBreakfastCount,
-        bookedDays: nextStayDuration,
+        bookedDays: 1,
         bookedOnDateKey: operations?.operationalDateKey ?? getOperationalDateKey(),
         guestType,
         checkInCategory,
@@ -1320,7 +1204,6 @@ export default function OperationsPanel({
             createdAt: activityCreatedAt,
             roomNumber: selectedOccupiedRoom,
             breakfastCount: nextBreakfastCount,
-            bookedDays: nextStayDuration,
             guestType,
             checkInCategory,
             actorName: profile?.fullName ?? "",
@@ -1335,7 +1218,6 @@ export default function OperationsPanel({
           targetRoomNumber: selectedOccupiedRoom,
           metadata: {
             breakfastCount: nextBreakfastCount,
-            bookedDays: nextStayDuration,
             guestType,
             checkInCategory,
           },
@@ -1720,22 +1602,7 @@ export default function OperationsPanel({
                   />
                 </div>
 
-                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <label className="field">
-                    <span>Booked for</span>
-                    <select
-                      value={stayDuration}
-                      onChange={(event) => setStayDuration(event.target.value)}
-                      disabled={frontOfficeSaving}
-                    >
-                      {Array.from({ length: 30 }, (_, index) => index + 1).map((dayCount) => (
-                        <option key={dayCount} value={String(dayCount)}>
-                          {dayCount} day{dayCount === 1 ? "" : "s"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <label className="field">
                     <span>Guest type</span>
                     <select

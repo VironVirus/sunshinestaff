@@ -316,6 +316,8 @@ export default function DashboardPage() {
                 <HousekeepingStatusPanel
                   profile={profile}
                   housekeepingReports={housekeepingReports}
+                  propertyStatus={propertyStatus}
+                  operations={operations}
                   onSaveHousekeepingReports={saveHousekeepingReports}
                 />
               ),

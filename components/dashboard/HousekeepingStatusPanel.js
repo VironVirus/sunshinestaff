@@ -109,6 +109,42 @@ function buildReportLines({ periodLabel, operationalDateKey, sections, summary }
   return lines;
 }
 
+function buildCheckedOutRoomsLines(operations, operationalDateKey) {
+  const checkedOutEntries = (operations?.activityEntries ?? []).filter(
+    (entry) =>
+      entry?.actionType === "check_out" && entry?.operationalDateKey === operationalDateKey,
+  );
+
+  if (checkedOutEntries.length === 0) {
+    return ["None"];
+  }
+
+  return checkedOutEntries.map((entry, index) => {
+    const suffix =
+      entry.checkoutCategory === "late_check_out" ? " - Late check out" : "";
+
+    return `${index + 1}. ${entry.roomNumber}${suffix}`;
+  });
+}
+
+function buildOpenRoomIssuesLines(propertyStatus) {
+  const roomIssues = propertyStatus?.roomIssues ?? [];
+
+  if (roomIssues.length === 0) {
+    return ["None"];
+  }
+
+  return roomIssues.map((roomIssue, index) => {
+    const details = [
+      `${index + 1}. ${roomIssue.roomNumber}`,
+      roomIssue.issueNote,
+      roomIssue.updatedByName ? `Updated by ${roomIssue.updatedByName}` : "",
+    ].filter(Boolean);
+
+    return details.join(" - ");
+  });
+}
+
 function getStatusBadgeClass(status) {
   switch (status) {
     case "occupied":
@@ -183,6 +219,8 @@ function StatusBadge({ status, statusLabel }) {
 export default function HousekeepingStatusPanel({
   profile,
   housekeepingReports,
+  propertyStatus,
+  operations,
   onSaveHousekeepingReports,
 }) {
   const access = getHousekeepingReportAccess(profile);
@@ -240,8 +278,21 @@ export default function HousekeepingStatusPanel({
         operationalDateKey: housekeepingReports?.operationalDateKey,
         sections,
         summary,
-      }),
-    [housekeepingReports?.operationalDateKey, reportLabel, sections, summary],
+      }).concat([
+        "Checked out rooms:",
+        ...buildCheckedOutRoomsLines(operations, housekeepingReports?.operationalDateKey),
+        "",
+        "Open room issues:",
+        ...buildOpenRoomIssuesLines(propertyStatus),
+      ]),
+    [
+      housekeepingReports?.operationalDateKey,
+      operations,
+      propertyStatus,
+      reportLabel,
+      sections,
+      summary,
+    ],
   );
 
   useEffect(() => {
