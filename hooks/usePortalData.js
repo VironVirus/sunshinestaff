@@ -27,6 +27,7 @@ import {
 import { defaultStoreInventory, mergeStoreInventory } from "@/data/storeInventory";
 import { defaultNightDutyData, mergeNightDutyData } from "@/data/nightDuty";
 import { db, hasFirebaseConfig } from "@/lib/firebase";
+import { getOperationalDateKey } from "@/lib/hotelTime";
 import {
   getAuditLogAccess,
   getHousekeepingReportAccess,
