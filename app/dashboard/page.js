@@ -197,6 +197,11 @@ export default function DashboardPage() {
   const canViewStorePanel = managerWorkspaceAccess.canViewStore;
   const canViewHousekeepingReports = housekeepingReportAccess.canViewPanel;
   const canViewNightDutyPanel = nightDutyAccess.canViewPanel;
+  const canViewBreakfastPage =
+    profile?.departmentKey === "food_beverages" ||
+    profile?.departmentKey === "night_duty" ||
+    profile?.isSuperAdmin ||
+    operationsAccess.canEditFrontOffice;
   const myShiftsCount = departmentShifts.filter((shift) => shift.userId === profile?.uid).length;
   const visibleNotifications = useMemo(
     () => (notifications ?? []).filter((notification) => canSeeNotification(notification, profile)),
@@ -465,11 +470,15 @@ export default function DashboardPage() {
                 />
               ),
             },
-            {
-              key: "breakfast",
-              label: "Breakfast List",
-              content: <BreakfastSummaryPanel operations={operations} />,
-            },
+            ...(canViewBreakfastPage
+              ? [
+                  {
+                    key: "breakfast",
+                    label: "Breakfast List",
+                    content: <BreakfastSummaryPanel operations={operations} />,
+                  },
+                ]
+              : []),
           ]
         : []),
       ...(propertyAccess.canViewPanel

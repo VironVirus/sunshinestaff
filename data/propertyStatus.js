@@ -37,6 +37,7 @@ export const propertyUtilityFields = [
 ];
 
 export const roomComplaintOptions = [
+  { value: "out_of_order", label: "Out of Order" },
   { value: "ac_issue", label: "Air Conditioner Issue" },
   { value: "tv_issue", label: "TV Issue" },
   { value: "internet_issue", label: "Internet Issue" },
@@ -116,6 +117,36 @@ export function normalizeRoomIssues(roomIssues = []) {
     .map(({ sortOrder, ...roomIssue }) => roomIssue);
 }
 
+function deriveRoomIssuesFromComplaints(roomComplaints = []) {
+  const outOfOrderMap = new Map();
+
+  roomComplaints.forEach((complaintEntry) => {
+    if (
+      complaintEntry.complaintType !== "out_of_order" ||
+      complaintEntry.resolvedAt
+    ) {
+      return;
+    }
+
+    outOfOrderMap.set(complaintEntry.roomNumber, {
+      roomNumber: complaintEntry.roomNumber,
+      floorKey: complaintEntry.floorKey,
+      floorLabel: complaintEntry.floorLabel,
+      outOfOrder: true,
+      issueNote: complaintEntry.complaintNote,
+      updatedByName: complaintEntry.updatedByName,
+      updatedByDepartment: complaintEntry.updatedByDepartment,
+    });
+  });
+
+  return [...outOfOrderMap.values()].sort((left, right) => {
+    const leftOrder = getRoomRecord(left.roomNumber)?.sortOrder ?? 0;
+    const rightOrder = getRoomRecord(right.roomNumber)?.sortOrder ?? 0;
+
+    return leftOrder - rightOrder;
+  });
+}
+
 export function normalizeRoomComplaints(roomComplaints = []) {
   return roomComplaints
     .map((complaintEntry) => {
@@ -150,11 +181,27 @@ export function normalizeRoomComplaints(roomComplaints = []) {
 }
 
 export function mergePropertyStatus(payload = {}) {
+  const normalizedComplaints = normalizeRoomComplaints(payload.roomComplaints ?? []);
+  const legacyRoomIssues = normalizeRoomIssues(payload.roomIssues ?? []);
+  const complaintDerivedRoomIssues = deriveRoomIssuesFromComplaints(normalizedComplaints);
+  const mergedRoomIssueMap = new Map(
+    legacyRoomIssues.map((roomIssue) => [roomIssue.roomNumber, roomIssue]),
+  );
+
+  complaintDerivedRoomIssues.forEach((roomIssue) => {
+    mergedRoomIssueMap.set(roomIssue.roomNumber, roomIssue);
+  });
+
   return {
     ...defaultPropertyStatus,
     ...payload,
-    roomIssues: normalizeRoomIssues(payload.roomIssues ?? []),
-    roomComplaints: normalizeRoomComplaints(payload.roomComplaints ?? []),
+    roomIssues: [...mergedRoomIssueMap.values()].sort((left, right) => {
+      const leftOrder = getRoomRecord(left.roomNumber)?.sortOrder ?? 0;
+      const rightOrder = getRoomRecord(right.roomNumber)?.sortOrder ?? 0;
+
+      return leftOrder - rightOrder;
+    }),
+    roomComplaints: normalizedComplaints,
     utilities: {
       ...defaultUtilities,
       ...(payload.utilities ?? {}),

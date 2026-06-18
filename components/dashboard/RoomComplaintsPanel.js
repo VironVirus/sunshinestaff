@@ -80,13 +80,46 @@ export default function RoomComplaintsPanel({
   onSaveRoomComplaints,
 }) {
   const access = getPropertyAccess(profile);
+  const roomIssues = useMemo(
+    () => propertyStatus?.roomIssues ?? [],
+    [propertyStatus?.roomIssues],
+  );
   const roomComplaints = useMemo(
     () => propertyStatus?.roomComplaints ?? [],
     [propertyStatus?.roomComplaints],
   );
+  const legacyOutOfOrderComplaints = useMemo(() => {
+    const roomsWithOutOfOrderComplaint = new Set(
+      roomComplaints
+        .filter(
+          (complaint) =>
+            complaint.complaintType === "out_of_order" && !complaint.resolvedAt,
+        )
+        .map((complaint) => complaint.roomNumber),
+    );
+
+    return roomIssues
+      .filter((roomIssue) => !roomsWithOutOfOrderComplaint.has(roomIssue.roomNumber))
+      .map((roomIssue) => ({
+        id: `legacy-out-of-order-${roomIssue.roomNumber}`,
+        roomNumber: roomIssue.roomNumber,
+        floorKey: roomIssue.floorKey,
+        floorLabel: roomIssue.floorLabel,
+        complaintType: "out_of_order",
+        complaintNote: roomIssue.issueNote ?? "",
+        reportedAt: "",
+        resolvedAt: "",
+        updatedByName: roomIssue.updatedByName ?? "",
+        updatedByDepartment: roomIssue.updatedByDepartment ?? "",
+        legacyRoomIssue: true,
+      }));
+  }, [roomComplaints, roomIssues]);
   const activeRoomComplaints = useMemo(
-    () => roomComplaints.filter((complaint) => !complaint.resolvedAt),
-    [roomComplaints],
+    () => [
+      ...roomComplaints.filter((complaint) => !complaint.resolvedAt),
+      ...legacyOutOfOrderComplaints,
+    ],
+    [legacyOutOfOrderComplaints, roomComplaints],
   );
   const groupedActiveComplaints = useMemo(
     () => groupActiveComplaints(activeRoomComplaints),
@@ -104,6 +137,13 @@ export default function RoomComplaintsPanel({
     () => complaintSections.filter((section) => section.rooms.length > 0).length,
     [complaintSections],
   );
+  const outOfOrderCount = useMemo(
+    () =>
+      activeRoomComplaints.filter((complaint) => complaint.complaintType === "out_of_order")
+        .length,
+    [activeRoomComplaints],
+  );
+  const [activeFloorKey, setActiveFloorKey] = useState("");
   const [selectedFloor, setSelectedFloor] = useState("");
   const [selectedRoom, setSelectedRoom] = useState("");
   const [selectedComplaintTypes, setSelectedComplaintTypes] = useState([]);
@@ -125,9 +165,23 @@ export default function RoomComplaintsPanel({
     }
   }, [roomOptions, selectedRoom]);
 
+  useEffect(() => {
+    const firstActiveFloorKey =
+      complaintSections.find((section) => section.rooms.length > 0)?.key ??
+      complaintSections[0]?.key ??
+      "";
+
+    if (!activeFloorKey || !complaintSections.some((section) => section.key === activeFloorKey)) {
+      setActiveFloorKey(firstActiveFloorKey);
+    }
+  }, [activeFloorKey, complaintSections]);
+
   if (!access.canViewComplaints) {
     return null;
   }
+
+  const activeFloorSection =
+    complaintSections.find((section) => section.key === activeFloorKey) ?? complaintSections[0];
 
   function toggleComplaintType(value) {
     setSelectedComplaintTypes((current) =>
@@ -137,13 +191,14 @@ export default function RoomComplaintsPanel({
     );
   }
 
-  async function saveComplaints(nextRoomComplaints, message) {
+  async function saveComplaints(nextRoomComplaints, nextRoomIssues, message) {
     setSaving(true);
     setFeedback({ type: "", message: "" });
 
     try {
       await onSaveRoomComplaints({
         roomComplaints: nextRoomComplaints,
+        roomIssues: nextRoomIssues,
       });
       setFeedback({ type: "success", message });
     } catch (error) {
@@ -193,6 +248,7 @@ export default function RoomComplaintsPanel({
 
     await saveComplaints(
       nextRoomComplaints,
+      roomIssues,
       `${selectedRoom} complaint${nextComplaintTypes.length > 1 ? "s" : ""} added.`,
     );
     setSelectedRoom("");
@@ -201,15 +257,25 @@ export default function RoomComplaintsPanel({
   }
 
   async function handleClearComplaint(complaintId, roomNumber) {
+    const isLegacyRoomIssue = complaintId.startsWith("legacy-out-of-order-");
+    const complaintToClear = activeRoomComplaints.find((complaint) => complaint.id === complaintId);
+    const shouldRemoveRoomIssue =
+      isLegacyRoomIssue || complaintToClear?.complaintType === "out_of_order";
+
     await saveComplaints(
-      roomComplaints.map((complaint) =>
-        complaint.id === complaintId
-          ? {
-              ...complaint,
-              resolvedAt: new Date().toISOString(),
-            }
-          : complaint,
-      ),
+      isLegacyRoomIssue
+        ? roomComplaints
+        : roomComplaints.map((complaint) =>
+            complaint.id === complaintId
+              ? {
+                  ...complaint,
+                  resolvedAt: new Date().toISOString(),
+                }
+              : complaint,
+          ),
+      shouldRemoveRoomIssue
+        ? roomIssues.filter((roomIssue) => roomIssue.roomNumber !== roomNumber)
+        : roomIssues,
       `${roomNumber} complaint cleared.`,
     );
   }
@@ -217,7 +283,7 @@ export default function RoomComplaintsPanel({
   return (
     <section className="panel p-6">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="section-title">Room Complaints</h2>
+        <h2 className="section-title">Room Issues</h2>
         <span className="badge">{activeRoomComplaints.length} active</span>
       </div>
 
@@ -231,58 +297,86 @@ export default function RoomComplaintsPanel({
           <span className="metric-value">{activeComplaintRooms}</span>
         </div>
         <div className="subpanel">
-          <span className="metric-label">Floors affected</span>
-          <span className="metric-value">{floorsWithComplaints}</span>
+          <span className="metric-label">Out of order</span>
+          <span className="metric-value">{outOfOrderCount}</span>
         </div>
       </div>
 
       <div className="subpanel mt-6">
         <div className="flex items-center justify-between gap-3">
-          <p className="metric-label">Complaint dashboard</p>
-          <span className="badge">{floorsWithComplaints} floor(s)</span>
+          <p className="metric-label">Issue dashboard</p>
+          <span className="badge">{floorsWithComplaints} floor(s) active</span>
         </div>
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
           {complaintSections.map((section) => (
-            <div
+            <button
               key={section.key}
-              className={`rounded-2xl border p-3 ${
-                section.rooms.length > 0
-                  ? "border-amber-200 bg-amber-50/70"
-                  : "border-slate-200 bg-slate-50/70"
+              type="button"
+              onClick={() => setActiveFloorKey(section.key)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                activeFloorKey === section.key
+                  ? "border-[#162338] bg-[#162338] text-white"
+                  : section.rooms.length > 0
+                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                    : "border-slate-200 bg-white text-slate-500"
               }`}
             >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[#162338]">{section.label}</p>
-                <span className="text-[11px] font-semibold text-slate-500">
-                  {section.complaintsCount} issue(s)
-                </span>
-              </div>
+              {section.label} ({section.complaintsCount})
+            </button>
+          ))}
+        </div>
 
-              {section.rooms.length > 0 ? (
-                <div className="mt-3 max-h-[18rem] space-y-2 overflow-y-auto pr-1">
-                  {section.rooms.map((roomGroup) => (
-                    <div
-                      key={roomGroup.roomNumber}
-                      className="rounded-xl border border-white/90 bg-white/95 px-3 py-2.5 shadow-sm"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="rounded-full bg-[#162338] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-white">
-                          {roomGroup.roomNumber}
-                        </span>
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          {roomGroup.complaints.length} issue(s)
-                        </span>
-                      </div>
+        {activeFloorSection ? (
+          <div
+            className={`mt-4 rounded-2xl border p-3 ${
+              activeFloorSection.rooms.length > 0
+                ? "border-amber-200 bg-amber-50/70"
+                : "border-slate-200 bg-slate-50/70"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[#162338]">{activeFloorSection.label}</p>
+              <span className="text-[11px] font-semibold text-slate-500">
+                {activeFloorSection.complaintsCount} issue(s)
+              </span>
+            </div>
 
-                      <div className="mt-2 space-y-2">
-                        {roomGroup.complaints.map((complaint) => (
+            {activeFloorSection.rooms.length > 0 ? (
+              <div className="mt-3 max-h-[24rem] space-y-2 overflow-y-auto pr-1">
+                {activeFloorSection.rooms.map((roomGroup) => (
+                  <div
+                    key={roomGroup.roomNumber}
+                    className="rounded-xl border border-white/90 bg-white/95 px-3 py-2 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="rounded-full bg-[#162338] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-white">
+                        {roomGroup.roomNumber}
+                      </span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        {roomGroup.complaints.length} issue(s)
+                      </span>
+                    </div>
+
+                    <div className="mt-2 space-y-1.5">
+                      {roomGroup.complaints.map((complaint) => {
+                        const isOutOfOrder = complaint.complaintType === "out_of_order";
+
+                        return (
                           <div
                             key={complaint.id}
-                            className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-2"
+                            className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 ${
+                              isOutOfOrder
+                                ? "border-rose-200 bg-rose-50/90"
+                                : "border-amber-200 bg-amber-50/80"
+                            }`}
                           >
                             <div className="min-w-0 flex-1">
-                              <p className="text-[11px] font-semibold text-slate-800">
+                              <p
+                                className={`text-[11px] font-semibold ${
+                                  isOutOfOrder ? "text-rose-900" : "text-slate-800"
+                                }`}
+                              >
                                 {getRoomComplaintLabel(complaint.complaintType)}
                               </p>
                               {complaint.complaintNote ? (
@@ -308,28 +402,32 @@ export default function RoomComplaintsPanel({
                                   handleClearComplaint(complaint.id, complaint.roomNumber)
                                 }
                                 disabled={saving}
-                                className="rounded-full border border-amber-300 bg-white px-2 py-1 text-[10px] font-semibold text-amber-900 transition hover:bg-amber-100"
+                                className={`rounded-full bg-white px-2 py-1 text-[10px] font-semibold transition ${
+                                  isOutOfOrder
+                                    ? "border border-rose-300 text-rose-900 hover:bg-rose-100"
+                                    : "border border-amber-300 text-amber-900 hover:bg-amber-100"
+                                }`}
                               >
                                 Clear
                               </button>
                             ) : null}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-3 text-xs text-slate-500">No active complaints.</p>
-              )}
-            </div>
-          ))}
-        </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-slate-500">No active issues on this floor.</p>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {access.canEditComplaints ? (
         <form onSubmit={handleSubmit} className="subpanel mt-6 no-print">
-          <p className="metric-label">Log complaint</p>
+          <p className="metric-label">Log room issue</p>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="field">
@@ -369,7 +467,7 @@ export default function RoomComplaintsPanel({
           </div>
 
           <div className="mt-4">
-            <span className="text-sm font-medium text-slate-700">Complaint issues</span>
+            <span className="text-sm font-medium text-slate-700">Issue types</span>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {roomComplaintOptions.map((option) => {
                 const checked = selectedComplaintTypes.includes(option.value);

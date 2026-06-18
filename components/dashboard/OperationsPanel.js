@@ -501,37 +501,6 @@ function buildCleanedRoomsReportLines(operations) {
   return lines;
 }
 
-function buildBreakfastSummaryLines(operations) {
-  const operationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
-  const rooms = buildOccupiedRoomSections(
-    operations?.occupiedRooms ?? [],
-    operationalDateKey,
-  ).flatMap((section) => section.rooms);
-  const lines = [
-    "Sunshine Hotel F&B Breakfast Summary",
-    `Operational day: ${formatDateKey(operationalDateKey)}`,
-    `Generated: ${formatFriendlyDate(new Date(), {
-      dateStyle: "full",
-      timeStyle: "short",
-    })}`,
-    "",
-    `Summary: ${operations?.inHouse ?? 0} occupied room(s), ${operations?.breakfastEntitled ?? 0} people entitled to breakfast`,
-    "",
-  ];
-
-  if (rooms.length === 0) {
-    lines.push("No occupied rooms.");
-    return lines;
-  }
-
-  lines.push("S/N | Room | Breakfast");
-  rooms.forEach((room, index) => {
-    lines.push(`${index + 1} | ${room.roomNumber} | ${room.breakfastCount}`);
-  });
-
-  return lines;
-}
-
 function MetricTile({ metricKey, operations }) {
   const metric = operationsMetricConfig[metricKey];
 
@@ -641,68 +610,6 @@ function ReportRangeActionGroup({
   );
 }
 
-function OccupiedRoomsOverview({ sections }) {
-  const visibleSections = sections.filter((section) => section.rooms.length > 0);
-
-  return (
-    <div className="subpanel">
-      <div className="flex items-center justify-between gap-3">
-        <p className="metric-label">Occupied rooms</p>
-        <span className="badge">
-          {visibleSections.reduce((total, section) => total + section.rooms.length, 0)}
-        </span>
-      </div>
-
-      {visibleSections.length > 0 ? (
-        <div className="mt-4 max-h-[32rem] space-y-3 overflow-y-auto pr-1">
-          {visibleSections.map((section) => (
-            <div
-              key={section.key}
-              className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[#162338]">{section.label}</p>
-                <span className="text-[11px] font-semibold text-slate-500">
-                  {section.rooms.length} room(s)
-                </span>
-              </div>
-
-              <div className="mt-3 space-y-2">
-                {section.rooms.map((room) => (
-                  <div
-                    key={room.roomNumber}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <p
-                        className={`truncate font-semibold ${
-                          room.earlyCheckIn ? "font-bold text-[#0f172a]" : "text-[#162338]"
-                        }`}
-                      >
-                        {room.roomNumber}
-                      </p>
-                      {room.earlyCheckIn ? (
-                        <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-900">
-                          Early
-                        </span>
-                      ) : null}
-                    </div>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                      {room.breakfastCount > 0 ? `${room.breakfastCount} breakfast` : "No breakfast"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-slate-500">No occupied rooms.</p>
-      )}
-    </div>
-  );
-}
-
 function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
   const visibleSections = sections.filter((section) => section.rooms.length > 0);
 
@@ -758,46 +665,6 @@ function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
   );
 }
 
-function BreakfastSummaryBoard({ sections, breakfastTotal, inHouse }) {
-  const visibleRooms = sections.flatMap((section) => section.rooms);
-
-  return (
-    <div className="subpanel">
-      <div className="flex items-center justify-between gap-3">
-        <p className="metric-label">F&B Breakfast Summary</p>
-        <span className="badge">
-          {inHouse} rooms / {breakfastTotal} breakfast
-        </span>
-      </div>
-
-      {visibleRooms.length > 0 ? (
-        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80">
-          <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3 border-b border-slate-200 bg-slate-100 px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-600">
-            <span>Room</span>
-            <span className="text-right">Breakfast</span>
-          </div>
-
-          <div className="max-h-[28rem] divide-y divide-slate-200 overflow-y-auto">
-            {visibleRooms.map((room) => (
-              <div
-                key={room.roomNumber}
-                className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-3 px-4 py-2.5 text-sm"
-              >
-                <span className="truncate font-semibold text-[#162338]">{room.roomNumber}</span>
-                <span className="text-right font-semibold text-slate-700">
-                  {room.breakfastCount}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-slate-500">No occupied rooms right now.</p>
-      )}
-    </div>
-  );
-}
-
 function getFloorsWithAvailableRooms(excludedRooms = []) {
   return roomFloorOptions.filter(
     (floor) => getRoomOptionsForFloor(floor.value, excludedRooms).length > 0,
@@ -828,10 +695,6 @@ export default function OperationsPanel({
     [operations?.cleanedRoomNumbers],
   );
   const canViewCleanedRooms = access.canEditFrontOffice || access.canEditHousekeeping;
-  const canViewBreakfastBoard =
-    profile?.departmentKey === "food_beverages" ||
-    profile?.isSuperAdmin ||
-    access.canEditFrontOffice;
   const [frontOfficeSaving, setFrontOfficeSaving] = useState(false);
   const [housekeepingSaving, setHousekeepingSaving] = useState(false);
   const [breakfastIncluded, setBreakfastIncluded] = useState(false);
@@ -856,10 +719,6 @@ export default function OperationsPanel({
     housekeeping: { type: "", message: "" },
   });
 
-  const occupiedSections = useMemo(
-    () => buildOccupiedRoomSections(occupiedRooms, operationalDateKey),
-    [occupiedRooms, operationalDateKey],
-  );
   const cleanedSections = useMemo(
     () => buildRoomNumberSections(cleanedRoomNumbers),
     [cleanedRoomNumbers],
@@ -1000,11 +859,6 @@ export default function OperationsPanel({
     () => buildCleanedRoomsReportLines(operations),
     [operations],
   );
-  const breakfastSummaryLines = useMemo(
-    () => buildBreakfastSummaryLines(operations),
-    [operations],
-  );
-
   useEffect(() => {
     if (
       selectedOccupiedFloor &&
@@ -1491,31 +1345,6 @@ export default function OperationsPanel({
             />
           ) : null}
 
-          {canViewBreakfastBoard ? (
-            <ReportActionGroup
-              title="F&B Breakfast Summary"
-              actions={[
-                {
-                  label: "Print breakfast summary",
-                  onClick: () =>
-                    printTextReport(
-                      "Sunshine Hotel F&B Breakfast Summary",
-                      breakfastSummaryLines,
-                    ),
-                },
-                {
-                  label: "Download PDF",
-                  onClick: () =>
-                    downloadPdf(
-                      "sunshine-f-and-b-breakfast-summary.pdf",
-                      "Sunshine Hotel F&B Breakfast Summary",
-                      breakfastSummaryLines,
-                    ),
-                },
-              ]}
-            />
-          ) : null}
-
           {access.canEditFrontOffice ? (
             <>
               <ReportActionGroup
@@ -1569,311 +1398,219 @@ export default function OperationsPanel({
       ) : null}
 
       {access.canEditFrontOffice ? (
-        <div className="mt-6 grid gap-4 2xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
-          <div className="space-y-4">
-            {(access.canEditFrontOffice || access.canEditHousekeeping) ? (
-              <div className="grid gap-4 xl:grid-cols-2">
-                {access.canEditFrontOffice ? (
-                  <div className="space-y-4">
-                    <form onSubmit={handleAssignRoom} className="subpanel no-print">
-                      <p className="metric-label">Check in guest</p>
+        <div className="mt-6 space-y-4">
+          <div className="grid gap-4 xl:grid-cols-2">
+            <form onSubmit={handleAssignRoom} className="subpanel no-print">
+              <p className="metric-label">Check in guest</p>
 
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        <FloorSelect
-                          label="Floor"
-                          value={selectedOccupiedFloor}
-                          onChange={(event) => {
-                            setSelectedOccupiedFloor(event.target.value);
-                            setSelectedOccupiedRoom("");
-                          }}
-                          floors={frontOfficeFloorOptions}
-                          disabled={frontOfficeSaving}
-                        />
-                        <RoomSelect
-                          label="Room"
-                          value={selectedOccupiedRoom}
-                          onChange={(event) => setSelectedOccupiedRoom(event.target.value)}
-                          rooms={availableFrontOfficeRooms}
-                          disabled={frontOfficeSaving || !selectedOccupiedFloor}
-                        />
-                      </div>
-
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        <label className="field">
-                          <span>Guest type</span>
-                          <select
-                            value={guestType}
-                            onChange={(event) => setGuestType(event.target.value)}
-                            disabled={frontOfficeSaving}
-                          >
-                            <option value="walk_in">Walk in</option>
-                            <option value="corporate">Corporate</option>
-                          </select>
-                        </label>
-
-                        <label className="field">
-                          <span>Breakfast</span>
-                          <select
-                            value={breakfastIncluded ? "yes" : "no"}
-                            onChange={(event) => {
-                              const enabled = event.target.value === "yes";
-                              setBreakfastIncluded(enabled);
-                              if (!enabled) {
-                                setBreakfastCount("0");
-                              } else if (!breakfastCount || breakfastCount === "0") {
-                                setBreakfastCount("1");
-                              }
-                            }}
-                          >
-                            <option value="no">No</option>
-                            <option value="yes">Yes</option>
-                          </select>
-                        </label>
-
-                        <label className="field">
-                          <span>Breakfast count</span>
-                          <input
-                            type="number"
-                            min={breakfastIncluded ? "1" : "0"}
-                            value={breakfastIncluded ? breakfastCount : "0"}
-                            onChange={(event) => setBreakfastCount(event.target.value)}
-                            disabled={!breakfastIncluded}
-                          />
-                        </label>
-                      </div>
-
-                      {feedback.frontOffice.message ? (
-                        <div
-                          className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
-                            feedback.frontOffice.type === "success"
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-rose-50 text-rose-700"
-                          }`}
-                        >
-                          {feedback.frontOffice.message}
-                        </div>
-                      ) : null}
-
-                      <button
-                        type="submit"
-                        disabled={frontOfficeSaving || !selectedOccupiedFloor || !selectedOccupiedRoom}
-                        className="button-primary mt-5 w-full"
-                      >
-                        {frontOfficeSaving ? "Publishing..." : "Check in room"}
-                      </button>
-                    </form>
-
-                    <form onSubmit={handleCheckoutRoom} className="subpanel no-print">
-                      <p className="metric-label">Check out room</p>
-
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        <FloorSelect
-                          label="Floor"
-                          value={selectedCheckoutFloor}
-                          onChange={(event) => {
-                            setSelectedCheckoutFloor(event.target.value);
-                            setSelectedCheckoutRoom("");
-                          }}
-                          floors={checkoutFloorOptions}
-                          disabled={frontOfficeSaving}
-                        />
-                        <RoomSelect
-                          label="Occupied room"
-                          value={selectedCheckoutRoom}
-                          onChange={(event) => setSelectedCheckoutRoom(event.target.value)}
-                          rooms={availableCheckoutRooms}
-                          disabled={frontOfficeSaving || !selectedCheckoutFloor}
-                        />
-                      </div>
-
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        <label className="field">
-                          <span>Checkout type</span>
-                          <select
-                            value={checkoutType}
-                            onChange={(event) => setCheckoutType(event.target.value)}
-                            disabled={frontOfficeSaving}
-                          >
-                            <option value="normal_check_out">Normal check out</option>
-                            <option value="late_check_out">Late check out</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={frontOfficeSaving || !selectedCheckoutFloor || !selectedCheckoutRoom}
-                        className="button-primary mt-5 w-full"
-                      >
-                        {frontOfficeSaving ? "Publishing..." : "Mark checked out"}
-                      </button>
-                    </form>
-
-                    <form onSubmit={handleMoveRoom} className="subpanel no-print">
-                      <p className="metric-label">Room move</p>
-
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        <FloorSelect
-                          label="Current floor"
-                          value={selectedMoveFromFloor}
-                          onChange={(event) => {
-                            setSelectedMoveFromFloor(event.target.value);
-                            setSelectedMoveFromRoom("");
-                          }}
-                          floors={checkoutFloorOptions}
-                          disabled={frontOfficeSaving}
-                        />
-                        <RoomSelect
-                          label="Occupied room"
-                          value={selectedMoveFromRoom}
-                          onChange={(event) => setSelectedMoveFromRoom(event.target.value)}
-                          rooms={availableMoveFromRooms}
-                          disabled={frontOfficeSaving || !selectedMoveFromFloor}
-                        />
-                      </div>
-
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        <FloorSelect
-                          label="New floor"
-                          value={selectedMoveToFloor}
-                          onChange={(event) => {
-                            setSelectedMoveToFloor(event.target.value);
-                            setSelectedMoveToRoom("");
-                          }}
-                          floors={frontOfficeFloorOptions}
-                          disabled={frontOfficeSaving}
-                        />
-                        <RoomSelect
-                          label="Unoccupied room"
-                          value={selectedMoveToRoom}
-                          onChange={(event) => setSelectedMoveToRoom(event.target.value)}
-                          rooms={availableMoveToRooms}
-                          disabled={frontOfficeSaving || !selectedMoveToFloor}
-                        />
-                      </div>
-
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        <label className="field">
-                          <span>Destination condition</span>
-                          <select
-                            value={moveDestinationCondition}
-                            onChange={(event) => setMoveDestinationCondition(event.target.value)}
-                            disabled={frontOfficeSaving}
-                          >
-                            <option value="clean">Clean</option>
-                            <option value="dirty">Dirty</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={
-                          frontOfficeSaving ||
-                          !selectedMoveFromFloor ||
-                          !selectedMoveFromRoom ||
-                          !selectedMoveToFloor ||
-                          !selectedMoveToRoom ||
-                          selectedMoveFromRoom === selectedMoveToRoom
-                        }
-                        className="button-primary mt-5 w-full"
-                      >
-                        {frontOfficeSaving ? "Publishing..." : "Move guest"}
-                      </button>
-                    </form>
-                  </div>
-                ) : null}
-
-                {access.canEditHousekeeping ? (
-                  <form onSubmit={handleMarkCleaned} className="subpanel no-print">
-                    <p className="metric-label">Mark cleaned room</p>
-
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                      <FloorSelect
-                        label="Floor"
-                        value={selectedCleanedFloor}
-                        onChange={(event) => {
-                          setSelectedCleanedFloor(event.target.value);
-                          setSelectedCleanedRoom("");
-                        }}
-                        floors={housekeepingFloorOptions}
-                        disabled={housekeepingSaving}
-                      />
-                      <RoomSelect
-                        label="Room"
-                        value={selectedCleanedRoom}
-                        onChange={(event) => setSelectedCleanedRoom(event.target.value)}
-                        rooms={availableCleanRooms}
-                        disabled={housekeepingSaving || !selectedCleanedFloor}
-                      />
-                    </div>
-
-                    {feedback.housekeeping.message ? (
-                      <div
-                        className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
-                          feedback.housekeeping.type === "success"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-rose-50 text-rose-700"
-                        }`}
-                      >
-                        {feedback.housekeeping.message}
-                      </div>
-                    ) : null}
-
-                    <button
-                      type="submit"
-                      disabled={housekeepingSaving || !selectedCleanedFloor || !selectedCleanedRoom}
-                      className="button-primary mt-5 w-full"
-                    >
-                      {housekeepingSaving ? "Publishing..." : "Publish cleaned room"}
-                    </button>
-                  </form>
-                ) : null}
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <FloorSelect
+                  label="Floor"
+                  value={selectedOccupiedFloor}
+                  onChange={(event) => {
+                    setSelectedOccupiedFloor(event.target.value);
+                    setSelectedOccupiedRoom("");
+                  }}
+                  floors={frontOfficeFloorOptions}
+                  disabled={frontOfficeSaving}
+                />
+                <RoomSelect
+                  label="Room"
+                  value={selectedOccupiedRoom}
+                  onChange={(event) => setSelectedOccupiedRoom(event.target.value)}
+                  rooms={availableFrontOfficeRooms}
+                  disabled={frontOfficeSaving || !selectedOccupiedFloor}
+                />
               </div>
-            ) : null}
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <label className="field">
+                  <span>Guest type</span>
+                  <select
+                    value={guestType}
+                    onChange={(event) => setGuestType(event.target.value)}
+                    disabled={frontOfficeSaving}
+                  >
+                    <option value="walk_in">Walk in</option>
+                    <option value="corporate">Corporate</option>
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Breakfast</span>
+                  <select
+                    value={breakfastIncluded ? "yes" : "no"}
+                    onChange={(event) => {
+                      const enabled = event.target.value === "yes";
+                      setBreakfastIncluded(enabled);
+                      if (!enabled) {
+                        setBreakfastCount("0");
+                      } else if (!breakfastCount || breakfastCount === "0") {
+                        setBreakfastCount("1");
+                      }
+                    }}
+                  >
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Breakfast count</span>
+                  <input
+                    type="number"
+                    min={breakfastIncluded ? "1" : "0"}
+                    value={breakfastIncluded ? breakfastCount : "0"}
+                    onChange={(event) => setBreakfastCount(event.target.value)}
+                    disabled={!breakfastIncluded}
+                  />
+                </label>
+              </div>
+
+              {feedback.frontOffice.message ? (
+                <div
+                  className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                    feedback.frontOffice.type === "success"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-rose-50 text-rose-700"
+                  }`}
+                >
+                  {feedback.frontOffice.message}
+                </div>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={frontOfficeSaving || !selectedOccupiedFloor || !selectedOccupiedRoom}
+                className="button-primary mt-5 w-full"
+              >
+                {frontOfficeSaving ? "Publishing..." : "Check in room"}
+              </button>
+            </form>
+
+            <form onSubmit={handleCheckoutRoom} className="subpanel no-print">
+              <p className="metric-label">Check out room</p>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <FloorSelect
+                  label="Floor"
+                  value={selectedCheckoutFloor}
+                  onChange={(event) => {
+                    setSelectedCheckoutFloor(event.target.value);
+                    setSelectedCheckoutRoom("");
+                  }}
+                  floors={checkoutFloorOptions}
+                  disabled={frontOfficeSaving}
+                />
+                <RoomSelect
+                  label="Occupied room"
+                  value={selectedCheckoutRoom}
+                  onChange={(event) => setSelectedCheckoutRoom(event.target.value)}
+                  rooms={availableCheckoutRooms}
+                  disabled={frontOfficeSaving || !selectedCheckoutFloor}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="field">
+                  <span>Checkout type</span>
+                  <select
+                    value={checkoutType}
+                    onChange={(event) => setCheckoutType(event.target.value)}
+                    disabled={frontOfficeSaving}
+                  >
+                    <option value="normal_check_out">Normal check out</option>
+                    <option value="late_check_out">Late check out</option>
+                  </select>
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={frontOfficeSaving || !selectedCheckoutFloor || !selectedCheckoutRoom}
+                className="button-primary mt-5 w-full"
+              >
+                {frontOfficeSaving ? "Publishing..." : "Mark checked out"}
+              </button>
+            </form>
           </div>
 
-          <div className="space-y-4 2xl:sticky 2xl:top-6 self-start">
-            <OccupiedRoomsOverview sections={occupiedSections} />
-            {canViewBreakfastBoard ? (
-              <BreakfastSummaryBoard
-                sections={occupiedSections}
-                breakfastTotal={operations?.breakfastEntitled ?? 0}
-                inHouse={operations?.inHouse ?? 0}
-              />
-            ) : null}
-            {canViewCleanedRooms ? (
-              <CleanedRoomsOverview
-                sections={cleanedSections}
-                canRemove={access.canEditHousekeeping}
-                onRemove={handleRemoveCleaned}
-              />
-            ) : null}
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="mt-6 space-y-4">
-            <OccupiedRoomsOverview sections={occupiedSections} />
-            {canViewBreakfastBoard ? (
-              <BreakfastSummaryBoard
-                sections={occupiedSections}
-                breakfastTotal={operations?.breakfastEntitled ?? 0}
-                inHouse={operations?.inHouse ?? 0}
-              />
-            ) : null}
-            {canViewCleanedRooms ? (
-              <CleanedRoomsOverview
-                sections={cleanedSections}
-                canRemove={access.canEditHousekeeping}
-                onRemove={handleRemoveCleaned}
-              />
-            ) : null}
-          </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <form onSubmit={handleMoveRoom} className="subpanel no-print xl:col-span-2">
+              <p className="metric-label">Room move</p>
 
-          {access.canEditHousekeeping ? (
-            <div className="mt-6">
-              <form onSubmit={handleMarkCleaned} className="subpanel no-print">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <FloorSelect
+                  label="Current floor"
+                  value={selectedMoveFromFloor}
+                  onChange={(event) => {
+                    setSelectedMoveFromFloor(event.target.value);
+                    setSelectedMoveFromRoom("");
+                  }}
+                  floors={checkoutFloorOptions}
+                  disabled={frontOfficeSaving}
+                />
+                <RoomSelect
+                  label="Occupied room"
+                  value={selectedMoveFromRoom}
+                  onChange={(event) => setSelectedMoveFromRoom(event.target.value)}
+                  rooms={availableMoveFromRooms}
+                  disabled={frontOfficeSaving || !selectedMoveFromFloor}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <FloorSelect
+                  label="New floor"
+                  value={selectedMoveToFloor}
+                  onChange={(event) => {
+                    setSelectedMoveToFloor(event.target.value);
+                    setSelectedMoveToRoom("");
+                  }}
+                  floors={frontOfficeFloorOptions}
+                  disabled={frontOfficeSaving}
+                />
+                <RoomSelect
+                  label="Unoccupied room"
+                  value={selectedMoveToRoom}
+                  onChange={(event) => setSelectedMoveToRoom(event.target.value)}
+                  rooms={availableMoveToRooms}
+                  disabled={frontOfficeSaving || !selectedMoveToFloor}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="field">
+                  <span>Destination condition</span>
+                  <select
+                    value={moveDestinationCondition}
+                    onChange={(event) => setMoveDestinationCondition(event.target.value)}
+                    disabled={frontOfficeSaving}
+                  >
+                    <option value="clean">Clean</option>
+                    <option value="dirty">Dirty</option>
+                  </select>
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={
+                  frontOfficeSaving ||
+                  !selectedMoveFromFloor ||
+                  !selectedMoveFromRoom ||
+                  !selectedMoveToFloor ||
+                  !selectedMoveToRoom ||
+                  selectedMoveFromRoom === selectedMoveToRoom
+                }
+                className="button-primary mt-5 w-full"
+              >
+                {frontOfficeSaving ? "Publishing..." : "Move guest"}
+              </button>
+            </form>
+
+            {access.canEditHousekeeping ? (
+              <form onSubmit={handleMarkCleaned} className="subpanel no-print xl:col-span-2">
                 <p className="metric-label">Mark cleaned room</p>
 
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -1916,10 +1653,78 @@ export default function OperationsPanel({
                   {housekeepingSaving ? "Publishing..." : "Publish cleaned room"}
                 </button>
               </form>
-            </div>
+            ) : null}
+          </div>
+
+          {canViewCleanedRooms ? (
+            <CleanedRoomsOverview
+              sections={cleanedSections}
+              canRemove={access.canEditHousekeeping}
+              onRemove={handleRemoveCleaned}
+            />
           ) : null}
-        </>
-      )}
+        </div>
+      ) : access.canEditHousekeeping ? (
+        <div className="mt-6 space-y-4">
+          <form onSubmit={handleMarkCleaned} className="subpanel no-print">
+            <p className="metric-label">Mark cleaned room</p>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <FloorSelect
+                label="Floor"
+                value={selectedCleanedFloor}
+                onChange={(event) => {
+                  setSelectedCleanedFloor(event.target.value);
+                  setSelectedCleanedRoom("");
+                }}
+                floors={housekeepingFloorOptions}
+                disabled={housekeepingSaving}
+              />
+              <RoomSelect
+                label="Room"
+                value={selectedCleanedRoom}
+                onChange={(event) => setSelectedCleanedRoom(event.target.value)}
+                rooms={availableCleanRooms}
+                disabled={housekeepingSaving || !selectedCleanedFloor}
+              />
+            </div>
+
+            {feedback.housekeeping.message ? (
+              <div
+                className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                  feedback.housekeeping.type === "success"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-rose-50 text-rose-700"
+                }`}
+              >
+                {feedback.housekeeping.message}
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={housekeepingSaving || !selectedCleanedFloor || !selectedCleanedRoom}
+              className="button-primary mt-5 w-full"
+            >
+              {housekeepingSaving ? "Publishing..." : "Publish cleaned room"}
+            </button>
+          </form>
+
+          <CleanedRoomsOverview
+            sections={cleanedSections}
+            canRemove={access.canEditHousekeeping}
+            onRemove={handleRemoveCleaned}
+          />
+        </div>
+      ) : canViewCleanedRooms ? (
+        <div className="mt-6">
+          <CleanedRoomsOverview
+            sections={cleanedSections}
+            canRemove={access.canEditHousekeeping}
+            onRemove={handleRemoveCleaned}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
