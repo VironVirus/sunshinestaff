@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PortalLogo from "@/components/PortalLogo";
 import ActivityLogPanel from "@/components/dashboard/ActivityLogPanel";
+import BreakfastSummaryPanel from "@/components/dashboard/BreakfastSummaryPanel";
 import EventsBookingsPanel from "@/components/dashboard/EventsBookingsPanel";
 import HousekeepingStatusPanel from "@/components/dashboard/HousekeepingStatusPanel";
 import InformationPanel from "@/components/dashboard/InformationPanel";
@@ -30,6 +31,7 @@ import {
   getManagerWorkspaceAccess,
   getNightDutyAccess,
   getOperationsAccess,
+  getPropertyAccess,
   isLead,
   operationsMetricConfig,
 } from "@/lib/roles";
@@ -55,6 +57,27 @@ function MobileSectionTabs({ sections, activeKey, onChange }) {
           onClick={() => onChange(section.key)}
           className={`mobile-section-tab ${
             activeKey === section.key ? "mobile-section-tab-active" : ""
+          }`}
+        >
+          {section.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SectionTabs({ sections, activeKey, onChange }) {
+  return (
+    <div className="no-print flex flex-wrap gap-2 rounded-[24px] bg-slate-100 p-2">
+      {sections.map((section) => (
+        <button
+          key={section.key}
+          type="button"
+          onClick={() => onChange(section.key)}
+          className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+            activeKey === section.key
+              ? "bg-[#162338] text-white"
+              : "bg-white text-slate-600 hover:text-[#162338]"
           }`}
         >
           {section.label}
@@ -164,6 +187,7 @@ export default function DashboardPage() {
       name: "Department",
     };
   const operationsAccess = getOperationsAccess(profile);
+  const propertyAccess = getPropertyAccess(profile);
   const housekeepingReportAccess = getHousekeepingReportAccess(profile);
   const nightDutyAccess = getNightDutyAccess(profile);
   const managerWorkspaceAccess = getManagerWorkspaceAccess(profile);
@@ -441,31 +465,32 @@ export default function DashboardPage() {
                 />
               ),
             },
+            {
+              key: "breakfast",
+              label: "Breakfast List",
+              content: <BreakfastSummaryPanel operations={operations} />,
+            },
           ]
         : []),
-      ...(operationsAccess.canViewPanel || profile?.isSuperAdmin
+      ...(propertyAccess.canViewPanel
         ? [
             {
-              key: "complaints",
-              label: "Complaints",
+              key: "property-status",
+              label: "Property Status",
               content: (
-                <RoomComplaintsPanel
-                  profile={profile}
-                  propertyStatus={propertyStatus}
-                  onSaveRoomComplaints={saveRoomComplaints}
-                />
-              ),
-            },
-            {
-              key: "property",
-              label: "Property",
-              content: (
-                <PropertyPanel
-                  profile={profile}
-                  propertyStatus={propertyStatus}
-                  onSaveRoomIssues={saveRoomIssues}
-                  onSaveUtilities={saveUtilities}
-                />
+                <div className="space-y-6">
+                  <RoomComplaintsPanel
+                    profile={profile}
+                    propertyStatus={propertyStatus}
+                    onSaveRoomComplaints={saveRoomComplaints}
+                  />
+                  <PropertyPanel
+                    profile={profile}
+                    propertyStatus={propertyStatus}
+                    onSaveRoomIssues={saveRoomIssues}
+                    onSaveUtilities={saveUtilities}
+                  />
+                </div>
               ),
             },
           ]
@@ -517,20 +542,12 @@ export default function DashboardPage() {
 
     return (
       <div className="space-y-6">
-        <div className="md:hidden">
-          <MobileSectionTabs
-            sections={sections}
-            activeKey={activeSection.key}
-            onChange={setActiveWorkSection}
-          />
-          {activeSection.content}
-        </div>
-
-        <div className="hidden space-y-6 md:block">
-          {sections.map((section) => (
-            <div key={section.key}>{section.content}</div>
-          ))}
-        </div>
+        <SectionTabs
+          sections={sections}
+          activeKey={activeSection.key}
+          onChange={setActiveWorkSection}
+        />
+        {activeSection.content}
 
         {error ? (
           <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
