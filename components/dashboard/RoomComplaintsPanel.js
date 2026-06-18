@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getRoomOptionsForFloor, roomFloorOptions } from "@/data/hotelRooms";
+import {
+  getRoomOptionsForFloor,
+  roomFloorOptions,
+  roomGroups,
+} from "@/data/hotelRooms";
 import {
   getRoomComplaintLabel,
   roomComplaintOptions,
@@ -41,6 +45,35 @@ function groupActiveComplaints(roomComplaints = []) {
   return [...roomMap.values()];
 }
 
+function buildComplaintFloorSections(roomGroupsWithComplaints = []) {
+  const roomComplaintMap = new Map(
+    roomGroupsWithComplaints.map((roomGroup) => [roomGroup.roomNumber, roomGroup]),
+  );
+
+  return roomGroups.map((group) => {
+    const rooms = group.rooms
+      .filter((roomNumber) => roomComplaintMap.has(roomNumber))
+      .map((roomNumber) => roomComplaintMap.get(roomNumber));
+
+    return {
+      key: group.key,
+      label: group.label,
+      rooms,
+      complaintsCount: rooms.reduce((total, roomGroup) => total + roomGroup.complaints.length, 0),
+    };
+  });
+}
+
+function buildComplaintMetaLine(complaint) {
+  const details = [
+    complaint.updatedByName || "Staff",
+    complaint.updatedByDepartment || "",
+    complaint.reportedAt ? formatReportedAt(complaint.reportedAt) : "",
+  ].filter(Boolean);
+
+  return details.join(" - ");
+}
+
 export default function RoomComplaintsPanel({
   profile,
   propertyStatus,
@@ -58,6 +91,18 @@ export default function RoomComplaintsPanel({
   const groupedActiveComplaints = useMemo(
     () => groupActiveComplaints(activeRoomComplaints),
     [activeRoomComplaints],
+  );
+  const complaintSections = useMemo(
+    () => buildComplaintFloorSections(groupedActiveComplaints),
+    [groupedActiveComplaints],
+  );
+  const activeComplaintRooms = useMemo(
+    () => complaintSections.reduce((total, section) => total + section.rooms.length, 0),
+    [complaintSections],
+  );
+  const floorsWithComplaints = useMemo(
+    () => complaintSections.filter((section) => section.rooms.length > 0).length,
+    [complaintSections],
   );
   const [selectedFloor, setSelectedFloor] = useState("");
   const [selectedRoom, setSelectedRoom] = useState("");
@@ -176,62 +221,116 @@ export default function RoomComplaintsPanel({
         <span className="badge">{activeRoomComplaints.length} active</span>
       </div>
 
-      <div className="mt-5 space-y-3">
-        {groupedActiveComplaints.length > 0 ? (
-          groupedActiveComplaints.map((roomGroup) => (
+      <div className="mt-5 grid gap-4 sm:grid-cols-3">
+        <div className="subpanel">
+          <span className="metric-label">Active issues</span>
+          <span className="metric-value">{activeRoomComplaints.length}</span>
+        </div>
+        <div className="subpanel">
+          <span className="metric-label">Rooms affected</span>
+          <span className="metric-value">{activeComplaintRooms}</span>
+        </div>
+        <div className="subpanel">
+          <span className="metric-label">Floors affected</span>
+          <span className="metric-value">{floorsWithComplaints}</span>
+        </div>
+      </div>
+
+      <div className="subpanel mt-6">
+        <div className="flex items-center justify-between gap-3">
+          <p className="metric-label">Complaint dashboard</p>
+          <span className="badge">{floorsWithComplaints} floor(s)</span>
+        </div>
+
+        <div className="mt-4 grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+          {complaintSections.map((section) => (
             <div
-              key={roomGroup.roomNumber}
-              className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4"
+              key={section.key}
+              className={`rounded-2xl border p-3 ${
+                section.rooms.length > 0
+                  ? "border-amber-200 bg-amber-50/70"
+                  : "border-slate-200 bg-slate-50/70"
+              }`}
             >
-              <div>
-                <p className="font-semibold text-[#162338]">{roomGroup.roomNumber}</p>
-                <p className="mt-1 text-sm text-slate-500">{roomGroup.floorLabel}</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-[#162338]">{section.label}</p>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  {section.complaintsCount} issue(s)
+                </span>
               </div>
 
-              <div className="mt-4 space-y-3">
-                {roomGroup.complaints.map((complaint) => (
-                  <div
-                    key={complaint.id}
-                    className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 sm:flex-row sm:items-start sm:justify-between"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">
-                        {getRoomComplaintLabel(complaint.complaintType)}
-                      </p>
-                      {complaint.complaintNote ? (
-                        <p className="mt-2 text-sm text-slate-500">{complaint.complaintNote}</p>
-                      ) : null}
-                      <p className="mt-2 text-xs text-slate-500">
-                        Added by {complaint.updatedByName || "Staff"}
-                        {complaint.updatedByDepartment ? ` - ${complaint.updatedByDepartment}` : ""}
-                        {complaint.reportedAt ? ` - ${formatReportedAt(complaint.reportedAt)}` : ""}
-                      </p>
+              {section.rooms.length > 0 ? (
+                <div className="mt-3 max-h-[18rem] space-y-2 overflow-y-auto pr-1">
+                  {section.rooms.map((roomGroup) => (
+                    <div
+                      key={roomGroup.roomNumber}
+                      className="rounded-xl border border-white/90 bg-white/95 px-3 py-2.5 shadow-sm"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="rounded-full bg-[#162338] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-white">
+                          {roomGroup.roomNumber}
+                        </span>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          {roomGroup.complaints.length} issue(s)
+                        </span>
+                      </div>
+
+                      <div className="mt-2 space-y-2">
+                        {roomGroup.complaints.map((complaint) => (
+                          <div
+                            key={complaint.id}
+                            className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[11px] font-semibold text-slate-800">
+                                {getRoomComplaintLabel(complaint.complaintType)}
+                              </p>
+                              {complaint.complaintNote ? (
+                                <p
+                                  className="truncate text-[10px] text-slate-600"
+                                  title={complaint.complaintNote}
+                                >
+                                  {complaint.complaintNote}
+                                </p>
+                              ) : null}
+                              <p
+                                className="truncate text-[10px] text-slate-500"
+                                title={buildComplaintMetaLine(complaint)}
+                              >
+                                {buildComplaintMetaLine(complaint)}
+                              </p>
+                            </div>
+
+                            {access.canEditComplaints ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleClearComplaint(complaint.id, complaint.roomNumber)
+                                }
+                                disabled={saving}
+                                className="rounded-full border border-amber-300 bg-white px-2 py-1 text-[10px] font-semibold text-amber-900 transition hover:bg-amber-100"
+                              >
+                                Clear
+                              </button>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-
-                    {access.canEditComplaints ? (
-                      <button
-                        type="button"
-                        onClick={() => handleClearComplaint(complaint.id, complaint.roomNumber)}
-                        disabled={saving}
-                        className="button-secondary"
-                      >
-                        Clear issue
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">No active complaints.</p>
+              )}
             </div>
-          ))
-        ) : (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
-            No room complaints.
-          </div>
-        )}
+          ))}
+        </div>
       </div>
 
       {access.canEditComplaints ? (
         <form onSubmit={handleSubmit} className="subpanel mt-6 no-print">
+          <p className="metric-label">Log complaint</p>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="field">
               <span>Floor</span>

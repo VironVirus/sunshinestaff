@@ -1,0 +1,235 @@
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at JSON.parse (<anonymous>)
+TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7) {
+  page: '/dashboard'
+}
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at JSON.parse (<anonymous>)
+TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7) {
+  page: '/dashboard'
+}
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at JSON.parse (<anonymous>)
+TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7) {
+  page: '/dashboard'
+}
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at JSON.parse (<anonymous>)
+TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7) {
+  page: '/dashboard'
+}
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at JSON.parse (<anonymous>)
+TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at __webpack_require__ (C:\Users\user\Desktop\sunshine staff\.next\server\webpack-runtime.js:33:43)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103108
+    at eo (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103293)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:105726
+    at Object._fromJSON (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:106078)
+    at JSON.parse (<anonymous>)
+    at eu (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:103787)
+    at en (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:102855)
+    at G (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:101847)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46824)
+    at av (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:7809)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:12972
+    at aw (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:13009)
+    at ak (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46552)
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:55430
+    at C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56107
+    at aD (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:56115)
+    at Timeout._onTimeout (C:\Users\user\Desktop\sunshine staff\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:4293)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7) {
+  page: '/dashboard'
+}

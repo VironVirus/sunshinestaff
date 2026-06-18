@@ -9,7 +9,9 @@ import HousekeepingStatusPanel from "@/components/dashboard/HousekeepingStatusPa
 import InformationPanel from "@/components/dashboard/InformationPanel";
 import InventoryPanel from "@/components/dashboard/InventoryPanel";
 import NightDutyPanel from "@/components/dashboard/NightDutyPanel";
-import NotificationsPanel from "@/components/dashboard/NotificationsPanel";
+import NotificationsPanel, {
+  canSeeNotification,
+} from "@/components/dashboard/NotificationsPanel";
 import OperationsPanel from "@/components/dashboard/OperationsPanel";
 import PropertyPanel from "@/components/dashboard/PropertyPanel";
 import RoomComplaintsPanel from "@/components/dashboard/RoomComplaintsPanel";
@@ -78,6 +80,43 @@ function TabButton({ active, label, onClick }) {
   );
 }
 
+function NotificationBell({ count, onClick, active }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex h-14 w-14 items-center justify-center rounded-full border transition no-print ${
+        active
+          ? "border-[#162338] bg-[#162338] text-white"
+          : "border-amber-200 bg-amber-50 text-[#162338]"
+      }`}
+      aria-label="Open notifications"
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className="h-6 w-6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M15 17h5l-1.4-1.4a2 2 0 0 1-.6-1.4V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+        <path d="M9.5 17a2.5 2.5 0 0 0 5 0" />
+      </svg>
+      {count > 0 ? (
+        <>
+          <span className="absolute -right-1 -top-1 inline-flex min-h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">
+            {count > 99 ? "99+" : count}
+          </span>
+          <span className="absolute -right-1 -top-1 h-6 w-6 animate-ping rounded-full bg-rose-400 opacity-70" />
+        </>
+      ) : null}
+    </button>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { user, profile, loading, logout } = useAuth();
@@ -118,6 +157,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("work");
   const [activeWorkSection, setActiveWorkSection] = useState("rooms");
   const [activeInformationSection, setActiveInformationSection] = useState("staff");
+  const [lastSeenNotificationAt, setLastSeenNotificationAt] = useState("");
 
   const currentDepartment =
     getDepartment(profile?.departmentKey) ?? {
@@ -134,16 +174,77 @@ export default function DashboardPage() {
   const canViewHousekeepingReports = housekeepingReportAccess.canViewPanel;
   const canViewNightDutyPanel = nightDutyAccess.canViewPanel;
   const myShiftsCount = departmentShifts.filter((shift) => shift.userId === profile?.uid).length;
+  const visibleNotifications = useMemo(
+    () => (notifications ?? []).filter((notification) => canSeeNotification(notification, profile)),
+    [notifications, profile],
+  );
+  const newNotificationCount = useMemo(
+    () =>
+      visibleNotifications.filter(
+        (notification) =>
+          notification.createdAt &&
+          notification.createdAt > (lastSeenNotificationAt || ""),
+      ).length,
+    [lastSeenNotificationAt, visibleNotifications],
+  );
   const tabOptions = canViewManagerTabs
     ? [
         { key: "work", label: "Work" },
         { key: "information", label: "Information" },
+        { key: "notifications", label: "Notifications" },
         ...(canViewEventsTab ? [{ key: "events", label: "Events and Bookings" }] : []),
       ]
-    : [{ key: "staff", label: "Staff Dashboard" }];
+    : [
+        { key: "staff", label: "Staff Dashboard" },
+        { key: "notifications", label: "Notifications" },
+      ];
   const selectedTab = tabOptions.some((tab) => tab.key === activeTab)
     ? activeTab
     : tabOptions[0].key;
+
+  useEffect(() => {
+    if (!profile?.uid || typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const rawValue = window.localStorage.getItem("sunshine_staff_notifications_seen");
+      const seenMap = rawValue ? JSON.parse(rawValue) : {};
+      setLastSeenNotificationAt(seenMap[profile.uid] ?? "");
+    } catch {
+      setLastSeenNotificationAt("");
+    }
+  }, [profile?.uid]);
+
+  useEffect(() => {
+    if (
+      selectedTab !== "notifications" ||
+      !profile?.uid ||
+      visibleNotifications.length === 0 ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const latestNotificationTime = visibleNotifications[0]?.createdAt ?? "";
+
+    if (!latestNotificationTime || latestNotificationTime === lastSeenNotificationAt) {
+      return;
+    }
+
+    try {
+      const rawValue = window.localStorage.getItem("sunshine_staff_notifications_seen");
+      const seenMap = rawValue ? JSON.parse(rawValue) : {};
+      seenMap[profile.uid] = latestNotificationTime;
+      window.localStorage.setItem(
+        "sunshine_staff_notifications_seen",
+        JSON.stringify(seenMap),
+      );
+      setLastSeenNotificationAt(latestNotificationTime);
+    } catch {
+      setLastSeenNotificationAt(latestNotificationTime);
+    }
+  }, [lastSeenNotificationAt, profile?.uid, selectedTab, visibleNotifications]);
 
   useEffect(() => {
     const currentStaffRecord = staffDirectory.find((staffMember) => staffMember.uid === profile?.uid);
@@ -510,6 +611,24 @@ export default function DashboardPage() {
     );
   }
 
+  function renderNotificationsTab() {
+    return (
+      <div className="space-y-6">
+        <NotificationsPanel
+          profile={profile}
+          notifications={notifications}
+          lastSeenNotificationAt={lastSeenNotificationAt}
+        />
+
+        {error ? (
+          <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+            {error}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderLineStaffView() {
     const sections = [
       {
@@ -562,7 +681,14 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <header className="panel p-6 sm:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-          <PortalLogo size="md" />
+          <div className="flex items-start gap-4">
+            <NotificationBell
+              count={newNotificationCount}
+              active={selectedTab === "notifications"}
+              onClick={() => setActiveTab("notifications")}
+            />
+            <PortalLogo size="md" />
+          </div>
 
           <div className="flex flex-col gap-4 xl:items-end">
             <div className="flex items-center gap-4">
@@ -598,10 +724,6 @@ export default function DashboardPage() {
       </section>
 
       <section className="mt-6">
-        <NotificationsPanel profile={profile} notifications={notifications} />
-      </section>
-
-      <section className="mt-6">
         <div className="no-print flex flex-wrap gap-3 rounded-[28px] bg-slate-100 p-2">
           {tabOptions.map((tab) => (
             <TabButton
@@ -616,12 +738,16 @@ export default function DashboardPage() {
 
       <section className="mt-6">
         {!canViewManagerTabs
-          ? renderLineStaffView()
+          ? selectedTab === "notifications"
+            ? renderNotificationsTab()
+            : renderLineStaffView()
           : selectedTab === "work"
             ? renderManagerWorkTab()
             : selectedTab === "information"
               ? renderInformationTab()
-              : renderEventsTab()}
+              : selectedTab === "notifications"
+                ? renderNotificationsTab()
+                : renderEventsTab()}
       </section>
     </div>
   );

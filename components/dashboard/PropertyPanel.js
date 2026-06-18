@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getRoomOptionsForFloor, roomFloorOptions } from "@/data/hotelRooms";
+import {
+  getRoomOptionsForFloor,
+  roomFloorOptions,
+  roomGroups,
+} from "@/data/hotelRooms";
 import {
   defaultUtilities,
   getUtilityLabel,
@@ -36,6 +40,24 @@ function DetailRow({ label, value }) {
   );
 }
 
+function buildRoomIssueSections(roomIssues = []) {
+  const roomIssueMap = new Map(roomIssues.map((roomIssue) => [roomIssue.roomNumber, roomIssue]));
+
+  return roomGroups.map((group) => ({
+    key: group.key,
+    label: group.label,
+    rooms: group.rooms
+      .filter((roomNumber) => roomIssueMap.has(roomNumber))
+      .map((roomNumber) => roomIssueMap.get(roomNumber)),
+  }));
+}
+
+function buildRoomIssueMetaLine(roomIssue) {
+  return [roomIssue.updatedByName || "", roomIssue.updatedByDepartment || ""]
+    .filter(Boolean)
+    .join(" - ");
+}
+
 export default function PropertyPanel({
   profile,
   propertyStatus,
@@ -46,6 +68,14 @@ export default function PropertyPanel({
   const roomIssues = useMemo(
     () => propertyStatus?.roomIssues ?? [],
     [propertyStatus?.roomIssues],
+  );
+  const roomIssueSections = useMemo(
+    () => buildRoomIssueSections(roomIssues),
+    [roomIssues],
+  );
+  const affectedFloors = useMemo(
+    () => roomIssueSections.filter((section) => section.rooms.length > 0).length,
+    [roomIssueSections],
   );
   const utilities = useMemo(
     () => propertyStatus?.utilities ?? defaultUtilities,
@@ -230,58 +260,104 @@ export default function PropertyPanel({
     <section className="panel p-6">
       <h2 className="section-title">Property</h2>
 
-      <div className="mt-5 grid gap-6 xl:grid-cols-2">
-        <div className="space-y-4">
-          <div className="subpanel">
-            <div className="flex items-center justify-between gap-3">
-              <p className="metric-label">Out-of-order rooms</p>
-              <span className="badge">{roomIssues.length}</span>
-            </div>
+      <div className="mt-5 grid gap-4 sm:grid-cols-3">
+        <div className="subpanel">
+          <span className="metric-label">Out-of-order rooms</span>
+          <span className="metric-value">{roomIssues.length}</span>
+        </div>
+        <div className="subpanel">
+          <span className="metric-label">Floors affected</span>
+          <span className="metric-value">{affectedFloors}</span>
+        </div>
+        <div className="subpanel">
+          <span className="metric-label">Utilities tracked</span>
+          <span className="metric-value">{propertyUtilityFields.length}</span>
+        </div>
+      </div>
 
-            <div className="mt-4 space-y-3">
-              {roomIssues.length > 0 ? (
-                roomIssues.map((roomIssue) => (
-                  <div
-                    key={roomIssue.roomNumber}
-                    className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-semibold text-[#162338]">{roomIssue.roomNumber}</p>
-                        <p className="mt-1 text-sm text-slate-500">{roomIssue.floorLabel}</p>
-                        <p className="mt-3 text-sm text-slate-700">{roomIssue.issueNote}</p>
-                        {roomIssue.updatedByName ? (
-                          <p className="mt-2 text-xs text-slate-500">
-                            {roomIssue.updatedByName}
-                            {roomIssue.updatedByDepartment
-                              ? ` - ${roomIssue.updatedByDepartment}`
-                              : ""}
-                          </p>
+      <div className="subpanel mt-6">
+        <div className="flex items-center justify-between gap-3">
+          <p className="metric-label">Out-of-order dashboard</p>
+          <span className="badge">{affectedFloors} floor(s)</span>
+        </div>
+
+        <div className="mt-4 grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+          {roomIssueSections.map((section) => (
+            <div
+              key={section.key}
+              className={`rounded-2xl border p-3 ${
+                section.rooms.length > 0
+                  ? "border-rose-200 bg-rose-50/70"
+                  : "border-slate-200 bg-slate-50/70"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-[#162338]">{section.label}</p>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  {section.rooms.length} room(s)
+                </span>
+              </div>
+
+              {section.rooms.length > 0 ? (
+                <div className="mt-3 max-h-[18rem] space-y-2 overflow-y-auto pr-1">
+                  {section.rooms.map((roomIssue) => (
+                    <div
+                      key={roomIssue.roomNumber}
+                      className="rounded-xl border border-white/90 bg-white/95 px-3 py-2.5 shadow-sm"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-white">
+                              {roomIssue.roomNumber}
+                            </span>
+                          </div>
+                          {roomIssue.issueNote ? (
+                            <p
+                              className="mt-2 truncate text-[11px] text-slate-700"
+                              title={roomIssue.issueNote}
+                            >
+                              {roomIssue.issueNote}
+                            </p>
+                          ) : null}
+                          {buildRoomIssueMetaLine(roomIssue) ? (
+                            <p
+                              className="mt-1 truncate text-[10px] text-slate-500"
+                              title={buildRoomIssueMetaLine(roomIssue)}
+                            >
+                              {buildRoomIssueMetaLine(roomIssue)}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        {access.canEditRoomIssues ? (
+                          <button
+                            type="button"
+                            onClick={() => handleClearRoomIssue(roomIssue.roomNumber)}
+                            disabled={savingRoomIssue}
+                            className="rounded-full border border-rose-300 bg-white px-2 py-1 text-[10px] font-semibold text-rose-900 transition hover:bg-rose-100"
+                          >
+                            Clear
+                          </button>
                         ) : null}
                       </div>
-                      {access.canEditRoomIssues ? (
-                        <button
-                          type="button"
-                          onClick={() => handleClearRoomIssue(roomIssue.roomNumber)}
-                          disabled={savingRoomIssue}
-                          className="button-secondary"
-                        >
-                          Clear
-                        </button>
-                      ) : null}
                     </div>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
-                  No out-of-order rooms.
+                  ))}
                 </div>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">No rooms marked out of order.</p>
               )}
             </div>
-          </div>
+          ))}
+        </div>
+      </div>
 
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+        <div className="space-y-4">
           {access.canEditRoomIssues ? (
             <form onSubmit={handleSaveRoomIssue} className="subpanel no-print">
+              <p className="metric-label">Update room status</p>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="field">
                   <span>Floor</span>
