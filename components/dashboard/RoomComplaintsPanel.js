@@ -358,12 +358,15 @@ export default function RoomComplaintsPanel({
                       </span>
                     </div>
 
-                    <div className="mt-2 space-y-1.5">
-                      {roomGroup.complaints.map((complaint) => {
-                        const isOutOfOrder = complaint.complaintType === "out_of_order";
+                      <div className="mt-2 space-y-1.5">
+                        {roomGroup.complaints.map((complaint) => {
+                          const isOutOfOrder = complaint.complaintType === "out_of_order";
+                          const canClearThisComplaint =
+                            access.canEditComplaints &&
+                            (!complaint.legacyRoomIssue || access.canEditRoomIssues);
 
-                        return (
-                          <div
+                          return (
+                            <div
                             key={complaint.id}
                             className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 ${
                               isOutOfOrder
@@ -395,7 +398,7 @@ export default function RoomComplaintsPanel({
                               </p>
                             </div>
 
-                            {access.canEditComplaints ? (
+                            {canClearThisComplaint ? (
                               <button
                                 type="button"
                                 onClick={() =>

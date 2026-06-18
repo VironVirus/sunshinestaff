@@ -808,11 +808,15 @@ export function usePortalData(profile) {
             roomComplaintsUpdatedByUid: profile?.uid ?? null,
             roomComplaintsUpdatedByName: profile?.fullName ?? "",
             roomComplaintsUpdatedByDepartment: profile?.departmentName ?? "",
-            roomIssues: nextPropertyStatus.roomIssues,
-            roomIssuesUpdatedAt: serverTimestamp(),
-            roomIssuesUpdatedByUid: profile?.uid ?? null,
-            roomIssuesUpdatedByName: profile?.fullName ?? "",
-            roomIssuesUpdatedByDepartment: profile?.departmentName ?? "",
+            ...(propertyAccess.canEditRoomIssues
+              ? {
+                  roomIssues: nextPropertyStatus.roomIssues,
+                  roomIssuesUpdatedAt: serverTimestamp(),
+                  roomIssuesUpdatedByUid: profile?.uid ?? null,
+                  roomIssuesUpdatedByName: profile?.fullName ?? "",
+                  roomIssuesUpdatedByDepartment: profile?.departmentName ?? "",
+                }
+              : {}),
           },
           options: { merge: true },
         },
@@ -1077,6 +1081,17 @@ export function usePortalData(profile) {
     if (values.surcharges !== undefined && values.surcharges !== targetProfile.surcharges) {
       lastProfileNotification = "Your surcharge list was updated. Open My Dashboard to review it.";
       lastProfileNotificationAt = profileNoteTimestamp;
+    } else if (values.leaveRecords !== undefined) {
+      lastProfileNotification = "Your leave record was updated. Open My Dashboard to review it.";
+      lastProfileNotificationAt = profileNoteTimestamp;
+    } else if (
+      values.monthlySalary !== undefined ||
+      values.payrollMonthKey !== undefined ||
+      values.absenceDays !== undefined ||
+      values.lateCount !== undefined
+    ) {
+      lastProfileNotification = "Your payroll breakdown was updated. Open My Dashboard to review it.";
+      lastProfileNotificationAt = profileNoteTimestamp;
     } else if (approvalJustChanged && approvalStatus === "approved") {
       lastProfileNotification = "Your account has been approved. You can now log in.";
       lastProfileNotificationAt = profileNoteTimestamp;
@@ -1094,6 +1109,15 @@ export function usePortalData(profile) {
         ? `Approved staff account for ${nextProfile.fullName}.`
         : values.surcharges !== undefined && values.surcharges !== targetProfile.surcharges
           ? `Updated surcharge list for ${nextProfile.fullName}.`
+          : values.leaveRecords !== undefined
+            ? `Updated leave record for ${nextProfile.fullName}.`
+            : values.monthlySalary !== undefined ||
+                values.payrollMonthKey !== undefined ||
+                values.absenceDays !== undefined ||
+                values.lateCount !== undefined
+              ? `Updated payroll record for ${nextProfile.fullName}.`
+              : values.employmentStatus && values.employmentStatus === "sacked"
+                ? `Moved ${nextProfile.fullName} to sacked staff.`
           : values.jobLevel && values.jobLevel !== targetProfile.jobLevel
             ? `Updated role level for ${nextProfile.fullName}.`
             : values.departmentKey && values.departmentKey !== targetProfile.departmentKey

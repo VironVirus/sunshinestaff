@@ -3,6 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { departmentOptions } from "@/data/departments";
 import {
+  buildLeaveGrant,
+  buildPayrollBreakdown,
+  formatCurrency,
+  formatLeaveRecordLabel,
+  getEmploymentStartDateKey,
+  getLeaveEligibilityDetails,
+  getQuarterLabelFromDateKey,
+  normalizeLeaveRecords,
+} from "@/lib/hr";
+import { formatFriendlyDate } from "@/lib/format";
+import { getHotelDateKey } from "@/lib/hotelTime";
+import { downloadTextPdf } from "@/lib/pdf";
+import {
   accountApprovalOptions,
   executiveSuperAdminTitles,
   getDefaultStaffTitle,
@@ -12,6 +25,13 @@ import {
   getStaffTitleOptions,
   jobLevelOptions,
 } from "@/lib/roles";
+
+const managementSections = [
+  { key: "active", label: "Active Staff" },
+  { key: "sacked", label: "Sacked Staff" },
+  { key: "leave", label: "Leave" },
+  { key: "payroll", label: "Payroll" },
+];
 
 function buildAccessLevel({ staffTitle, currentIsSuperAdmin, jobLevel }) {
   const executiveSuperAdmin = executiveSuperAdminTitles.includes(staffTitle);
@@ -30,7 +50,7 @@ function buildAccessLevel({ staffTitle, currentIsSuperAdmin, jobLevel }) {
         ? "department_manager"
         : jobLevel === "supervisor"
           ? "department_supervisor"
-        : "line_staff",
+          : "line_staff",
   };
 }
 
@@ -42,13 +62,250 @@ function getDefaultTitleForChange(departmentKey, jobLevel, currentTitle) {
   return getDefaultStaffTitle(departmentKey, jobLevel);
 }
 
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function printTextReport(title, lines) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const reportWindow = window.open("", "_blank", "width=900,height=720");
+
+  if (!reportWindow) {
+    return;
+  }
+
+  reportWindow.document.write(`
+    <html>
+      <head>
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #1f2937; margin: 32px; }
+          h1 { color: #162338; margin-bottom: 12px; }
+          pre { white-space: pre-wrap; line-height: 1.8; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        <pre>${escapeHtml(lines.join("\n"))}</pre>
+      </body>
+    </html>
+  `);
+
+  reportWindow.document.close();
+  reportWindow.focus();
+  reportWindow.print();
+}
+
+function SectionButton({ active, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+        active
+          ? "bg-[#162338] text-white"
+          : "bg-white text-slate-600 hover:text-[#162338]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function StaffMetric({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+      <p className="metric-label">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-[#162338]">{value}</p>
+    </div>
+  );
+}
+
+function groupStaffByDepartment(staffMembers = []) {
+  const departmentOrder = new Map(
+    departmentOptions.map((department, index) => [department.value, index]),
+  );
+  const grouped = new Map();
+
+  staffMembers.forEach((staffMember) => {
+    const key = staffMember.departmentKey || "unassigned";
+    const label = staffMember.departmentName || "Unassigned";
+    const currentGroup = grouped.get(key) ?? {
+      key,
+      label,
+      members: [],
+    };
+
+    currentGroup.members.push(staffMember);
+    grouped.set(key, currentGroup);
+  });
+
+  return [...grouped.values()]
+    .sort((left, right) => {
+      const leftOrder = departmentOrder.get(left.key) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = departmentOrder.get(right.key) ?? Number.MAX_SAFE_INTEGER;
+
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+
+      return left.label.localeCompare(right.label);
+    })
+    .map((group) => ({
+      ...group,
+      members: [...group.members].sort((left, right) =>
+        left.fullName.localeCompare(right.fullName),
+      ),
+    }));
+}
+
+function StaffSelect({ label, groups, value, onChange, disabled }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <select value={value} onChange={onChange} disabled={disabled}>
+        <option value="">Select staff</option>
+        {groups.map((group) => (
+          <optgroup key={group.key} label={group.label}>
+            {group.members.map((staffMember) => (
+              <option key={staffMember.uid} value={staffMember.uid}>
+                {staffMember.fullName} - {staffMember.staffTitle || staffMember.departmentName}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function StaffDirectoryList({
+  groups,
+  selectedUserId,
+  onSelect,
+  emptyMessage,
+}) {
+  if (groups.length === 0) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
+        {emptyMessage}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {groups.map((group) => (
+        <div key={group.key} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-[#162338]">{group.label}</p>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {group.members.length} staff
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {group.members.map((staffMember) => (
+              <button
+                key={staffMember.uid}
+                type="button"
+                onClick={() => onSelect(staffMember.uid)}
+                className={`block w-full rounded-2xl border px-4 py-3 text-left text-sm ${
+                  selectedUserId === staffMember.uid
+                    ? "border-[#c59d40] bg-[#f9f2e4] text-[#5f4a18]"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                <div className="font-semibold">{staffMember.fullName}</div>
+                <div className="mt-1 text-xs">
+                  {staffMember.staffTitle || staffMember.departmentName}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildPayrollReportLines(staffMembers = []) {
+  const groupedStaff = groupStaffByDepartment(staffMembers);
+  const lines = [
+    "Sunshine Hotel Payroll Report",
+    `Generated: ${formatFriendlyDate(new Date(), {
+      dateStyle: "full",
+      timeStyle: "short",
+    })}`,
+    "",
+  ];
+
+  if (groupedStaff.length === 0) {
+    lines.push("No active staff payroll records found.");
+    return lines;
+  }
+
+  groupedStaff.forEach((group) => {
+    let departmentNetTotal = 0;
+
+    lines.push(group.label);
+    group.members.forEach((staffMember, index) => {
+      const payroll = buildPayrollBreakdown(staffMember);
+      departmentNetTotal += payroll.netSalary;
+      lines.push(
+        `${index + 1}. ${staffMember.fullName} | ${staffMember.staffTitle || group.label}`,
+      );
+      lines.push(`Payroll month: ${payroll.payrollMonthLabel}`);
+      lines.push(`Gross salary: ${formatCurrency(payroll.monthlySalary)}`);
+      lines.push(`Absence deduction: ${formatCurrency(payroll.absenceDeduction)}`);
+      lines.push(`Lateness deduction: ${formatCurrency(payroll.latenessDeduction)}`);
+      lines.push(`Net salary: ${formatCurrency(payroll.netSalary)}`);
+      lines.push("");
+    });
+    lines.push(`Department total net salary: ${formatCurrency(departmentNetTotal)}`);
+    lines.push("");
+  });
+
+  return lines;
+}
+
+function getLeaveStatusText(leaveDetails) {
+  switch (leaveDetails.status) {
+    case "scheduled":
+      return "Scheduled";
+    case "on_leave":
+      return "On leave";
+    case "overstayed":
+      return "Overstayed leave";
+    case "eligible":
+      return "Eligible";
+    case "quarter_used":
+      return "Quarter already used";
+    case "year_complete":
+      return "Year complete";
+    case "not_eligible":
+      return "Not yet eligible";
+    default:
+      return "Start date needed";
+  }
+}
+
 export default function StaffManagementPanel({
   profile,
   staffDirectory,
   onSaveStaffProfile,
 }) {
   const access = getManagerWorkspaceAccess(profile);
+  const [activeSection, setActiveSection] = useState("active");
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedLeaveUserId, setSelectedLeaveUserId] = useState("");
+  const [selectedPayrollUserId, setSelectedPayrollUserId] = useState("");
   const [form, setForm] = useState({
     fullName: "",
     birthday: "",
@@ -58,35 +315,123 @@ export default function StaffManagementPanel({
     jobLevel: "line_staff",
     staffTitle: "",
     surcharges: "",
-    leaveEligibility: "",
     employmentStatus: "active",
     approvalStatus: "approved",
+    employmentStartDate: "",
   });
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [leaveForm, setLeaveForm] = useState({
+    startDate: getHotelDateKey(),
+  });
+  const [payrollForm, setPayrollForm] = useState({
+    monthlySalary: "",
+    payrollMonthKey: getHotelDateKey().slice(0, 7),
+    absenceDays: "0",
+    lateCount: "0",
+  });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingLeave, setSavingLeave] = useState(false);
+  const [savingPayroll, setSavingPayroll] = useState(false);
+  const [profileFeedback, setProfileFeedback] = useState({ type: "", message: "" });
+  const [leaveFeedback, setLeaveFeedback] = useState({ type: "", message: "" });
+  const [payrollFeedback, setPayrollFeedback] = useState({ type: "", message: "" });
+
+  const activeStaff = useMemo(
+    () =>
+      staffDirectory.filter((staffMember) => (staffMember.employmentStatus ?? "active") !== "sacked"),
+    [staffDirectory],
+  );
+  const sackedStaff = useMemo(
+    () =>
+      staffDirectory.filter((staffMember) => (staffMember.employmentStatus ?? "active") === "sacked"),
+    [staffDirectory],
+  );
+  const activeStaffByDepartment = useMemo(
+    () => groupStaffByDepartment(activeStaff),
+    [activeStaff],
+  );
+  const sackedStaffByDepartment = useMemo(
+    () => groupStaffByDepartment(sackedStaff),
+    [sackedStaff],
+  );
+  const currentDirectoryGroups =
+    activeSection === "sacked" ? sackedStaffByDepartment : activeStaffByDepartment;
+  const currentDirectory =
+    activeSection === "sacked" ? sackedStaff : activeStaff;
 
   const selectedStaff = useMemo(
     () => staffDirectory.find((staffMember) => staffMember.uid === selectedUserId) ?? null,
     [selectedUserId, staffDirectory],
+  );
+  const selectedLeaveStaff = useMemo(
+    () => activeStaff.find((staffMember) => staffMember.uid === selectedLeaveUserId) ?? null,
+    [activeStaff, selectedLeaveUserId],
+  );
+  const selectedPayrollStaff = useMemo(
+    () => activeStaff.find((staffMember) => staffMember.uid === selectedPayrollUserId) ?? null,
+    [activeStaff, selectedPayrollUserId],
   );
 
   const titleOptions = useMemo(
     () => getStaffTitleOptions(form.departmentKey, form.jobLevel),
     [form.departmentKey, form.jobLevel],
   );
+  const leaveDetails = useMemo(
+    () => getLeaveEligibilityDetails(selectedLeaveStaff),
+    [selectedLeaveStaff],
+  );
+  const payrollPreview = useMemo(
+    () =>
+      buildPayrollBreakdown({
+        ...selectedPayrollStaff,
+        monthlySalary: payrollForm.monthlySalary,
+        payrollMonthKey: payrollForm.payrollMonthKey,
+        absenceDays: payrollForm.absenceDays,
+        lateCount: payrollForm.lateCount,
+      }),
+    [payrollForm, selectedPayrollStaff],
+  );
 
   useEffect(() => {
-    if (!selectedUserId && staffDirectory[0]?.uid) {
-      setSelectedUserId(staffDirectory[0].uid);
+    if (!selectedUserId && currentDirectory[0]?.uid) {
+      setSelectedUserId(currentDirectory[0].uid);
+      return;
     }
 
     if (
       selectedUserId &&
-      !staffDirectory.some((staffMember) => staffMember.uid === selectedUserId)
+      !currentDirectory.some((staffMember) => staffMember.uid === selectedUserId)
     ) {
-      setSelectedUserId(staffDirectory[0]?.uid ?? "");
+      setSelectedUserId(currentDirectory[0]?.uid ?? "");
     }
-  }, [selectedUserId, staffDirectory]);
+  }, [currentDirectory, selectedUserId]);
+
+  useEffect(() => {
+    if (!selectedLeaveUserId && activeStaff[0]?.uid) {
+      setSelectedLeaveUserId(activeStaff[0].uid);
+      return;
+    }
+
+    if (
+      selectedLeaveUserId &&
+      !activeStaff.some((staffMember) => staffMember.uid === selectedLeaveUserId)
+    ) {
+      setSelectedLeaveUserId(activeStaff[0]?.uid ?? "");
+    }
+  }, [activeStaff, selectedLeaveUserId]);
+
+  useEffect(() => {
+    if (!selectedPayrollUserId && activeStaff[0]?.uid) {
+      setSelectedPayrollUserId(activeStaff[0].uid);
+      return;
+    }
+
+    if (
+      selectedPayrollUserId &&
+      !activeStaff.some((staffMember) => staffMember.uid === selectedPayrollUserId)
+    ) {
+      setSelectedPayrollUserId(activeStaff[0]?.uid ?? "");
+    }
+  }, [activeStaff, selectedPayrollUserId]);
 
   useEffect(() => {
     if (!selectedStaff) {
@@ -104,9 +449,9 @@ export default function StaffManagementPanel({
         selectedStaff.staffTitle ??
         getDefaultStaffTitle(selectedStaff.departmentKey, selectedStaff.jobLevel),
       surcharges: selectedStaff.surcharges ?? "",
-      leaveEligibility: selectedStaff.leaveEligibility ?? "",
       employmentStatus: selectedStaff.employmentStatus ?? "active",
       approvalStatus: selectedStaff.approvalStatus ?? "approved",
+      employmentStartDate: getEmploymentStartDateKey(selectedStaff),
     });
   }, [selectedStaff]);
 
@@ -118,6 +463,20 @@ export default function StaffManagementPanel({
       }));
     }
   }, [form.staffTitle, titleOptions]);
+
+  useEffect(() => {
+    if (!selectedPayrollStaff) {
+      return;
+    }
+
+    setPayrollForm({
+      monthlySalary: String(selectedPayrollStaff.monthlySalary ?? ""),
+      payrollMonthKey:
+        selectedPayrollStaff.payrollMonthKey ?? getHotelDateKey().slice(0, 7),
+      absenceDays: String(selectedPayrollStaff.absenceDays ?? 0),
+      lateCount: String(selectedPayrollStaff.lateCount ?? 0),
+    });
+  }, [selectedPayrollStaff]);
 
   if (!access.canManageStaff) {
     return null;
@@ -151,8 +510,8 @@ export default function StaffManagementPanel({
       return;
     }
 
-    setSaving(true);
-    setFeedback({ type: "", message: "" });
+    setSavingProfile(true);
+    setProfileFeedback({ type: "", message: "" });
 
     const nextValues = {
       ...form,
@@ -174,19 +533,19 @@ export default function StaffManagementPanel({
         jobLevel: nextValues.jobLevel,
         staffTitle: nextValues.staffTitle.trim(),
         surcharges: nextValues.surcharges.trim(),
-        leaveEligibility: nextValues.leaveEligibility.trim(),
         employmentStatus: nextValues.employmentStatus,
         approvalStatus: nextValues.approvalStatus,
+        employmentStartDate: nextValues.employmentStartDate,
         isSuperAdmin: accessValues.isSuperAdmin,
         accessLevel: accessValues.accessLevel,
         privileges: getPrivilegeList(nextValues.departmentKey, nextValues.jobLevel),
       });
 
-      setFeedback({ type: "success", message });
+      setProfileFeedback({ type: "success", message });
     } catch (error) {
-      setFeedback({ type: "error", message: error.message });
+      setProfileFeedback({ type: "error", message: error.message });
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
     }
   }
 
@@ -196,7 +555,7 @@ export default function StaffManagementPanel({
   }
 
   async function handleSackStaff() {
-    await saveStaff("Staff marked as sacked.", {
+    await saveStaff("Staff moved to sacked staff.", {
       employmentStatus: "sacked",
     });
   }
@@ -246,184 +605,324 @@ export default function StaffManagementPanel({
     });
   }
 
+  async function handleGrantLeave(event) {
+    event.preventDefault();
+
+    if (!selectedLeaveStaff) {
+      return;
+    }
+
+    setSavingLeave(true);
+    setLeaveFeedback({ type: "", message: "" });
+
+    try {
+      const currentLeaveRecords = normalizeLeaveRecords(selectedLeaveStaff.leaveRecords ?? []);
+
+      if (currentLeaveRecords.some((record) => !record.returnedAt && !record.returnedDateKey)) {
+        throw new Error("This staff already has an open leave record. Mark the return first.");
+      }
+
+      if (!leaveDetails.eligible) {
+        throw new Error("This staff is not yet eligible for leave.");
+      }
+
+      const nextLeaveRecord = buildLeaveGrant({
+        startDateKey: leaveForm.startDate,
+        actorName: profile?.fullName ?? "",
+        actorUid: profile?.uid ?? "",
+      });
+
+      if (
+        currentLeaveRecords.some((record) => record.quarterKey === nextLeaveRecord.quarterKey)
+      ) {
+        throw new Error("This quarter has already been used for the selected staff.");
+      }
+
+      await onSaveStaffProfile(selectedLeaveStaff.uid, {
+        leaveRecords: normalizeLeaveRecords([nextLeaveRecord, ...currentLeaveRecords]),
+      });
+
+      setLeaveFeedback({ type: "success", message: "Leave granted successfully." });
+      setLeaveForm({
+        startDate: getHotelDateKey(),
+      });
+    } catch (error) {
+      setLeaveFeedback({ type: "error", message: error.message });
+    } finally {
+      setSavingLeave(false);
+    }
+  }
+
+  async function handleMarkReturned(recordId) {
+    if (!selectedLeaveStaff) {
+      return;
+    }
+
+    setSavingLeave(true);
+    setLeaveFeedback({ type: "", message: "" });
+
+    try {
+      const nextRecords = normalizeLeaveRecords(selectedLeaveStaff.leaveRecords ?? []).map((record) =>
+        record.id === recordId
+          ? {
+              ...record,
+              returnedAt: new Date().toISOString(),
+              returnedDateKey: getHotelDateKey(),
+              returnedByName: profile?.fullName ?? "",
+            }
+          : record,
+      );
+
+      await onSaveStaffProfile(selectedLeaveStaff.uid, {
+        leaveRecords: nextRecords,
+      });
+
+      setLeaveFeedback({ type: "success", message: "Leave return recorded." });
+    } catch (error) {
+      setLeaveFeedback({ type: "error", message: error.message });
+    } finally {
+      setSavingLeave(false);
+    }
+  }
+
+  async function handleSavePayroll(event) {
+    event.preventDefault();
+
+    if (!selectedPayrollStaff) {
+      return;
+    }
+
+    setSavingPayroll(true);
+    setPayrollFeedback({ type: "", message: "" });
+
+    try {
+      await onSaveStaffProfile(selectedPayrollStaff.uid, {
+        monthlySalary: Number(payrollForm.monthlySalary || 0),
+        payrollMonthKey: payrollForm.payrollMonthKey,
+        absenceDays: Number(payrollForm.absenceDays || 0),
+        lateCount: Number(payrollForm.lateCount || 0),
+        salaryUpdatedAt: new Date().toISOString(),
+        salaryUpdatedByName: profile?.fullName ?? "",
+      });
+
+      setPayrollFeedback({ type: "success", message: "Payroll record updated." });
+    } catch (error) {
+      setPayrollFeedback({ type: "error", message: error.message });
+    } finally {
+      setSavingPayroll(false);
+    }
+  }
+
+  const payrollReportLines = buildPayrollReportLines(activeStaff);
+
   return (
     <section className="panel p-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="section-title">Staff Management</h2>
-        <span className="badge">{staffDirectory.length} staff</span>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="section-title">Staff Management</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Staff records, approvals, leave control, payroll, and department grouping.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="badge">{activeStaff.length} active staff</span>
+          <span className="badge">{sackedStaff.length} sacked staff</span>
+        </div>
       </div>
 
-      <div className="mt-5 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-        <div className="subpanel">
-          <label className="field">
-            <span>Staff</span>
-            <select
+      <div className="mt-5 flex flex-wrap gap-2 rounded-[24px] bg-slate-100 p-2">
+        {managementSections.map((section) => (
+          <SectionButton
+            key={section.key}
+            label={section.label}
+            active={activeSection === section.key}
+            onClick={() => setActiveSection(section.key)}
+          />
+        ))}
+      </div>
+
+      {(activeSection === "active" || activeSection === "sacked") && (
+        <div className="mt-5 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+          <div className="subpanel">
+            <StaffSelect
+              label={activeSection === "sacked" ? "Sacked staff" : "Staff"}
+              groups={currentDirectoryGroups}
               value={selectedUserId}
               onChange={(event) => setSelectedUserId(event.target.value)}
-              disabled={saving}
-            >
-              <option value="">Select staff</option>
-              {staffDirectory.map((staffMember) => (
-                <option key={staffMember.uid} value={staffMember.uid}>
-                  {staffMember.fullName} - {staffMember.staffTitle || staffMember.departmentName}
-                </option>
-              ))}
-            </select>
-          </label>
+              disabled={savingProfile}
+            />
 
-          <div className="mt-4 space-y-3">
-            {staffDirectory.map((staffMember) => (
-              <button
-                key={staffMember.uid}
-                type="button"
-                onClick={() => setSelectedUserId(staffMember.uid)}
-                className={`block w-full rounded-2xl border px-4 py-3 text-left text-sm ${
-                  selectedUserId === staffMember.uid
-                    ? "border-[#c59d40] bg-[#f9f2e4] text-[#5f4a18]"
-                    : "border-slate-200 bg-slate-50/80 text-slate-700"
-                }`}
-              >
-                <div className="font-semibold">{staffMember.fullName}</div>
-                <div className="mt-1 text-xs">
-                  {staffMember.staffTitle || staffMember.departmentName}
-                  {staffMember.employmentStatus ? ` - ${staffMember.employmentStatus}` : ""}
-                </div>
-              </button>
-            ))}
+            <div className="mt-4">
+              <StaffDirectoryList
+                groups={currentDirectoryGroups}
+                selectedUserId={selectedUserId}
+                onSelect={setSelectedUserId}
+                emptyMessage={
+                  activeSection === "sacked"
+                    ? "No staff have been moved to sacked staff yet."
+                    : "No staff records found."
+                }
+              />
+            </div>
           </div>
-        </div>
 
-        <form onSubmit={handleSubmit} className="subpanel">
-          {selectedStaff ? (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="field">
-                  <span>Full name</span>
-                  <input
-                    type="text"
-                    value={form.fullName}
-                    onChange={(event) => updateField("fullName", event.target.value)}
-                    disabled={saving}
-                    required
+          <form onSubmit={handleSubmit} className="subpanel">
+            {selectedStaff ? (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="field">
+                    <span>Full name</span>
+                    <input
+                      type="text"
+                      value={form.fullName}
+                      onChange={(event) => updateField("fullName", event.target.value)}
+                      disabled={savingProfile}
+                      required
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Birthday</span>
+                    <input
+                      type="date"
+                      value={form.birthday}
+                      onChange={(event) => updateField("birthday", event.target.value)}
+                      disabled={savingProfile}
+                      required
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="field">
+                    <span>Phone number</span>
+                    <input
+                      type="tel"
+                      value={form.phoneNumber}
+                      onChange={(event) => updateField("phoneNumber", event.target.value)}
+                      disabled={savingProfile}
+                      required
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Home address</span>
+                    <input
+                      type="text"
+                      value={form.homeAddress}
+                      onChange={(event) => updateField("homeAddress", event.target.value)}
+                      disabled={savingProfile}
+                      required
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="field">
+                    <span>Department</span>
+                    <select
+                      value={form.departmentKey}
+                      onChange={(event) => updateDepartment(event.target.value)}
+                      disabled={savingProfile}
+                    >
+                      {departmentOptions.map((department) => (
+                        <option key={department.value} value={department.value}>
+                          {department.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Role level</span>
+                    <select
+                      value={form.jobLevel}
+                      onChange={(event) => updateJobLevel(event.target.value)}
+                      disabled={savingProfile}
+                    >
+                      {jobLevelOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="field">
+                    <span>Staff title</span>
+                    <select
+                      value={form.staffTitle}
+                      onChange={(event) => updateField("staffTitle", event.target.value)}
+                      disabled={savingProfile}
+                    >
+                      {titleOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Status</span>
+                    <select
+                      value={form.employmentStatus}
+                      onChange={(event) => updateField("employmentStatus", event.target.value)}
+                      disabled={savingProfile}
+                    >
+                      <option value="active">Active</option>
+                      <option value="suspended">Suspended</option>
+                      <option value="sacked">Sacked</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="field">
+                    <span>Approval</span>
+                    <select
+                      value={form.approvalStatus}
+                      onChange={(event) => updateField("approvalStatus", event.target.value)}
+                      disabled={savingProfile}
+                    >
+                      {accountApprovalOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Employment start date</span>
+                    <input
+                      type="date"
+                      value={form.employmentStartDate}
+                      onChange={(event) => updateField("employmentStartDate", event.target.value)}
+                      disabled={savingProfile}
+                      required
+                    />
+                  </label>
+                </div>
+
+                <label className="field mt-4">
+                  <span>Surcharges</span>
+                  <textarea
+                    value={form.surcharges}
+                    onChange={(event) => updateField("surcharges", event.target.value)}
+                    rows={3}
+                    disabled={savingProfile}
                   />
                 </label>
 
-                <label className="field">
-                  <span>Birthday</span>
-                  <input
-                    type="date"
-                    value={form.birthday}
-                    onChange={(event) => updateField("birthday", event.target.value)}
-                    disabled={saving}
-                    required
-                  />
-                </label>
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="field">
-                  <span>Phone number</span>
-                  <input
-                    type="tel"
-                    value={form.phoneNumber}
-                    onChange={(event) => updateField("phoneNumber", event.target.value)}
-                    disabled={saving}
-                    required
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Home address</span>
-                  <input
-                    type="text"
-                    value={form.homeAddress}
-                    onChange={(event) => updateField("homeAddress", event.target.value)}
-                    disabled={saving}
-                    required
-                  />
-                </label>
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="field">
-                  <span>Department</span>
-                  <select
-                    value={form.departmentKey}
-                    onChange={(event) => updateDepartment(event.target.value)}
-                    disabled={saving}
-                  >
-                    {departmentOptions.map((department) => (
-                      <option key={department.value} value={department.value}>
-                        {department.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>Role level</span>
-                  <select
-                    value={form.jobLevel}
-                    onChange={(event) => updateJobLevel(event.target.value)}
-                    disabled={saving}
-                  >
-                    {jobLevelOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="field">
-                  <span>Staff title</span>
-                  <select
-                    value={form.staffTitle}
-                    onChange={(event) => updateField("staffTitle", event.target.value)}
-                    disabled={saving}
-                  >
-                    {titleOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>Status</span>
-                  <select
-                    value={form.employmentStatus}
-                    onChange={(event) => updateField("employmentStatus", event.target.value)}
-                    disabled={saving}
-                  >
-                    <option value="active">Active</option>
-                    <option value="suspended">Suspended</option>
-                    <option value="sacked">Sacked</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="field">
-                  <span>Approval</span>
-                  <select
-                    value={form.approvalStatus}
-                    onChange={(event) => updateField("approvalStatus", event.target.value)}
-                    disabled={saving}
-                  >
-                    {accountApprovalOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
                   <p>
+                    Sign-in email:{" "}
+                    <span className="font-semibold text-[#162338]">{selectedStaff.email}</span>
+                  </p>
+                  <p className="mt-2">
                     Approval status:{" "}
                     <span className="font-semibold text-[#162338]">
                       {form.approvalStatus === "approved" ? "Approved" : "Pending approval"}
@@ -435,113 +934,450 @@ export default function StaffManagementPanel({
                     </p>
                   ) : null}
                 </div>
+
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                  Sacked staff are removed from the active list and kept inside the Sacked Staff tab. Pending accounts cannot log in until HR or a super admin approves them.
+                </div>
+
+                {profileFeedback.message ? (
+                  <div
+                    className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                      profileFeedback.type === "success"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-rose-50 text-rose-700"
+                    }`}
+                  >
+                    {profileFeedback.message}
+                  </div>
+                ) : null}
+
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <button type="submit" disabled={savingProfile} className="button-primary flex-1">
+                    {savingProfile ? "Saving..." : "Save staff"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={
+                      form.approvalStatus === "approved"
+                        ? handleSetPendingApproval
+                        : handleApproveStaff
+                    }
+                    disabled={savingProfile}
+                    className="button-secondary flex-1"
+                  >
+                    {savingProfile
+                      ? "Saving..."
+                      : form.approvalStatus === "approved"
+                        ? "Set pending approval"
+                        : "Approve account"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={form.jobLevel === "manager" ? handleDemoteStaff : handlePromoteStaff}
+                    disabled={savingProfile}
+                    className="button-secondary flex-1"
+                  >
+                    {savingProfile
+                      ? "Saving..."
+                      : form.jobLevel === "manager"
+                        ? "Set as line staff"
+                        : "Set as manager"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSetSupervisor}
+                    disabled={savingProfile || form.jobLevel === "supervisor"}
+                    className="button-secondary flex-1"
+                  >
+                    {savingProfile
+                      ? "Saving..."
+                      : form.jobLevel === "supervisor"
+                        ? "Already supervisor"
+                        : "Set as supervisor"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={
+                      form.employmentStatus === "active"
+                        ? handleSuspendStaff
+                        : handleReactivateStaff
+                    }
+                    disabled={savingProfile}
+                    className="button-secondary flex-1"
+                  >
+                    {savingProfile
+                      ? "Saving..."
+                      : form.employmentStatus === "active"
+                        ? "Suspend staff"
+                        : "Reactivate staff"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSackStaff}
+                    disabled={savingProfile || activeSection === "sacked"}
+                    className="button-secondary flex-1 md:col-span-2 xl:col-span-3"
+                  >
+                    {savingProfile ? "Saving..." : "Move to sacked staff"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
+                No staff selected.
+              </div>
+            )}
+          </form>
+        </div>
+      )}
+
+      {activeSection === "leave" && (
+        <div className="mt-5 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="subpanel">
+            <StaffSelect
+              label="Staff for leave"
+              groups={activeStaffByDepartment}
+              value={selectedLeaveUserId}
+              onChange={(event) => setSelectedLeaveUserId(event.target.value)}
+              disabled={savingLeave}
+            />
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <StaffMetric
+                label="Leave status"
+                value={selectedLeaveStaff ? getLeaveStatusText(leaveDetails) : "Not set"}
+              />
+              <StaffMetric
+                label="Employment start"
+                value={
+                  selectedLeaveStaff
+                    ? form.employmentStartDate && selectedStaff?.uid === selectedLeaveUserId
+                      ? form.employmentStartDate
+                      : getEmploymentStartDateKey(selectedLeaveStaff) || "Not set"
+                    : "Not set"
+                }
+              />
+              <StaffMetric
+                label="Eligibility date"
+                value={leaveDetails.eligibilityDateKey || "Awaiting HR update"}
+              />
+              <StaffMetric
+                label="Remaining annual leave"
+                value={`${leaveDetails.remainingAnnualDays} day(s)`}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <StaffMetric
+                label="Next leave slot"
+                value={leaveDetails.nextAvailableQuarterLabel || "None available now"}
+              />
+              <StaffMetric
+                label="Current leave"
+                value={
+                  leaveDetails.openLeaveRecord
+                    ? formatLeaveRecordLabel(leaveDetails.openLeaveRecord)
+                    : "No open leave"
+                }
+              />
+            </div>
+          </div>
+
+          <div className="subpanel">
+            <form onSubmit={handleGrantLeave} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="field">
+                  <span>Leave start date</span>
+                  <input
+                    type="date"
+                    value={leaveForm.startDate}
+                    onChange={(event) =>
+                      setLeaveForm({
+                        startDate: event.target.value,
+                      })
+                    }
+                    disabled={savingLeave}
+                    required
+                  />
+                </label>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+                  <p>
+                    Quarter:{" "}
+                    <span className="font-semibold text-[#162338]">
+                      {getQuarterLabelFromDateKey(leaveForm.startDate) || "Select a date"}
+                    </span>
+                  </p>
+                  <p className="mt-2">Duration: 7 days</p>
+                </div>
               </div>
 
-              <label className="field mt-4">
-                <span>Surcharges</span>
-                <textarea
-                  value={form.surcharges}
-                  onChange={(event) => updateField("surcharges", event.target.value)}
-                  rows={3}
-                  disabled={saving}
-                />
-              </label>
-
-              <label className="field mt-4">
-                <span>Leave eligibility</span>
-                <input
-                  type="text"
-                  value={form.leaveEligibility}
-                  onChange={(event) => updateField("leaveEligibility", event.target.value)}
-                  disabled={saving}
-                />
-              </label>
-
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
-                Sign-in email: <span className="font-semibold text-[#162338]">{selectedStaff.email}</span>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+                HR grants leave in 7-day blocks. Once the return date passes, the staff dashboard will begin to show an overstayed leave warning until HR records the return.
               </div>
 
-              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-                Suspended and sacked staff are removed from active teams, birthdays, and future dashboard access. Pending accounts cannot log in until HR or a super admin approves them.
-              </div>
-
-              {feedback.message ? (
+              {leaveFeedback.message ? (
                 <div
-                  className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
-                    feedback.type === "success"
+                  className={`rounded-2xl px-4 py-3 text-sm ${
+                    leaveFeedback.type === "success"
                       ? "bg-emerald-50 text-emerald-700"
                       : "bg-rose-50 text-rose-700"
                   }`}
                 >
-                  {feedback.message}
+                  {leaveFeedback.message}
                 </div>
               ) : null}
 
-              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                <button type="submit" disabled={saving} className="button-primary flex-1">
-                  {saving ? "Saving..." : "Save staff"}
+              <div className="flex flex-wrap gap-3">
+                <button type="submit" disabled={savingLeave} className="button-primary">
+                  {savingLeave ? "Saving..." : "Grant leave"}
                 </button>
-                <button
-                  type="button"
-                  onClick={form.approvalStatus === "approved" ? handleSetPendingApproval : handleApproveStaff}
-                  disabled={saving}
-                  className="button-secondary flex-1"
-                >
-                  {saving
-                    ? "Saving..."
-                    : form.approvalStatus === "approved"
-                      ? "Set pending approval"
-                      : "Approve account"}
-                </button>
-                <button
-                  type="button"
-                  onClick={form.jobLevel === "manager" ? handleDemoteStaff : handlePromoteStaff}
-                  disabled={saving}
-                  className="button-secondary flex-1"
-                >
-                  {saving
-                    ? "Saving..."
-                    : form.jobLevel === "manager"
-                      ? "Set as line staff"
-                      : "Set as manager"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSetSupervisor}
-                  disabled={saving || form.jobLevel === "supervisor"}
-                  className="button-secondary flex-1"
-                >
-                  {saving ? "Saving..." : form.jobLevel === "supervisor" ? "Already supervisor" : "Set as supervisor"}
-                </button>
-                <button
-                  type="button"
-                  onClick={form.employmentStatus === "active" ? handleSuspendStaff : handleReactivateStaff}
-                  disabled={saving}
-                  className="button-secondary flex-1"
-                >
-                  {saving
-                    ? "Saving..."
-                    : form.employmentStatus === "active"
-                      ? "Suspend staff"
-                      : "Reactivate staff"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSackStaff}
-                  disabled={saving}
-                  className="button-secondary flex-1 md:col-span-2 xl:col-span-3"
-                >
-                  {saving ? "Saving..." : "Sack staff"}
-                </button>
+                {leaveDetails.openLeaveRecord ? (
+                  <button
+                    type="button"
+                    onClick={() => handleMarkReturned(leaveDetails.openLeaveRecord.id)}
+                    disabled={savingLeave}
+                    className="button-secondary"
+                  >
+                    {savingLeave ? "Saving..." : "Mark return"}
+                  </button>
+                ) : null}
               </div>
-            </>
-          ) : (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
-              No staff selected.
+            </form>
+
+            <div className="mt-5 space-y-3">
+              <p className="text-sm font-semibold text-[#162338]">Leave history</p>
+              {leaveDetails.leaveRecords.length > 0 ? (
+                leaveDetails.leaveRecords.map((record) => (
+                  <div
+                    key={record.id}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600"
+                  >
+                    <p className="font-semibold text-[#162338]">
+                      {record.quarterKey} - {formatLeaveRecordLabel(record)}
+                    </p>
+                    <p className="mt-2">
+                      Granted by {record.grantedByName || "Human Resource"}
+                    </p>
+                    <p className="mt-2">
+                      {record.returnedAt
+                        ? `Returned on ${record.returnedDateKey || "recorded date"}`
+                        : "Return not recorded yet"}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
+                  No leave history for this staff member yet.
+                </div>
+              )}
             </div>
-          )}
-        </form>
-      </div>
+          </div>
+        </div>
+      )}
+
+      {activeSection === "payroll" && (
+        <div className="mt-5 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="subpanel">
+            <div className="flex flex-wrap gap-3 no-print">
+              <button
+                type="button"
+                onClick={() => printTextReport("Sunshine Hotel Payroll Report", payrollReportLines)}
+                className="button-secondary"
+              >
+                Print payroll
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadTextPdf({
+                    filename: "sunshine-hotel-payroll.pdf",
+                    title: "Sunshine Hotel Payroll Report",
+                    lines: payrollReportLines,
+                  })
+                }
+                className="button-secondary"
+              >
+                Download PDF
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePayroll} className="mt-5 space-y-4">
+              <StaffSelect
+                label="Staff for payroll"
+                groups={activeStaffByDepartment}
+                value={selectedPayrollUserId}
+                onChange={(event) => setSelectedPayrollUserId(event.target.value)}
+                disabled={savingPayroll}
+              />
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="field">
+                  <span>Monthly salary</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={payrollForm.monthlySalary}
+                    onChange={(event) =>
+                      setPayrollForm((current) => ({
+                        ...current,
+                        monthlySalary: event.target.value,
+                      }))
+                    }
+                    disabled={savingPayroll}
+                    required
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Payroll month</span>
+                  <input
+                    type="month"
+                    value={payrollForm.payrollMonthKey}
+                    onChange={(event) =>
+                      setPayrollForm((current) => ({
+                        ...current,
+                        payrollMonthKey: event.target.value,
+                      }))
+                    }
+                    disabled={savingPayroll}
+                    required
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="field">
+                  <span>Absence days</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={payrollForm.absenceDays}
+                    onChange={(event) =>
+                      setPayrollForm((current) => ({
+                        ...current,
+                        absenceDays: event.target.value,
+                      }))
+                    }
+                    disabled={savingPayroll}
+                    required
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Lateness count</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={payrollForm.lateCount}
+                    onChange={(event) =>
+                      setPayrollForm((current) => ({
+                        ...current,
+                        lateCount: event.target.value,
+                      }))
+                    }
+                    disabled={savingPayroll}
+                    required
+                  />
+                </label>
+              </div>
+
+              {payrollFeedback.message ? (
+                <div
+                  className={`rounded-2xl px-4 py-3 text-sm ${
+                    payrollFeedback.type === "success"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-rose-50 text-rose-700"
+                  }`}
+                >
+                  {payrollFeedback.message}
+                </div>
+              ) : null}
+
+              <button type="submit" disabled={savingPayroll} className="button-primary">
+                {savingPayroll ? "Saving..." : "Save payroll"}
+              </button>
+            </form>
+          </div>
+
+          <div className="subpanel">
+            <p className="section-title">Payroll Preview</p>
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <StaffMetric
+                label="Gross salary"
+                value={formatCurrency(payrollPreview.monthlySalary)}
+              />
+              <StaffMetric
+                label="Daily wage"
+                value={formatCurrency(payrollPreview.dailyWage)}
+              />
+              <StaffMetric
+                label="Absence deduction"
+                value={formatCurrency(payrollPreview.absenceDeduction)}
+              />
+              <StaffMetric
+                label="Net salary"
+                value={formatCurrency(payrollPreview.netSalary)}
+              />
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+              <p className="font-semibold text-[#162338]">
+                {selectedPayrollStaff?.fullName || "Selected staff"}
+              </p>
+              <div className="mt-3 space-y-2">
+                <p>Payroll month: {payrollPreview.payrollMonthLabel}</p>
+                <p>Attendance days: {payrollPreview.attendanceDays}</p>
+                <p>Absence days: {payrollPreview.absenceDays}</p>
+                <p>Lateness count: {payrollPreview.lateCount}</p>
+                <p>Lateness deduction: {formatCurrency(payrollPreview.latenessDeduction)}</p>
+                <p>Total deductions: {formatCurrency(payrollPreview.totalDeductions)}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {activeStaffByDepartment.map((group) => (
+                <div
+                  key={group.key}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#162338]">{group.label}</p>
+                    <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      {group.members.length} staff
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {group.members.map((staffMember) => {
+                      const payroll = buildPayrollBreakdown(staffMember);
+
+                      return (
+                        <div
+                          key={staffMember.uid}
+                          className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-semibold text-[#162338]">
+                              {staffMember.fullName}
+                            </span>
+                            <span className="font-semibold text-[#162338]">
+                              {formatCurrency(payroll.netSalary)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {payroll.payrollMonthLabel} - Absence {payroll.absenceDays}, Late{" "}
+                            {payroll.lateCount}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

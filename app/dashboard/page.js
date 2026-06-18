@@ -22,6 +22,7 @@ import TeamSchedulePanel from "@/components/dashboard/TeamSchedulePanel";
 import { useAuth } from "@/context/AuthContext";
 import { usePortalData } from "@/hooks/usePortalData";
 import { toInitials } from "@/lib/format";
+import { getLeaveDashboardSummary } from "@/lib/hr";
 import {
   getAuditLogAccess,
   formatJobLevel,
@@ -221,6 +222,7 @@ export default function DashboardPage() {
         { key: "work", label: "Work" },
         { key: "information", label: "Information" },
         { key: "notifications", label: "Notifications" },
+        ...(auditLogAccess.canViewPanel ? [{ key: "activity-log", label: "Time Stamp Log" }] : []),
         ...(canViewEventsTab ? [{ key: "events", label: "Events and Bookings" }] : []),
       ]
     : [
@@ -295,8 +297,8 @@ export default function DashboardPage() {
         },
         { label: "Shifts", value: myShiftsCount },
         {
-          label: "Leave eligibility",
-          value: profile?.leaveEligibility?.trim() || "Not set",
+          label: "Leave status",
+          value: getLeaveDashboardSummary(profile),
         },
       ];
     }
@@ -536,15 +538,6 @@ export default function DashboardPage() {
             },
           ]
         : []),
-      ...(auditLogAccess.canViewPanel
-        ? [
-            {
-              key: "activity-log",
-              label: "Time Stamp Log",
-              content: <ActivityLogPanel activityLogs={activityLogs} />,
-            },
-          ]
-        : []),
     ];
     const activeSection =
       sections.find((section) => section.key === activeWorkSection) ?? sections[0];
@@ -645,6 +638,24 @@ export default function DashboardPage() {
           notifications={notifications}
           lastSeenNotificationAt={lastSeenNotificationAt}
         />
+
+        {error ? (
+          <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+            {error}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderActivityLogTab() {
+    if (!auditLogAccess.canViewPanel) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-6">
+        <ActivityLogPanel activityLogs={activityLogs} />
 
         {error ? (
           <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
@@ -769,11 +780,13 @@ export default function DashboardPage() {
             : renderLineStaffView()
           : selectedTab === "work"
             ? renderManagerWorkTab()
-            : selectedTab === "information"
+          : selectedTab === "information"
               ? renderInformationTab()
-              : selectedTab === "notifications"
+            : selectedTab === "notifications"
                 ? renderNotificationsTab()
-                : renderEventsTab()}
+                : selectedTab === "activity-log"
+                  ? renderActivityLogTab()
+                  : renderEventsTab()}
       </section>
     </div>
   );
