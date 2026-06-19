@@ -241,6 +241,18 @@ function normalizeShifts(shifts = []) {
     .sort((left, right) => left.shiftDate.localeCompare(right.shiftDate));
 }
 
+function getSafeSortText(value, fallback = "") {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  return String(value);
+}
+
 function isActiveStaff(user = {}) {
   return (user.employmentStatus ?? "active") === "active";
 }
@@ -318,7 +330,11 @@ export function usePortalData(profile) {
               uid: document.id,
               ...document.data(),
             }))
-            .sort((left, right) => left.fullName.localeCompare(right.fullName));
+            .sort((left, right) =>
+              getSafeSortText(left.fullName, "Unnamed staff").localeCompare(
+                getSafeSortText(right.fullName, "Unnamed staff"),
+              ),
+            );
           const activeUsers = users.filter(
             (user) => isActiveStaff(user) && isApprovedStaff(user),
           );

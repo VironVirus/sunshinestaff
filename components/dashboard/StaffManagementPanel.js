@@ -33,6 +33,26 @@ const managementSections = [
   { key: "payroll", label: "Payroll" },
 ];
 
+function toText(value, fallback = "") {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  return String(value);
+}
+
+function getStaffDisplayName(staffMember = {}) {
+  return toText(staffMember.fullName, "Unnamed staff");
+}
+
+function getStaffRoleLabel(staffMember = {}) {
+  return toText(staffMember.staffTitle || staffMember.departmentName, "Unassigned");
+}
+
 function buildAccessLevel({ staffTitle, currentIsSuperAdmin, jobLevel }) {
   const executiveSuperAdmin = executiveSuperAdminTitles.includes(staffTitle);
 
@@ -155,12 +175,12 @@ function groupStaffByDepartment(staffMembers = []) {
         return leftOrder - rightOrder;
       }
 
-      return left.label.localeCompare(right.label);
+      return toText(left.label).localeCompare(toText(right.label));
     })
     .map((group) => ({
       ...group,
       members: [...group.members].sort((left, right) =>
-        left.fullName.localeCompare(right.fullName),
+        getStaffDisplayName(left).localeCompare(getStaffDisplayName(right)),
       ),
     }));
 }
@@ -175,7 +195,7 @@ function StaffSelect({ label, groups, value, onChange, disabled }) {
           <optgroup key={group.key} label={group.label}>
             {group.members.map((staffMember) => (
               <option key={staffMember.uid} value={staffMember.uid}>
-                {staffMember.fullName} - {staffMember.staffTitle || staffMember.departmentName}
+                {getStaffDisplayName(staffMember)} - {getStaffRoleLabel(staffMember)}
               </option>
             ))}
           </optgroup>
@@ -222,9 +242,9 @@ function StaffDirectoryList({
                     : "border-slate-200 bg-white text-slate-700"
                 }`}
               >
-                <div className="font-semibold">{staffMember.fullName}</div>
+                <div className="font-semibold">{getStaffDisplayName(staffMember)}</div>
                 <div className="mt-1 text-xs">
-                  {staffMember.staffTitle || staffMember.departmentName}
+                  {getStaffRoleLabel(staffMember)}
                 </div>
               </button>
             ))}
@@ -259,7 +279,7 @@ function buildPayrollReportLines(staffMembers = []) {
       const payroll = buildPayrollBreakdown(staffMember);
       departmentNetTotal += payroll.netSalary;
       lines.push(
-        `${index + 1}. ${staffMember.fullName} | ${staffMember.staffTitle || group.label}`,
+        `${index + 1}. ${getStaffDisplayName(staffMember)} | ${getStaffRoleLabel(staffMember) || group.label}`,
       );
       lines.push(`Payroll month: ${payroll.payrollMonthLabel}`);
       lines.push(`Gross salary: ${formatCurrency(payroll.monthlySalary)}`);
@@ -298,7 +318,7 @@ function getLeaveStatusText(leaveDetails) {
 
 export default function StaffManagementPanel({
   profile,
-  staffDirectory,
+  staffDirectory = [],
   onSaveStaffProfile,
 }) {
   const access = getManagerWorkspaceAccess(profile);
@@ -524,15 +544,15 @@ export default function StaffManagementPanel({
 
     try {
       await onSaveStaffProfile(selectedStaff.uid, {
-        fullName: nextValues.fullName.trim(),
+        fullName: toText(nextValues.fullName).trim(),
         birthday: nextValues.birthday,
-        phoneNumber: nextValues.phoneNumber.trim(),
-        homeAddress: nextValues.homeAddress.trim(),
+        phoneNumber: toText(nextValues.phoneNumber).trim(),
+        homeAddress: toText(nextValues.homeAddress).trim(),
         departmentKey: nextValues.departmentKey,
         departmentName: getDepartmentName(nextValues.departmentKey),
         jobLevel: nextValues.jobLevel,
-        staffTitle: nextValues.staffTitle.trim(),
-        surcharges: nextValues.surcharges.trim(),
+        staffTitle: toText(nextValues.staffTitle).trim(),
+        surcharges: toText(nextValues.surcharges).trim(),
         employmentStatus: nextValues.employmentStatus,
         approvalStatus: nextValues.approvalStatus,
         employmentStartDate: nextValues.employmentStartDate,
@@ -920,7 +940,9 @@ export default function StaffManagementPanel({
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
                   <p>
                     Sign-in email:{" "}
-                    <span className="font-semibold text-[#162338]">{selectedStaff.email}</span>
+                    <span className="font-semibold text-[#162338]">
+                      {toText(selectedStaff.email, "Not set")}
+                    </span>
                   </p>
                   <p className="mt-2">
                     Approval status:{" "}
@@ -1322,7 +1344,7 @@ export default function StaffManagementPanel({
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
               <p className="font-semibold text-[#162338]">
-                {selectedPayrollStaff?.fullName || "Selected staff"}
+                              {selectedPayrollStaff ? getStaffDisplayName(selectedPayrollStaff) : "Selected staff"}
               </p>
               <div className="mt-3 space-y-2">
                 <p>Payroll month: {payrollPreview.payrollMonthLabel}</p>
@@ -1358,7 +1380,7 @@ export default function StaffManagementPanel({
                         >
                           <div className="flex items-center justify-between gap-3">
                             <span className="font-semibold text-[#162338]">
-                              {staffMember.fullName}
+                              {getStaffDisplayName(staffMember)}
                             </span>
                             <span className="font-semibold text-[#162338]">
                               {formatCurrency(payroll.netSalary)}
