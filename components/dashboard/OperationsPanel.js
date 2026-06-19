@@ -474,6 +474,7 @@ function buildCleanedRoomsReportLines(operations) {
   const operationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
   const sections = buildRoomNumberSections(operations?.cleanedRoomNumbers ?? []);
   const cleanedSections = sections.filter((section) => section.rooms.length > 0);
+  const otherCleanedAreas = operations?.otherCleanedAreas ?? [];
   const lines = [
     "Sunshine Hotel Cleaned Rooms Report",
     `Operational day: ${formatDateKey(operationalDateKey)}`,
@@ -497,6 +498,15 @@ function buildCleanedRoomsReportLines(operations) {
     lines.push(`Summary: ${section.rooms.length} cleaned room(s)`);
     lines.push("");
   });
+
+  lines.push("Other places cleaned:");
+  if (otherCleanedAreas.length === 0) {
+    lines.push("None");
+  } else {
+    otherCleanedAreas.forEach((entry, index) => {
+      lines.push(`${index + 1}. ${entry}`);
+    });
+  }
 
   return lines;
 }

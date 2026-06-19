@@ -116,6 +116,7 @@ function buildDailyReportEntry(snapshot, profile) {
     cleanedRooms: snapshot.cleanedRooms ?? 0,
     occupiedRoomNumbers: snapshot.occupiedRoomNumbers ?? [],
     cleanedRoomNumbers: snapshot.cleanedRoomNumbers ?? [],
+    otherCleanedAreas: snapshot.otherCleanedAreas ?? [],
     updatedAt: new Date().toISOString(),
     updatedByName: profile?.fullName ?? "",
     updatedByDepartment: profile?.departmentName ?? "",
@@ -745,6 +746,7 @@ export function usePortalData(profile) {
           data: {
             cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
             cleanedRooms: nextOperations.cleanedRooms,
+            otherCleanedAreas: nextOperations.otherCleanedAreas ?? [],
             activityEntries: normalizedActivityEntries,
             reportHistory: upsertOperationsReportHistory(
               portalState.operations.reportHistory ?? [],

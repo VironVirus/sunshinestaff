@@ -99,6 +99,14 @@ export function normalizeRoomNumbers(roomNumbers = []) {
     .sort((left, right) => roomOrderMap.get(left) - roomOrderMap.get(right));
 }
 
+function normalizeTextEntries(entries = []) {
+  return [...new Set(
+    entries
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter(Boolean),
+  )];
+}
+
 export function filterRoomGroupOptions(excludedRooms = []) {
   const excludedRoomSet = new Set(excludedRooms);
 
@@ -199,6 +207,11 @@ export function deriveOperationsSnapshot(rawOperations = {}) {
         .filter((roomNumber) => !occupiedRoomSet.has(roomNumber))
       : []
     : null;
+  const otherCleanedAreas = Array.isArray(rawOperations.otherCleanedAreas)
+    ? cleanedRoomDayKey === operationalDateKey
+      ? normalizeTextEntries(rawOperations.otherCleanedAreas)
+      : []
+    : [];
 
   const inHouse = occupiedRooms.length;
   const availableRooms = configuredHotelRoomCount - occupiedRooms.length;
@@ -216,6 +229,7 @@ export function deriveOperationsSnapshot(rawOperations = {}) {
     occupiedRooms,
     occupiedRoomNumbers,
     cleanedRoomNumbers: cleanedRoomNumbers ?? [],
+    otherCleanedAreas,
     inHouse,
     availableRooms,
     breakfastEntitled,

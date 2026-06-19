@@ -145,6 +145,71 @@ function buildOpenRoomIssuesLines(propertyStatus) {
   });
 }
 
+function parseOtherCleanedAreas(value = "") {
+  return [...new Set(
+    value
+      .split(/\r?\n|,/)
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  )];
+}
+
+function buildRoomNumberSections(roomNumbers = []) {
+  const roomSet = new Set(roomNumbers);
+
+  return roomFloorOptions.map((floor) => {
+    const rooms = getRoomOptionsForFloor(floor.value)
+      .map((room) => room.value)
+      .filter((roomNumber) => roomSet.has(roomNumber));
+
+    return {
+      key: floor.value,
+      label: floor.label,
+      rooms,
+    };
+  });
+}
+
+function buildCleanedRoomsReportLines(operations) {
+  const cleanedSections = buildRoomNumberSections(operations?.cleanedRoomNumbers ?? []).filter(
+    (section) => section.rooms.length > 0,
+  );
+  const otherCleanedAreas = operations?.otherCleanedAreas ?? [];
+  const lines = [
+    "Sunshine Hotel Cleaned Rooms Report",
+    `Operational day: ${formatDateKey(operations?.operationalDateKey)}`,
+    `Generated: ${formatFriendlyDate(new Date(), {
+      dateStyle: "full",
+      timeStyle: "short",
+    })}`,
+    "",
+    `Summary: ${operations?.cleanedRooms ?? 0} cleaned room(s)`,
+    "",
+  ];
+
+  if (cleanedSections.length === 0) {
+    lines.push("No cleaned rooms reported.");
+  } else {
+    cleanedSections.forEach((section) => {
+      lines.push(section.label);
+      lines.push(section.rooms.join(", "));
+      lines.push(`Summary: ${section.rooms.length} cleaned room(s)`);
+      lines.push("");
+    });
+  }
+
+  lines.push("Other places cleaned:");
+  if (otherCleanedAreas.length === 0) {
+    lines.push("None");
+  } else {
+    otherCleanedAreas.forEach((entry, index) => {
+      lines.push(`${index + 1}. ${entry}`);
+    });
+  }
+
+  return lines;
+}
+
 function getStatusBadgeClass(status) {
   switch (status) {
     case "occupied":
@@ -222,6 +287,7 @@ export default function HousekeepingStatusPanel({
   propertyStatus,
   operations,
   onSaveHousekeepingReports,
+  onSaveHousekeeping,
 }) {
   const access = getHousekeepingReportAccess(profile);
   const [activePeriod, setActivePeriod] = useState("morning");
@@ -229,10 +295,17 @@ export default function HousekeepingStatusPanel({
   const [selectedRoom, setSelectedRoom] = useState("");
   const [selectedStatus, setSelectedStatus] = useState(housekeepingStatusOptions[0]?.value ?? "");
   const [saving, setSaving] = useState(false);
+  const [cleaningSaving, setCleaningSaving] = useState(false);
   const [clearingRoom, setClearingRoom] = useState("");
+  const [clearingCleanedRoom, setClearingCleanedRoom] = useState("");
+  const [clearingOtherArea, setClearingOtherArea] = useState("");
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [cleaningFeedback, setCleaningFeedback] = useState({ type: "", message: "" });
   const [activeBoardFloor, setActiveBoardFloor] = useState("");
   const [activeBoardRoom, setActiveBoardRoom] = useState("");
+  const [selectedCleanedFloor, setSelectedCleanedFloor] = useState("");
+  const [selectedCleanedRoom, setSelectedCleanedRoom] = useState("");
+  const [otherCleanedAreasDraft, setOtherCleanedAreasDraft] = useState("");
 
   const reportEntries = useMemo(
     () => getHousekeepingEntriesForPeriod(housekeepingReports, activePeriod),
@@ -294,6 +367,51 @@ export default function HousekeepingStatusPanel({
       summary,
     ],
   );
+  const cleanedRoomNumbers = useMemo(
+    () => operations?.cleanedRoomNumbers ?? [],
+    [operations?.cleanedRoomNumbers],
+  );
+  const occupiedRoomNumbers = useMemo(
+    () => (operations?.occupiedRooms ?? []).map((room) => room.roomNumber),
+    [operations?.occupiedRooms],
+  );
+  const outOfOrderRoomNumbers = useMemo(
+    () => operations?.outOfOrderRoomNumbers ?? [],
+    [operations?.outOfOrderRoomNumbers],
+  );
+  const cleanedSections = useMemo(
+    () => buildRoomNumberSections(cleanedRoomNumbers).filter((section) => section.rooms.length > 0),
+    [cleanedRoomNumbers],
+  );
+  const otherCleanedAreas = useMemo(
+    () => operations?.otherCleanedAreas ?? [],
+    [operations?.otherCleanedAreas],
+  );
+  const cleanedFloorOptions = useMemo(
+    () =>
+      roomFloorOptions.filter(
+        (floor) =>
+          getRoomOptionsForFloor(floor.value, [
+            ...occupiedRoomNumbers,
+            ...cleanedRoomNumbers,
+            ...outOfOrderRoomNumbers,
+          ]).length > 0,
+      ),
+    [cleanedRoomNumbers, occupiedRoomNumbers, outOfOrderRoomNumbers],
+  );
+  const cleanedRoomOptions = useMemo(
+    () =>
+      getRoomOptionsForFloor(selectedCleanedFloor, [
+        ...occupiedRoomNumbers,
+        ...cleanedRoomNumbers,
+        ...outOfOrderRoomNumbers,
+      ]),
+    [cleanedRoomNumbers, occupiedRoomNumbers, outOfOrderRoomNumbers, selectedCleanedFloor],
+  );
+  const cleanedRoomsReportLines = useMemo(
+    () => buildCleanedRoomsReportLines(operations),
+    [operations],
+  );
 
   useEffect(() => {
     if (selectedRoom && !roomOptions.some((room) => room.value === selectedRoom)) {
@@ -324,6 +442,29 @@ export default function HousekeepingStatusPanel({
     }
   }, [activeBoardRoom, activeSection]);
 
+  useEffect(() => {
+    setOtherCleanedAreasDraft(otherCleanedAreas.join("\n"));
+  }, [otherCleanedAreas]);
+
+  useEffect(() => {
+    if (
+      selectedCleanedFloor &&
+      !cleanedFloorOptions.some((floor) => floor.value === selectedCleanedFloor)
+    ) {
+      setSelectedCleanedFloor("");
+      setSelectedCleanedRoom("");
+    }
+  }, [cleanedFloorOptions, selectedCleanedFloor]);
+
+  useEffect(() => {
+    if (
+      selectedCleanedRoom &&
+      !cleanedRoomOptions.some((room) => room.value === selectedCleanedRoom)
+    ) {
+      setSelectedCleanedRoom("");
+    }
+  }, [cleanedRoomOptions, selectedCleanedRoom]);
+
   if (!access.canViewPanel) {
     return null;
   }
@@ -343,6 +484,25 @@ export default function HousekeepingStatusPanel({
       setFeedback({ type: "error", message: error.message });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveCleaningEntries(payload, message) {
+    if (!onSaveHousekeeping) {
+      return;
+    }
+
+    setCleaningSaving(true);
+    setCleaningFeedback({ type: "", message: "" });
+
+    try {
+      await onSaveHousekeeping(payload);
+      setCleaningFeedback({ type: "success", message });
+      setSelectedCleanedRoom("");
+    } catch (error) {
+      setCleaningFeedback({ type: "error", message: error.message });
+    } finally {
+      setCleaningSaving(false);
     }
   }
 
@@ -386,11 +546,109 @@ export default function HousekeepingStatusPanel({
     }
   }
 
+  async function handleSaveCleanedPortal(event) {
+    event.preventDefault();
+
+    const nextOtherCleanedAreas = parseOtherCleanedAreas(otherCleanedAreasDraft);
+
+    if (!selectedCleanedRoom && nextOtherCleanedAreas.length === 0) {
+      return;
+    }
+
+    const nextCleanedRoomNumbers = selectedCleanedRoom
+      ? [...new Set([...cleanedRoomNumbers, selectedCleanedRoom])]
+      : cleanedRoomNumbers;
+    const message = selectedCleanedRoom
+      ? `${selectedCleanedRoom} marked as cleaned.`
+      : "Other cleaned areas updated.";
+
+    await saveCleaningEntries(
+      {
+        cleanedRoomNumbers: nextCleanedRoomNumbers,
+        otherCleanedAreas: nextOtherCleanedAreas,
+        activityEntry: {
+          area: "housekeeping",
+          actionType: selectedCleanedRoom
+            ? "cleaned_room_publish"
+            : "cleaned_area_update",
+          message: selectedCleanedRoom
+            ? `${selectedCleanedRoom} was published as freshly cleaned.`
+            : "HouseKeeping updated other cleaned areas.",
+          targetRoomNumber: selectedCleanedRoom || undefined,
+          metadata: {
+            otherCleanedAreas: nextOtherCleanedAreas,
+          },
+        },
+        notificationEntry: {
+          audienceTag: "operations",
+          title: selectedCleanedRoom ? "Freshly cleaned room" : "Cleaning update",
+          message: selectedCleanedRoom
+            ? `${selectedCleanedRoom} was published as freshly cleaned.`
+            : "HouseKeeping updated other cleaned areas.",
+          relatedRoomNumber: selectedCleanedRoom || undefined,
+        },
+      },
+      message,
+    );
+  }
+
+  async function handleRemoveCleanedRoom(roomNumber) {
+    setClearingCleanedRoom(roomNumber);
+
+    try {
+      await saveCleaningEntries(
+        {
+          cleanedRoomNumbers: cleanedRoomNumbers.filter((entry) => entry !== roomNumber),
+          otherCleanedAreas,
+          activityEntry: {
+            area: "housekeeping",
+            actionType: "cleaned_room_clear",
+            message: `${roomNumber} was removed from freshly cleaned rooms.`,
+            targetRoomNumber: roomNumber,
+          },
+        },
+        `${roomNumber} removed from cleaned rooms.`,
+      );
+    } finally {
+      setClearingCleanedRoom("");
+    }
+  }
+
+  async function handleRemoveOtherCleanedArea(area) {
+    setClearingOtherArea(area);
+
+    try {
+      await saveCleaningEntries(
+        {
+          cleanedRoomNumbers,
+          otherCleanedAreas: otherCleanedAreas.filter((entry) => entry !== area),
+          activityEntry: {
+            area: "housekeeping",
+            actionType: "cleaned_area_clear",
+            message: `${area} was removed from other cleaned areas.`,
+            metadata: { area },
+          },
+        },
+        `${area} removed from other cleaned areas.`,
+      );
+    } finally {
+      setClearingOtherArea("");
+    }
+  }
+
   function handleDownloadReport() {
     downloadTextPdf({
       filename: "house-keeping-inhouse-report.pdf",
       title: "House Keeping Inhouse Report",
       lines: reportLines,
+    });
+  }
+
+  function handleDownloadCleanedReport() {
+    downloadTextPdf({
+      filename: "house-keeping-cleaned-rooms-report.pdf",
+      title: "Sunshine Hotel Cleaned Rooms Report",
+      lines: cleanedRoomsReportLines,
     });
   }
 
@@ -655,6 +913,209 @@ export default function HousekeepingStatusPanel({
               No rooms added yet for this report.
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <form onSubmit={handleSaveCleanedPortal} className="subpanel no-print">
+          <div>
+            <h3 className="section-title">Room Cleaning Portal</h3>
+            <p className="mt-2 text-sm text-slate-500">
+              Publish freshly cleaned rooms and keep track of other places cleaned by the team.
+            </p>
+          </div>
+
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <label className="field">
+              <span>Floor</span>
+              <select
+                value={selectedCleanedFloor}
+                onChange={(event) => {
+                  setSelectedCleanedFloor(event.target.value);
+                  setSelectedCleanedRoom("");
+                }}
+                disabled={cleaningSaving}
+              >
+                <option value="">Select floor</option>
+                {cleanedFloorOptions.map((floor) => (
+                  <option key={floor.value} value={floor.value}>
+                    {floor.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Freshly cleaned room</span>
+              <select
+                value={selectedCleanedRoom}
+                onChange={(event) => setSelectedCleanedRoom(event.target.value)}
+                disabled={cleaningSaving || !selectedCleanedFloor}
+              >
+                <option value="">Select room</option>
+                {cleanedRoomOptions.map((room) => (
+                  <option key={room.value} value={room.value}>
+                    {room.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="field mt-4">
+            <span>Others cleaned</span>
+            <textarea
+              value={otherCleanedAreasDraft}
+              onChange={(event) => setOtherCleanedAreasDraft(event.target.value)}
+              rows={5}
+              placeholder="Lobby, staircase, offices, restaurant, pool area"
+              disabled={cleaningSaving}
+            />
+          </label>
+
+          {cleaningFeedback.message ? (
+            <div
+              className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                cleaningFeedback.type === "success"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-rose-50 text-rose-700"
+              }`}
+            >
+              {cleaningFeedback.message}
+            </div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={
+              cleaningSaving ||
+              (!selectedCleanedRoom && parseOtherCleanedAreas(otherCleanedAreasDraft).length === 0)
+            }
+            className="button-primary mt-5 w-full"
+          >
+            {cleaningSaving ? "Saving..." : "Save cleaning update"}
+          </button>
+        </form>
+
+        <div className="space-y-6">
+          <div className="subpanel">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="section-title">Cleaned Rooms Report</h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Compact room list grouped floor by floor for quick handover.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3 no-print">
+                <button
+                  type="button"
+                  onClick={() => printReport("Sunshine Hotel Cleaned Rooms Report", cleanedRoomsReportLines)}
+                  className="button-secondary"
+                >
+                  Print cleaned rooms
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadCleanedReport}
+                  className="button-secondary"
+                >
+                  Download report
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                <p className="metric-label">Freshly cleaned rooms</p>
+                <p className="mt-2 font-display text-3xl text-[#162338]">
+                  {cleanedRoomNumbers.length}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                <p className="metric-label">Other places cleaned</p>
+                <p className="mt-2 font-display text-3xl text-[#162338]">
+                  {otherCleanedAreas.length}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                <p className="metric-label">Updated by</p>
+                <p className="mt-2 text-sm font-semibold text-[#162338]">
+                  {operations?.housekeepingUpdatedByName || "HouseKeeping"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 max-h-[28rem] space-y-4 overflow-y-auto pr-1">
+              {cleanedSections.length > 0 ? (
+                cleanedSections.map((section) => (
+                  <div
+                    key={section.key}
+                    className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-emerald-900">{section.label}</p>
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                        {section.rooms.length} room(s)
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {section.rooms.map((roomNumber) => (
+                        <div
+                          key={roomNumber}
+                          className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white"
+                        >
+                          <span>{roomNumber}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCleanedRoom(roomNumber)}
+                            disabled={cleaningSaving || clearingCleanedRoom === roomNumber}
+                            className="rounded-full border border-white/40 px-1.5 py-0.5 text-[9px] font-bold text-white"
+                          >
+                            {clearingCleanedRoom === roomNumber ? "..." : "x"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  No cleaned rooms published yet.
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-[#162338]">Other places cleaned</p>
+                  <span className="badge">{otherCleanedAreas.length}</span>
+                </div>
+
+                {otherCleanedAreas.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {otherCleanedAreas.map((area) => (
+                      <div
+                        key={area}
+                        className="inline-flex items-center gap-2 rounded-full border border-[#d7e4ef] bg-[#eef6fb] px-3 py-1.5 text-xs font-semibold text-[#162338]"
+                      >
+                        <span>{area}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOtherCleanedArea(area)}
+                          disabled={cleaningSaving || clearingOtherArea === area}
+                          className="rounded-full border border-[#162338]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#162338]"
+                        >
+                          {clearingOtherArea === area ? "..." : "x"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-500">No extra cleaned areas added yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

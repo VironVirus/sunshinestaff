@@ -29,6 +29,7 @@ export const defaultFrontOfficeSnapshot = {
   breakfastEntitled: 0,
   cleanedRoomNumbers: [],
   cleanedRooms: 0,
+  otherCleanedAreas: [],
   notes: "",
   updatedAt: null,
   updatedByName: "",

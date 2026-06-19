@@ -222,6 +222,45 @@ function ActionButton({ label, onClick, tone = "default" }) {
   );
 }
 
+function SpreadsheetTable({ columns, rows, emptyMessage }) {
+  if (rows.length === 0) {
+    return <EmptyState message={emptyMessage} />;
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
+      <table className="min-w-full border-collapse text-left text-sm">
+        <thead className="bg-slate-100 text-xs uppercase tracking-[0.14em] text-slate-500">
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key} className="border-b border-slate-200 px-4 py-3 font-semibold">
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr
+              key={row.id ?? `${rowIndex}-${columns[0]?.key ?? "row"}`}
+              className="odd:bg-white even:bg-slate-50/60"
+            >
+              {columns.map((column) => (
+                <td
+                  key={column.key}
+                  className="border-b border-slate-200 px-4 py-3 align-top text-slate-700"
+                >
+                  {row[column.key] ?? "-"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function getAcquisitionMinimumQuantity(inventoryItem) {
   return Math.max(
     (inventoryItem?.issuedQuantity ?? 0) +
@@ -1708,89 +1747,107 @@ export default function InventoryPanel({
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="subpanel">
             <div className="flex items-center justify-between gap-3">
-              <p className="metric-label">Current stock balance</p>
+              <p className="metric-label">Current stock balance sheet</p>
               <span className="badge">{inventoryItems.length} items</span>
             </div>
 
-            <div className="mt-4 space-y-3">
-              {inventoryItems.length > 0 ? (
-                inventoryItems.map((item) => (
-                  <div key={item.serialNumber} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-semibold text-[#162338]">
-                          {item.serialNumber} - {item.itemName}
-                        </p>
-                        <p className="mt-2 text-sm text-slate-600">
-                          Acquired {item.acquiredQuantity} | Issued {item.issuedQuantity} | Returned{" "}
-                          {item.returnedQuantity ?? 0} | Adjusted out {item.adjustedOutQuantity ?? 0} |
-                          Balance {item.availableQuantity}
-                        </p>
-                      </div>
-                      <span className="text-sm font-semibold text-[#8a6923]">
-                        {formatAmount(item.stockValue)}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <EmptyState message="No stock recorded yet." />
-              )}
+            <div className="mt-4">
+              <SpreadsheetTable
+                columns={[
+                  { key: "sn", label: "S/N" },
+                  { key: "serialNumber", label: "Serial no" },
+                  { key: "itemName", label: "Item name" },
+                  { key: "unitPrice", label: "Unit price" },
+                  { key: "acquired", label: "Acquired" },
+                  { key: "issued", label: "Issued" },
+                  { key: "returned", label: "Returned" },
+                  { key: "adjustedOut", label: "Adjusted out" },
+                  { key: "balance", label: "Balance" },
+                  { key: "stockValue", label: "Stock value" },
+                ]}
+                rows={inventoryItems.map((item, index) => ({
+                  id: item.serialNumber,
+                  sn: index + 1,
+                  serialNumber: item.serialNumber,
+                  itemName: item.itemName,
+                  unitPrice: formatAmount(item.unitPrice),
+                  acquired: item.acquiredQuantity,
+                  issued: item.issuedQuantity,
+                  returned: item.returnedQuantity ?? 0,
+                  adjustedOut: item.adjustedOutQuantity ?? 0,
+                  balance: item.availableQuantity,
+                  stockValue: formatAmount(item.stockValue),
+                }))}
+                emptyMessage="No stock recorded yet."
+              />
             </div>
           </div>
 
           <div className="space-y-6">
             <div className="subpanel">
-              <p className="metric-label">Trade totals</p>
-              <div className="mt-4 space-y-3 text-sm text-slate-600">
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  Total acquisition cost:{" "}
-                  <span className="font-semibold text-[#162338]">
-                    {formatAmount(storeInventory?.totalAcquisitionCost)}
-                  </span>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  Total requisition cost:{" "}
-                  <span className="font-semibold text-[#162338]">
-                    {formatAmount(storeInventory?.totalRequisitionCost)}
-                  </span>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  Total return value:{" "}
-                  <span className="font-semibold text-[#162338]">
-                    {formatAmount(storeInventory?.totalReturnCost)}
-                  </span>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  Total adjustment value:{" "}
-                  <span className="font-semibold text-[#162338]">
-                    {formatAmount(storeInventory?.totalAdjustmentCost)}
-                  </span>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  Current stock value:{" "}
-                  <span className="font-semibold text-[#162338]">
-                    {formatAmount(storeInventory?.totalStockValue)}
-                  </span>
-                </div>
+              <p className="metric-label">Trade summary sheet</p>
+              <div className="mt-4">
+                <SpreadsheetTable
+                  columns={[
+                    { key: "heading", label: "Row heading" },
+                    { key: "value", label: "Value" },
+                  ]}
+                  rows={[
+                    {
+                      id: "acquisition",
+                      heading: "Total acquisition cost",
+                      value: formatAmount(storeInventory?.totalAcquisitionCost),
+                    },
+                    {
+                      id: "requisition",
+                      heading: "Total requisition cost",
+                      value: formatAmount(storeInventory?.totalRequisitionCost),
+                    },
+                    {
+                      id: "return",
+                      heading: "Total return value",
+                      value: formatAmount(storeInventory?.totalReturnCost),
+                    },
+                    {
+                      id: "adjustment",
+                      heading: "Total adjustment value",
+                      value: formatAmount(storeInventory?.totalAdjustmentCost),
+                    },
+                    {
+                      id: "stock-value",
+                      heading: "Current stock value",
+                      value: formatAmount(storeInventory?.totalStockValue),
+                    },
+                    {
+                      id: "stock-quantity",
+                      heading: "Stock quantity on hand",
+                      value: storeInventory?.totalStockQuantity ?? 0,
+                    },
+                  ]}
+                  emptyMessage="No trade summary available yet."
+                />
               </div>
             </div>
 
             <div className="subpanel">
-              <p className="metric-label">Low stock watchlist</p>
-              <div className="mt-4 space-y-3">
-                {lowStockItems.length > 0 ? (
-                  lowStockItems.map((item) => (
-                    <div
-                      key={item.serialNumber}
-                      className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800"
-                    >
-                      {item.serialNumber} - {item.itemName} - {item.availableQuantity} left
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState message="No low stock items right now." />
-                )}
+              <p className="metric-label">Low stock watchlist sheet</p>
+              <div className="mt-4">
+                <SpreadsheetTable
+                  columns={[
+                    { key: "sn", label: "S/N" },
+                    { key: "serialNumber", label: "Serial no" },
+                    { key: "itemName", label: "Item name" },
+                    { key: "balance", label: "Balance left" },
+                  ]}
+                  rows={lowStockItems.map((item, index) => ({
+                    id: item.serialNumber,
+                    sn: index + 1,
+                    serialNumber: item.serialNumber,
+                    itemName: item.itemName,
+                    balance: item.availableQuantity,
+                  }))}
+                  emptyMessage="No low stock items right now."
+                />
               </div>
             </div>
           </div>

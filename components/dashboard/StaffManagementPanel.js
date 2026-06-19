@@ -185,23 +185,79 @@ function groupStaffByDepartment(staffMembers = []) {
     }));
 }
 
-function StaffSelect({ label, groups, value, onChange, disabled }) {
+function getSackedDate(staffMember = {}) {
+  const value = staffMember?.sackedAt ?? staffMember?.updatedAt ?? null;
+
+  if (!value) {
+    return null;
+  }
+
+  const parsedDate = value instanceof Date ? value : new Date(value);
+
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+}
+
+function countCurrentlyOnLeave(staffMembers = []) {
+  return staffMembers.filter((staffMember) => {
+    const leaveStatus = getLeaveEligibilityDetails(staffMember).status;
+    return leaveStatus === "on_leave" || leaveStatus === "overstayed";
+  }).length;
+}
+
+function countSackedWithinWindow(staffMembers = [], days = 7) {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+
+  return staffMembers.filter((staffMember) => {
+    const sackedDate = getSackedDate(staffMember);
+    return sackedDate ? sackedDate.getTime() >= cutoff : false;
+  }).length;
+}
+
+function SpreadsheetTable({
+  columns,
+  rows,
+  emptyMessage,
+  className = "",
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
+        {emptyMessage}
+      </div>
+    );
+  }
+
   return (
-    <label className="field">
-      <span>{label}</span>
-      <select value={value} onChange={onChange} disabled={disabled}>
-        <option value="">Select staff</option>
-        {groups.map((group) => (
-          <optgroup key={group.key} label={group.label}>
-            {group.members.map((staffMember) => (
-              <option key={staffMember.uid} value={staffMember.uid}>
-                {getStaffDisplayName(staffMember)} - {getStaffRoleLabel(staffMember)}
-              </option>
+    <div className={`overflow-x-auto rounded-3xl border border-slate-200 bg-white ${className}`}>
+      <table className="min-w-full border-collapse text-left text-sm">
+        <thead className="bg-slate-100 text-xs uppercase tracking-[0.14em] text-slate-500">
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key} className="border-b border-slate-200 px-4 py-3 font-semibold">
+                {column.label}
+              </th>
             ))}
-          </optgroup>
-        ))}
-      </select>
-    </label>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr
+              key={row.id ?? `${rowIndex}-${columns[0]?.key ?? "row"}`}
+              className="odd:bg-white even:bg-slate-50/60"
+            >
+              {columns.map((column) => (
+                <td
+                  key={column.key}
+                  className="border-b border-slate-200 px-4 py-3 align-top text-slate-700"
+                >
+                  {row[column.key] ?? "-"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -428,6 +484,14 @@ export default function StaffManagementPanel({
     () => activeStaff.find((staffMember) => staffMember.uid === selectedPayrollUserId) ?? null,
     [activeStaff, selectedPayrollUserId],
   );
+  const staffAnalysis = useMemo(
+    () => ({
+      totalStaff: activeStaff.length,
+      onLeave: countCurrentlyOnLeave(activeStaff),
+      sackedThisWeek: countSackedWithinWindow(sackedStaff),
+    }),
+    [activeStaff, sackedStaff],
+  );
 
   const titleOptions = useMemo(
     () => getStaffTitleOptions(form.departmentKey, form.jobLevel),
@@ -449,6 +513,95 @@ export default function StaffManagementPanel({
         taxAmount: payrollForm.taxAmount,
       }),
     [payrollForm, selectedPayrollStaff],
+  );
+  const payrollPreviewRows = useMemo(
+    () => [
+      {
+        id: "month",
+        heading: "Payroll month",
+        value: payrollPreview.payrollMonthLabel,
+      },
+      {
+        id: "gross",
+        heading: "Gross salary",
+        value: formatCurrency(payrollPreview.monthlySalary),
+      },
+      {
+        id: "daily",
+        heading: "Daily wage",
+        value: formatCurrency(payrollPreview.dailyWage),
+      },
+      {
+        id: "attendance",
+        heading: "Attendance days",
+        value: payrollPreview.attendanceDays,
+      },
+      {
+        id: "absence-days",
+        heading: "Absence days",
+        value: payrollPreview.absenceDays,
+      },
+      {
+        id: "absence",
+        heading: "Absence deduction",
+        value: formatCurrency(payrollPreview.absenceDeduction),
+      },
+      {
+        id: "late-count",
+        heading: "Lateness count",
+        value: payrollPreview.lateCount,
+      },
+      {
+        id: "late-deduction",
+        heading: "Lateness deduction",
+        value: formatCurrency(payrollPreview.latenessDeduction),
+      },
+      {
+        id: "pension",
+        heading: "Pension deduction",
+        value: formatCurrency(payrollPreview.pensionAmount),
+      },
+      {
+        id: "tax",
+        heading: "Tax deduction",
+        value: formatCurrency(payrollPreview.taxAmount),
+      },
+      {
+        id: "total-deductions",
+        heading: "Total deductions",
+        value: formatCurrency(payrollPreview.totalDeductions),
+      },
+      {
+        id: "net",
+        heading: "Net salary",
+        value: formatCurrency(payrollPreview.netSalary),
+      },
+    ],
+    [payrollPreview],
+  );
+  const payrollSheetRows = useMemo(
+    () =>
+      activeStaffByDepartment.flatMap((group) =>
+        group.members.map((staffMember) => {
+          const payroll = buildPayrollBreakdown(staffMember);
+
+          return {
+            id: `${group.key}-${staffMember.uid}`,
+            department: group.label,
+            staffName: getStaffDisplayName(staffMember),
+            role: getStaffRoleLabel(staffMember),
+            payrollMonth: payroll.payrollMonthLabel,
+            grossSalary: formatCurrency(payroll.monthlySalary),
+            absenceDays: payroll.absenceDays,
+            lateCount: payroll.lateCount,
+            pension: formatCurrency(payroll.pensionAmount),
+            tax: formatCurrency(payroll.taxAmount),
+            totalDeductions: formatCurrency(payroll.totalDeductions),
+            netSalary: formatCurrency(payroll.netSalary),
+          };
+        }),
+      ),
+    [activeStaffByDepartment],
   );
 
   useEffect(() => {
@@ -579,6 +732,12 @@ export default function StaffManagementPanel({
       ...form,
       ...overrides,
     };
+    const nextSackedAt = Object.prototype.hasOwnProperty.call(overrides, "sackedAt")
+      ? overrides.sackedAt
+      : (selectedStaff.sackedAt ?? null);
+    const nextSackedByName = Object.prototype.hasOwnProperty.call(overrides, "sackedByName")
+      ? overrides.sackedByName
+      : (selectedStaff.sackedByName ?? "");
     const accessValues = buildAccessLevel({
       ...nextValues,
       currentIsSuperAdmin: Boolean(selectedStaff.isSuperAdmin),
@@ -598,6 +757,8 @@ export default function StaffManagementPanel({
         employmentStatus: nextValues.employmentStatus,
         approvalStatus: nextValues.approvalStatus,
         employmentStartDate: nextValues.employmentStartDate,
+        sackedAt: nextSackedAt,
+        sackedByName: nextSackedByName,
         isSuperAdmin: accessValues.isSuperAdmin,
         accessLevel: accessValues.accessLevel,
         privileges: getPrivilegeList(nextValues.departmentKey, nextValues.jobLevel),
@@ -619,6 +780,8 @@ export default function StaffManagementPanel({
   async function handleSackStaff() {
     await saveStaff("Staff moved to sacked staff.", {
       employmentStatus: "sacked",
+      sackedAt: new Date().toISOString(),
+      sackedByName: profile?.fullName ?? "",
     });
   }
 
@@ -652,6 +815,8 @@ export default function StaffManagementPanel({
   async function handleReactivateStaff() {
     await saveStaff("Staff reactivated.", {
       employmentStatus: "active",
+      sackedAt: null,
+      sackedByName: "",
     });
   }
 
@@ -805,16 +970,32 @@ export default function StaffManagementPanel({
         ))}
       </div>
 
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <StaffMetric
+          label="Total staff"
+          value={`${staffAnalysis.totalStaff} active staff record(s)`}
+        />
+        <StaffMetric
+          label="Currently on leave"
+          value={`${staffAnalysis.onLeave} staff member(s)`}
+        />
+        <StaffMetric
+          label="Sacked within the week"
+          value={`${staffAnalysis.sackedThisWeek} staff member(s)`}
+        />
+      </div>
+
       {(activeSection === "active" || activeSection === "sacked") && (
         <div className="mt-5 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
           <div className="subpanel">
-            <StaffSelect
-              label={activeSection === "sacked" ? "Sacked staff" : "Staff"}
-              groups={currentDirectoryGroups}
-              value={selectedUserId}
-              onChange={(event) => setSelectedUserId(event.target.value)}
-              disabled={savingProfile}
-            />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+              <p className="font-semibold text-[#162338]">
+                {activeSection === "sacked" ? "Sacked staff by department" : "Active staff by department"}
+              </p>
+              <p className="mt-2">
+                Open one department at a time, choose a staff member on the left, and manage the record on the right.
+              </p>
+            </div>
 
             <div className="mt-4">
               <StaffDirectoryList
@@ -1099,13 +1280,21 @@ export default function StaffManagementPanel({
       {activeSection === "leave" && (
         <div className="mt-5 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
           <div className="subpanel">
-            <StaffSelect
-              label="Staff for leave"
-              groups={activeStaffByDepartment}
-              value={selectedLeaveUserId}
-              onChange={(event) => setSelectedLeaveUserId(event.target.value)}
-              disabled={savingLeave}
-            />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+              <p className="font-semibold text-[#162338]">Leave staff list</p>
+              <p className="mt-2">
+                Choose a department, pick a staff member, then grant leave or mark return on the right.
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <StaffDirectoryList
+                groups={activeStaffByDepartment}
+                selectedUserId={selectedLeaveUserId}
+                onSelect={setSelectedLeaveUserId}
+                emptyMessage="No active staff available for leave management."
+              />
+            </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <StaffMetric
@@ -1244,6 +1433,22 @@ export default function StaffManagementPanel({
       {activeSection === "payroll" && (
         <div className="mt-5 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="subpanel">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
+              <p className="font-semibold text-[#162338]">Payroll staff list</p>
+              <p className="mt-2">
+                Select a department, choose a staff member, then update salary, attendance, pension, and tax on the right.
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <StaffDirectoryList
+                groups={activeStaffByDepartment}
+                selectedUserId={selectedPayrollUserId}
+                onSelect={setSelectedPayrollUserId}
+                emptyMessage="No active staff available for payroll."
+              />
+            </div>
+
             <div className="flex flex-wrap gap-3 no-print">
               <button
                 type="button"
@@ -1266,16 +1471,10 @@ export default function StaffManagementPanel({
                 Download PDF
               </button>
             </div>
+          </div>
 
-            <form onSubmit={handleSavePayroll} className="mt-5 space-y-4">
-              <StaffSelect
-                label="Staff for payroll"
-                groups={activeStaffByDepartment}
-                value={selectedPayrollUserId}
-                onChange={(event) => setSelectedPayrollUserId(event.target.value)}
-                disabled={savingPayroll}
-              />
-
+          <div className="space-y-6">
+            <form onSubmit={handleSavePayroll} className="subpanel space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="field">
                   <span>Monthly salary</span>
@@ -1399,94 +1598,69 @@ export default function StaffManagementPanel({
                 {savingPayroll ? "Saving..." : "Save payroll"}
               </button>
             </form>
-          </div>
 
-          <div className="subpanel">
-            <p className="section-title">Payroll Preview</p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <StaffMetric
-                label="Gross salary"
-                value={formatCurrency(payrollPreview.monthlySalary)}
-              />
-              <StaffMetric
-                label="Daily wage"
-                value={formatCurrency(payrollPreview.dailyWage)}
-              />
-              <StaffMetric
-                label="Absence deduction"
-                value={formatCurrency(payrollPreview.absenceDeduction)}
-              />
-              <StaffMetric
-                label="Pension deduction"
-                value={formatCurrency(payrollPreview.pensionAmount)}
-              />
-              <StaffMetric
-                label="Tax deduction"
-                value={formatCurrency(payrollPreview.taxAmount)}
-              />
-              <StaffMetric
-                label="Net salary"
-                value={formatCurrency(payrollPreview.netSalary)}
-              />
-            </div>
+            <div className="subpanel">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="section-title">Payroll Preview</p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Excel-style breakdown for the selected staff record.
+                  </p>
+                </div>
+                <span className="badge">
+                  {selectedPayrollStaff ? getStaffDisplayName(selectedPayrollStaff) : "No staff selected"}
+                </span>
+              </div>
 
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
-              <p className="font-semibold text-[#162338]">
-                              {selectedPayrollStaff ? getStaffDisplayName(selectedPayrollStaff) : "Selected staff"}
-              </p>
-              <div className="mt-3 space-y-2">
-                <p>Payroll month: {payrollPreview.payrollMonthLabel}</p>
-                <p>Attendance days: {payrollPreview.attendanceDays}</p>
-                <p>Absence days: {payrollPreview.absenceDays}</p>
-                <p>Lateness count: {payrollPreview.lateCount}</p>
-                <p>Lateness deduction: {formatCurrency(payrollPreview.latenessDeduction)}</p>
-                <p>Pension deduction: {formatCurrency(payrollPreview.pensionAmount)}</p>
-                <p>Tax deduction: {formatCurrency(payrollPreview.taxAmount)}</p>
-                <p>Total deductions: {formatCurrency(payrollPreview.totalDeductions)}</p>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <StaffMetric label="Gross salary" value={formatCurrency(payrollPreview.monthlySalary)} />
+                <StaffMetric label="Absence deduction" value={formatCurrency(payrollPreview.absenceDeduction)} />
+                <StaffMetric label="Tax deduction" value={formatCurrency(payrollPreview.taxAmount)} />
+                <StaffMetric label="Net salary" value={formatCurrency(payrollPreview.netSalary)} />
+              </div>
+
+              <div className="mt-5">
+                <SpreadsheetTable
+                  columns={[
+                    { key: "heading", label: "Row heading" },
+                    { key: "value", label: "Value" },
+                  ]}
+                  rows={payrollPreviewRows}
+                  emptyMessage="No payroll preview available yet."
+                />
               </div>
             </div>
 
-            <div className="mt-5 space-y-3">
-              {activeStaffByDepartment.map((group) => (
-                <div
-                  key={group.key}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#162338]">{group.label}</p>
-                    <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      {group.members.length} staff
-                    </span>
-                  </div>
-
-                  <div className="mt-3 space-y-2">
-                    {group.members.map((staffMember) => {
-                      const payroll = buildPayrollBreakdown(staffMember);
-
-                      return (
-                        <div
-                          key={staffMember.uid}
-                          className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="font-semibold text-[#162338]">
-                              {getStaffDisplayName(staffMember)}
-                            </span>
-                            <span className="font-semibold text-[#162338]">
-                              {formatCurrency(payroll.netSalary)}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {payroll.payrollMonthLabel} - Absence {payroll.absenceDays}, Late{" "}
-                            {payroll.lateCount}, Pension {formatCurrency(payroll.pensionAmount)}, Tax{" "}
-                            {formatCurrency(payroll.taxAmount)}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
+            <div className="subpanel">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="section-title">Payroll Sheet</p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Company-wide payroll presented in spreadsheet form.
+                  </p>
                 </div>
-              ))}
+                <span className="badge">{payrollSheetRows.length} row(s)</span>
+              </div>
+
+              <div className="mt-5">
+                <SpreadsheetTable
+                  columns={[
+                    { key: "department", label: "Department" },
+                    { key: "staffName", label: "Staff name" },
+                    { key: "role", label: "Role" },
+                    { key: "payrollMonth", label: "Payroll month" },
+                    { key: "grossSalary", label: "Gross salary" },
+                    { key: "absenceDays", label: "Absence days" },
+                    { key: "lateCount", label: "Late count" },
+                    { key: "pension", label: "Pension" },
+                    { key: "tax", label: "Tax" },
+                    { key: "totalDeductions", label: "Total deductions" },
+                    { key: "netSalary", label: "Net salary" },
+                  ]}
+                  rows={payrollSheetRows}
+                  emptyMessage="No active staff payroll records found."
+                />
+              </div>
             </div>
           </div>
         </div>

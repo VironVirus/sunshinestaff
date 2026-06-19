@@ -451,6 +451,7 @@ export default function DashboardPage() {
                   propertyStatus={propertyStatus}
                   operations={operations}
                   onSaveHousekeepingReports={saveHousekeepingReports}
+                  onSaveHousekeeping={saveHousekeepingProgress}
                 />
               ),
             },
