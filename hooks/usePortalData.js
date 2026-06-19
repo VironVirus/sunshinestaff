@@ -1104,7 +1104,9 @@ export function usePortalData(profile) {
       values.monthlySalary !== undefined ||
       values.payrollMonthKey !== undefined ||
       values.absenceDays !== undefined ||
-      values.lateCount !== undefined
+      values.lateCount !== undefined ||
+      values.pensionAmount !== undefined ||
+      values.taxAmount !== undefined
     ) {
       lastProfileNotification = "Your payroll breakdown was updated. Open My Dashboard to review it.";
       lastProfileNotificationAt = profileNoteTimestamp;
@@ -1130,7 +1132,9 @@ export function usePortalData(profile) {
             : values.monthlySalary !== undefined ||
                 values.payrollMonthKey !== undefined ||
                 values.absenceDays !== undefined ||
-                values.lateCount !== undefined
+                values.lateCount !== undefined ||
+                values.pensionAmount !== undefined ||
+                values.taxAmount !== undefined
               ? `Updated payroll record for ${nextProfile.fullName}.`
               : values.employmentStatus && values.employmentStatus === "sacked"
                 ? `Moved ${nextProfile.fullName} to sacked staff.`

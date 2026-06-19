@@ -81,6 +81,8 @@ function normalizeLoadedProfile(profile = null) {
     payrollMonthKey: profile.payrollMonthKey ?? "",
     absenceDays: profile.absenceDays ?? 0,
     lateCount: profile.lateCount ?? 0,
+    pensionAmount: profile.pensionAmount ?? 0,
+    taxAmount: profile.taxAmount ?? 0,
     salaryUpdatedAt: profile.salaryUpdatedAt ?? "",
     salaryUpdatedByName: profile.salaryUpdatedByName ?? "",
     lastProfileNotification: profile.lastProfileNotification ?? "",

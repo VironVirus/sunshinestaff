@@ -200,8 +200,15 @@ export default function StaffDashboardPanel({ profile, departmentShifts }) {
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <DetailRow label="Lateness count" value={`${payroll.lateCount} time(s)`} />
           <DetailRow label="Absence deduction" value={formatCurrency(payroll.absenceDeduction)} />
+          <DetailRow label="Pension deduction" value={formatCurrency(payroll.pensionAmount)} />
+          <DetailRow label="Tax deduction" value={formatCurrency(payroll.taxAmount)} />
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <DetailRow label="Lateness deduction" value={formatCurrency(payroll.latenessDeduction)} />
+          <DetailRow label="Total deductions" value={formatCurrency(payroll.totalDeductions)} />
           <DetailRow label="Net salary" value={formatCurrency(payroll.netSalary)} />
+          <DetailRow label="Surcharges" value={profile?.surcharges?.trim() || "None"} />
         </div>
 
         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
@@ -210,6 +217,8 @@ export default function StaffDashboardPanel({ profile, departmentShifts }) {
             <p>Gross salary: {formatCurrency(payroll.monthlySalary)}</p>
             <p>Absence deduction: {formatCurrency(payroll.absenceDeduction)}</p>
             <p>Lateness deduction: {formatCurrency(payroll.latenessDeduction)}</p>
+            <p>Pension deduction: {formatCurrency(payroll.pensionAmount)}</p>
+            <p>Tax deduction: {formatCurrency(payroll.taxAmount)}</p>
             <p>Total deductions: {formatCurrency(payroll.totalDeductions)}</p>
             <p className="font-semibold text-[#162338]">Net salary: {formatCurrency(payroll.netSalary)}</p>
             <p>Surcharges: {profile?.surcharges?.trim() || "None"}</p>
@@ -229,7 +238,6 @@ export default function StaffDashboardPanel({ profile, departmentShifts }) {
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <DetailRow label="Phone number" value={profile?.phoneNumber?.trim() || "Not set"} />
         <DetailRow label="Home address" value={profile?.homeAddress?.trim() || "Not set"} />
-        <DetailRow label="Surcharges" value={profile?.surcharges?.trim() || "None"} />
         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
           <p className="metric-label">My shifts</p>
           <div className="mt-3 space-y-3">

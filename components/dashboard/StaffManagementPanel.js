@@ -211,6 +211,19 @@ function StaffDirectoryList({
   onSelect,
   emptyMessage,
 }) {
+  const [openGroupKey, setOpenGroupKey] = useState(groups[0]?.key ?? "");
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      setOpenGroupKey("");
+      return;
+    }
+
+    if (!groups.some((group) => group.key === openGroupKey)) {
+      setOpenGroupKey(groups[0].key);
+    }
+  }, [groups, openGroupKey]);
+
   if (groups.length === 0) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
@@ -223,32 +236,52 @@ function StaffDirectoryList({
     <div className="space-y-3">
       {groups.map((group) => (
         <div key={group.key} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-[#162338]">{group.label}</p>
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              {group.members.length} staff
+          <button
+            type="button"
+            onClick={() => setOpenGroupKey(group.key)}
+            className={`flex w-full items-center justify-between gap-3 rounded-2xl px-1 py-1 text-left ${
+              openGroupKey === group.key ? "text-[#162338]" : "text-slate-600"
+            }`}
+          >
+            <div>
+              <p className="text-sm font-semibold">{group.label}</p>
+              <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                {group.members.length} staff
+              </p>
+            </div>
+            <span
+              className={`flex h-9 w-9 items-center justify-center rounded-full border text-lg transition ${
+                openGroupKey === group.key
+                  ? "border-[#162338] bg-[#162338] text-white"
+                  : "border-slate-200 bg-white text-slate-500"
+              }`}
+              aria-hidden="true"
+            >
+              {openGroupKey === group.key ? "−" : "+"}
             </span>
-          </div>
+          </button>
 
-          <div className="mt-3 space-y-2">
-            {group.members.map((staffMember) => (
-              <button
-                key={staffMember.uid}
-                type="button"
-                onClick={() => onSelect(staffMember.uid)}
-                className={`block w-full rounded-2xl border px-4 py-3 text-left text-sm ${
-                  selectedUserId === staffMember.uid
-                    ? "border-[#c59d40] bg-[#f9f2e4] text-[#5f4a18]"
-                    : "border-slate-200 bg-white text-slate-700"
-                }`}
-              >
-                <div className="font-semibold">{getStaffDisplayName(staffMember)}</div>
-                <div className="mt-1 text-xs">
-                  {getStaffRoleLabel(staffMember)}
-                </div>
-              </button>
-            ))}
-          </div>
+          {openGroupKey === group.key ? (
+            <div className="mt-3 space-y-2">
+              {group.members.map((staffMember) => (
+                <button
+                  key={staffMember.uid}
+                  type="button"
+                  onClick={() => onSelect(staffMember.uid)}
+                  className={`block w-full rounded-2xl border px-4 py-3 text-left text-sm ${
+                    selectedUserId === staffMember.uid
+                      ? "border-[#c59d40] bg-[#f9f2e4] text-[#5f4a18]"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  <div className="font-semibold">{getStaffDisplayName(staffMember)}</div>
+                  <div className="mt-1 text-xs">
+                    {getStaffRoleLabel(staffMember)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ))}
     </div>
@@ -285,6 +318,9 @@ function buildPayrollReportLines(staffMembers = []) {
       lines.push(`Gross salary: ${formatCurrency(payroll.monthlySalary)}`);
       lines.push(`Absence deduction: ${formatCurrency(payroll.absenceDeduction)}`);
       lines.push(`Lateness deduction: ${formatCurrency(payroll.latenessDeduction)}`);
+      lines.push(`Pension deduction: ${formatCurrency(payroll.pensionAmount)}`);
+      lines.push(`Tax deduction: ${formatCurrency(payroll.taxAmount)}`);
+      lines.push(`Total deductions: ${formatCurrency(payroll.totalDeductions)}`);
       lines.push(`Net salary: ${formatCurrency(payroll.netSalary)}`);
       lines.push("");
     });
@@ -347,6 +383,8 @@ export default function StaffManagementPanel({
     payrollMonthKey: getHotelDateKey().slice(0, 7),
     absenceDays: "0",
     lateCount: "0",
+    pensionAmount: "0",
+    taxAmount: "0",
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingLeave, setSavingLeave] = useState(false);
@@ -407,6 +445,8 @@ export default function StaffManagementPanel({
         payrollMonthKey: payrollForm.payrollMonthKey,
         absenceDays: payrollForm.absenceDays,
         lateCount: payrollForm.lateCount,
+        pensionAmount: payrollForm.pensionAmount,
+        taxAmount: payrollForm.taxAmount,
       }),
     [payrollForm, selectedPayrollStaff],
   );
@@ -495,6 +535,8 @@ export default function StaffManagementPanel({
         selectedPayrollStaff.payrollMonthKey ?? getHotelDateKey().slice(0, 7),
       absenceDays: String(selectedPayrollStaff.absenceDays ?? 0),
       lateCount: String(selectedPayrollStaff.lateCount ?? 0),
+      pensionAmount: String(selectedPayrollStaff.pensionAmount ?? 0),
+      taxAmount: String(selectedPayrollStaff.taxAmount ?? 0),
     });
   }, [selectedPayrollStaff]);
 
@@ -721,6 +763,8 @@ export default function StaffManagementPanel({
         payrollMonthKey: payrollForm.payrollMonthKey,
         absenceDays: Number(payrollForm.absenceDays || 0),
         lateCount: Number(payrollForm.lateCount || 0),
+        pensionAmount: Number(payrollForm.pensionAmount || 0),
+        taxAmount: Number(payrollForm.taxAmount || 0),
         salaryUpdatedAt: new Date().toISOString(),
         salaryUpdatedByName: profile?.fullName ?? "",
       });
@@ -1303,6 +1347,42 @@ export default function StaffManagementPanel({
                 </label>
               </div>
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="field">
+                  <span>Pension deduction</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={payrollForm.pensionAmount}
+                    onChange={(event) =>
+                      setPayrollForm((current) => ({
+                        ...current,
+                        pensionAmount: event.target.value,
+                      }))
+                    }
+                    disabled={savingPayroll}
+                    required
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Tax deduction</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={payrollForm.taxAmount}
+                    onChange={(event) =>
+                      setPayrollForm((current) => ({
+                        ...current,
+                        taxAmount: event.target.value,
+                      }))
+                    }
+                    disabled={savingPayroll}
+                    required
+                  />
+                </label>
+              </div>
+
               {payrollFeedback.message ? (
                 <div
                   className={`rounded-2xl px-4 py-3 text-sm ${
@@ -1337,6 +1417,14 @@ export default function StaffManagementPanel({
                 value={formatCurrency(payrollPreview.absenceDeduction)}
               />
               <StaffMetric
+                label="Pension deduction"
+                value={formatCurrency(payrollPreview.pensionAmount)}
+              />
+              <StaffMetric
+                label="Tax deduction"
+                value={formatCurrency(payrollPreview.taxAmount)}
+              />
+              <StaffMetric
                 label="Net salary"
                 value={formatCurrency(payrollPreview.netSalary)}
               />
@@ -1352,6 +1440,8 @@ export default function StaffManagementPanel({
                 <p>Absence days: {payrollPreview.absenceDays}</p>
                 <p>Lateness count: {payrollPreview.lateCount}</p>
                 <p>Lateness deduction: {formatCurrency(payrollPreview.latenessDeduction)}</p>
+                <p>Pension deduction: {formatCurrency(payrollPreview.pensionAmount)}</p>
+                <p>Tax deduction: {formatCurrency(payrollPreview.taxAmount)}</p>
                 <p>Total deductions: {formatCurrency(payrollPreview.totalDeductions)}</p>
               </div>
             </div>
@@ -1388,7 +1478,8 @@ export default function StaffManagementPanel({
                           </div>
                           <p className="mt-1 text-xs text-slate-500">
                             {payroll.payrollMonthLabel} - Absence {payroll.absenceDays}, Late{" "}
-                            {payroll.lateCount}
+                            {payroll.lateCount}, Pension {formatCurrency(payroll.pensionAmount)}, Tax{" "}
+                            {formatCurrency(payroll.taxAmount)}
                           </p>
                         </div>
                       );
