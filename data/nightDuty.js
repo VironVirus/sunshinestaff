@@ -44,9 +44,9 @@ export const nightDutyOutletConfig = [
 export const nightDutyDepartmentOptions = [
   { value: "front_office", label: "Front Office" },
   { value: "food_beverages", label: "Food and Beverages" },
-  { value: "housekeeping", label: "HouseKeeping" },
+  { value: "housekeeping", label: "Housekeeping" },
   { value: "kitchen", label: "Kitchen" },
-  { value: "maintainance", label: "Maintainance" },
+  { value: "maintainance", label: "Maintenance" },
   { value: "it", label: "IT" },
   { value: "security", label: "Security" },
   { value: "police", label: "Police" },
@@ -82,7 +82,8 @@ export function buildDefaultNightDutyData(operationalDateKey = getOperationalDat
 export const defaultNightDutyData = buildDefaultNightDutyData();
 
 function normalizeAmount(value) {
-  return Math.max(Number(value) || 0, 0);
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.min(Math.max(amount, 0), 1000000000) : 0;
 }
 
 function normalizeIncome(income = {}) {
@@ -105,10 +106,14 @@ function getDepartmentLabel(departmentKey) {
 }
 
 function normalizeOnDutyStaff(onDutyStaff = []) {
-  return onDutyStaff
+  return (Array.isArray(onDutyStaff) ? onDutyStaff : []).slice(0, 200)
     .map((entry) => {
-      const departmentKey = entry?.departmentKey?.trim() ?? "";
-      const staffName = entry?.staffName?.trim() ?? "";
+      const departmentKey = typeof entry?.departmentKey === "string"
+        ? entry.departmentKey.trim().slice(0, 40)
+        : "";
+      const staffName = typeof entry?.staffName === "string"
+        ? entry.staffName.trim().slice(0, 120)
+        : "";
 
       if (!departmentKey || !staffName) {
         return null;

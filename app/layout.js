@@ -20,7 +20,7 @@ export default function RootLayout({ children }) {
             <AuthProvider>{children}</AuthProvider>
           </div>
           <footer className="px-4 pb-6 pt-3 text-center text-sm text-slate-500">
-            Powered by Tapxora
+            Powered by CONSOLish
           </footer>
         </div>
       </body>

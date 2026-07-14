@@ -428,7 +428,7 @@ export default function StaffManagementPanel({
     staffTitle: "",
     surcharges: "",
     employmentStatus: "active",
-    approvalStatus: "approved",
+    approvalStatus: "pending",
     employmentStartDate: "",
   });
   const [leaveForm, setLeaveForm] = useState({
@@ -663,7 +663,7 @@ export default function StaffManagementPanel({
         getDefaultStaffTitle(selectedStaff.departmentKey, selectedStaff.jobLevel),
       surcharges: selectedStaff.surcharges ?? "",
       employmentStatus: selectedStaff.employmentStatus ?? "active",
-      approvalStatus: selectedStaff.approvalStatus ?? "approved",
+      approvalStatus: selectedStaff.approvalStatus ?? "pending",
       employmentStartDate: getEmploymentStartDateKey(selectedStaff),
     });
   }, [selectedStaff]);

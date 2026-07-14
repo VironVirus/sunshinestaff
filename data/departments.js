@@ -49,8 +49,8 @@ export const departments = [
     managerTitle: "IT Manager",
     summary: "Maintains the portal, permissions, and shared staff systems.",
     focus: [
-      "The first registered IT manager becomes the overall admin.",
-      "IT can extend modules and manage system-wide updates.",
+      "Support secure access and staff account provisioning.",
+      "Extend modules and manage system-wide updates.",
     ],
     privileges: {
       line_staff: [
@@ -58,8 +58,8 @@ export const departments = [
         "Assist with system rollout and troubleshooting.",
       ],
       manager: [
-        "Become overall admin if you are the first IT manager registered.",
-        "Edit shared portal content and oversee all departments.",
+        "Manage technical operations after access is approved by an existing administrator.",
+        "Edit shared portal content when granted administrator access.",
         "Coordinate future system integrations for each department.",
       ],
     },
@@ -71,7 +71,7 @@ export const departments = [
     summary: "Executive oversight for the hotel's operations, planning, and cross-department decisions.",
     focus: [
       "Executive accounts have hotel-wide visibility.",
-      "Managing Director, Executive Chairman, Operations Manager, and General Manager are super admins.",
+      "Designated executive accounts can be granted hotel-wide access by an existing administrator.",
     ],
     privileges: {
       line_staff: [
@@ -79,23 +79,23 @@ export const departments = [
       ],
       manager: [
         "See every manager workspace across the hotel.",
-        "Access hotel-wide oversight as a super admin account.",
+        "Access hotel-wide oversight when administrator access is explicitly granted.",
         "Follow events, complaints, and operational updates from every department.",
       ],
     },
   },
   {
     key: "maintainance",
-    name: "Maintainance",
-    managerTitle: "Maintainance Manager",
+    name: "Maintenance",
+    managerTitle: "Maintenance Manager",
     summary: "Tracks property issues, repairs, and room readiness support.",
     focus: [
       "Department tools can be added here next.",
-      "Managers will head all maintainance requests and handovers.",
+      "Managers will head all maintenance requests and handovers.",
     ],
     privileges: {
       line_staff: [
-        "View maintainance department updates.",
+        "View maintenance department updates.",
         "Follow work priorities shared by the department head.",
       ],
       manager: [
@@ -220,12 +220,12 @@ export const departments = [
   },
   {
     key: "housekeeping",
-    name: "HouseKeeping",
-    managerTitle: "HouseKeeping Manager",
+    name: "Housekeeping",
+    managerTitle: "Housekeeping Manager",
     summary: "Supports room status follow-up, staffing readiness, and floor coordination.",
     focus: [
       "See the current number of available rooms from Front Office.",
-      "HouseKeeping manager can update the number of cleaned rooms.",
+      "Housekeeping manager can update the number of cleaned rooms.",
     ],
     privileges: {
       line_staff: [

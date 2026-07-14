@@ -573,7 +573,7 @@ export default function HousekeepingStatusPanel({
             : "cleaned_area_update",
           message: selectedCleanedRoom
             ? `${selectedCleanedRoom} was published as freshly cleaned.`
-            : "HouseKeeping updated other cleaned areas.",
+            : "Housekeeping updated other cleaned areas.",
           targetRoomNumber: selectedCleanedRoom || undefined,
           metadata: {
             otherCleanedAreas: nextOtherCleanedAreas,
@@ -584,7 +584,7 @@ export default function HousekeepingStatusPanel({
           title: selectedCleanedRoom ? "Freshly cleaned room" : "Cleaning update",
           message: selectedCleanedRoom
             ? `${selectedCleanedRoom} was published as freshly cleaned.`
-            : "HouseKeeping updated other cleaned areas.",
+            : "Housekeeping updated other cleaned areas.",
           relatedRoomNumber: selectedCleanedRoom || undefined,
         },
       },
@@ -656,7 +656,7 @@ export default function HousekeepingStatusPanel({
     <section className="panel p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="section-title">HouseKeeping Reports</h2>
+          <h2 className="section-title">Housekeeping Reports</h2>
           <p className="mt-2 text-sm text-slate-500">
             Morning and afternoon room checks for internal housekeeping updates.
           </p>
@@ -878,7 +878,7 @@ export default function HousekeepingStatusPanel({
                             {activeRoom.roomNumber}
                           </h3>
                           <p className="mt-2 text-sm text-slate-500">
-                            Updated by {activeRoom.updatedByName || "HouseKeeping"}{" "}
+                            Updated by {activeRoom.updatedByName || "Housekeeping"}{" "}
                             {activeRoom.updatedAt
                               ? `on ${formatFriendlyDate(new Date(activeRoom.updatedAt), {
                                   dateStyle: "medium",
@@ -1040,7 +1040,7 @@ export default function HousekeepingStatusPanel({
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
                 <p className="metric-label">Updated by</p>
                 <p className="mt-2 text-sm font-semibold text-[#162338]">
-                  {operations?.housekeepingUpdatedByName || "HouseKeeping"}
+                  {operations?.housekeepingUpdatedByName || "Housekeeping"}
                 </p>
               </div>
             </div>

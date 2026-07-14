@@ -34,7 +34,7 @@ export function buildDefaultHousekeepingReports(operationalDateKey = getOperatio
 function normalizeReportEntries(entries = []) {
   const entryMap = new Map();
 
-  entries.forEach((entry) => {
+  (Array.isArray(entries) ? entries : []).slice(0, 176).forEach((entry) => {
     const roomNumber = entry?.roomNumber ?? entry?.label ?? "";
     const roomRecord = getRoomRecord(roomNumber);
     const status = entry?.status ?? "";

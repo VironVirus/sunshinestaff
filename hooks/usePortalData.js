@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   doc,
@@ -8,7 +8,9 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
+  where,
   writeBatch,
 } from "@firebase/firestore";
 import {
@@ -56,11 +58,12 @@ const defaultPortalState = {
 };
 
 const MAX_REPORT_HISTORY_DAYS = 120;
-const MAX_OPERATIONS_ACTIVITY = 600;
-const MAX_VISIBLE_NOTIFICATIONS = 160;
+const MAX_OPERATIONS_ACTIVITY = 300;
+const MAX_VISIBLE_NOTIFICATIONS = 80;
+const MAX_VISIBLE_ACTIVITY_LOGS = 200;
 
 function normalizeOperationsRoomMoves(roomMoves = []) {
-  return roomMoves
+  return (Array.isArray(roomMoves) ? roomMoves : [])
     .filter(
       (roomMove) =>
         roomMove?.id &&
@@ -77,27 +80,28 @@ function normalizeOperationsRoomMoves(roomMoves = []) {
 }
 
 function normalizeOperationsActivityEntries(activityEntries = []) {
-  return activityEntries
+  return (Array.isArray(activityEntries) ? activityEntries : [])
     .filter((entry) => entry?.id && entry?.actionType && entry?.createdAt)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .sort((left, right) => getSafeSortText(right.createdAt).localeCompare(getSafeSortText(left.createdAt)))
     .slice(0, MAX_OPERATIONS_ACTIVITY);
 }
 
 function normalizeNotifications(entries = []) {
-  return entries
-    .filter((entry) => entry?.createdAt && entry?.message)
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => typeof entry?.createdAt === "string" && typeof entry?.message === "string")
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .slice(0, MAX_VISIBLE_NOTIFICATIONS);
 }
 
 function normalizeActivityLogs(entries = []) {
-  return entries
-    .filter((entry) => entry?.createdAt && entry?.message)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => typeof entry?.createdAt === "string" && typeof entry?.message === "string")
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, MAX_VISIBLE_ACTIVITY_LOGS);
 }
 
 function normalizeOperationsReportHistory(reportHistory = []) {
-  return reportHistory
+  return (Array.isArray(reportHistory) ? reportHistory : [])
     .filter((reportEntry) => reportEntry?.dateKey)
     .sort((left, right) => right.dateKey.localeCompare(left.dateKey))
     .filter(
@@ -167,8 +171,8 @@ function mergeSiteContent(payload = {}) {
   return {
     ...defaultSiteContent,
     ...payload,
-    announcements: Array.isArray(payload.announcements) ? payload.announcements : [],
-    newsItems: Array.isArray(payload.newsItems) ? payload.newsItems : [],
+    announcements: Array.isArray(payload.announcements) ? payload.announcements.slice(0, 100) : [],
+    newsItems: Array.isArray(payload.newsItems) ? payload.newsItems.slice(0, 100) : [],
   };
 }
 
@@ -237,9 +241,10 @@ function buildBirthdaysFromUsers(users = []) {
 }
 
 function normalizeShifts(shifts = []) {
-  return shifts
+  return (Array.isArray(shifts) ? shifts : [])
     .filter((shift) => shift?.id && shift?.userId && shift?.shiftDate)
-    .sort((left, right) => left.shiftDate.localeCompare(right.shiftDate));
+    .sort((left, right) => left.shiftDate.localeCompare(right.shiftDate))
+    .slice(0, 400);
 }
 
 function getSafeSortText(value, fallback = "") {
@@ -254,12 +259,57 @@ function getSafeSortText(value, fallback = "") {
   return String(value);
 }
 
+function applyKeyedArrayDelta(currentEntries, baselineEntries, desiredEntries, getKey) {
+  const current = Array.isArray(currentEntries) ? currentEntries : [];
+  const baseline = Array.isArray(baselineEntries) ? baselineEntries : [];
+  const desired = Array.isArray(desiredEntries) ? desiredEntries : [];
+  const baselineMap = new Map(baseline.map((entry) => [getKey(entry), entry]));
+  const desiredMap = new Map(desired.map((entry) => [getKey(entry), entry]));
+  const removedKeys = new Set(
+    baseline.filter((entry) => !desiredMap.has(getKey(entry))).map(getKey),
+  );
+  const changedMap = new Map(
+    desired
+      .filter((entry) => {
+        const previous = baselineMap.get(getKey(entry));
+        return !previous || JSON.stringify(previous) !== JSON.stringify(entry);
+      })
+      .map((entry) => [getKey(entry), entry]),
+  );
+
+  return [
+    ...current.filter((entry) => {
+      const key = getKey(entry);
+      return !removedKeys.has(key) && !changedMap.has(key);
+    }),
+    ...changedMap.values(),
+  ];
+}
+
 function isActiveStaff(user = {}) {
   return (user.employmentStatus ?? "active") === "active";
 }
 
 function isApprovedStaff(user = {}) {
-  return (user.approvalStatus ?? "approved") === "approved";
+  return user.approvalStatus === "approved";
+}
+
+function getNotificationAudienceTags({
+  canViewOperations,
+  canViewEvents,
+  canViewHousekeeping,
+  canViewProperty,
+  canViewStore,
+  canViewNightDuty,
+}) {
+  const tags = ["all"];
+  if (canViewOperations) tags.push("operations");
+  if (canViewEvents) tags.push("events");
+  if (canViewHousekeeping) tags.push("housekeeping_reports");
+  if (canViewProperty) tags.push("property");
+  if (canViewStore) tags.push("store");
+  if (canViewNightDuty) tags.push("night-duty");
+  return tags;
 }
 
 export function usePortalData(profile) {
@@ -273,6 +323,26 @@ export function usePortalData(profile) {
   const storeAccess = getStoreAccess(profile);
   const nightDutyAccess = getNightDutyAccess(profile);
   const auditLogAccess = getAuditLogAccess(profile);
+  const canLoadAllStaff = managerWorkspaceAccess.canManageStaff || auditLogAccess.canViewPanel;
+  const canLoadTeamDirectory = canLoadAllStaff;
+  const notificationAudienceTags = useMemo(
+    () => getNotificationAudienceTags({
+      canViewOperations: operationsAccess.canViewPanel,
+      canViewEvents: managerWorkspaceAccess.canViewEvents,
+      canViewHousekeeping: housekeepingReportAccess.canViewPanel,
+      canViewProperty: propertyAccess.canViewPanel,
+      canViewStore: storeAccess.canViewPanel,
+      canViewNightDuty: nightDutyAccess.canViewPanel,
+    }),
+    [
+      housekeepingReportAccess.canViewPanel,
+      managerWorkspaceAccess.canViewEvents,
+      nightDutyAccess.canViewPanel,
+      operationsAccess.canViewPanel,
+      propertyAccess.canViewPanel,
+      storeAccess.canViewPanel,
+    ],
+  );
 
   useEffect(() => {
     if (!hasFirebaseConfig || !db) {
@@ -284,7 +354,8 @@ export function usePortalData(profile) {
     setError("");
 
     let pendingListeners =
-      4 +
+      3 +
+      (canLoadTeamDirectory ? 1 : 0) +
       (operationsAccess.canViewPanel ? 1 : 0) +
       (profile?.departmentKey ? 1 : 0) +
       (propertyAccess.canViewPanel ? 1 : 0) +
@@ -323,8 +394,9 @@ export function usePortalData(profile) {
           markResolved();
         },
       ),
-      onSnapshot(
-        collection(db, "users"),
+      ...(canLoadTeamDirectory
+        ? [onSnapshot(
+        query(collection(db, "users"), limit(200)),
         (snapshot) => {
           const users = snapshot.docs
             .map((document) => ({
@@ -356,7 +428,8 @@ export function usePortalData(profile) {
           setError(snapshotError.message);
           markResolved();
         },
-      ),
+      )]
+        : []),
       ...(operationsAccess.canViewPanel
         ? [
             onSnapshot(
@@ -395,7 +468,12 @@ export function usePortalData(profile) {
         },
       ),
       onSnapshot(
-        query(collection(db, "notifications"), orderBy("createdAt", "desc"), limit(160)),
+        query(
+          collection(db, "notifications"),
+          where("audienceTag", "in", notificationAudienceTags),
+          orderBy("createdAt", "desc"),
+          limit(MAX_VISIBLE_NOTIFICATIONS),
+        ),
         (snapshot) => {
           setPortalState((current) => ({
             ...current,
@@ -522,7 +600,7 @@ export function usePortalData(profile) {
       ...(auditLogAccess.canViewPanel
         ? [
             onSnapshot(
-              query(collection(db, "activityLogs"), orderBy("createdAt", "desc"), limit(400)),
+              query(collection(db, "activityLogs"), orderBy("createdAt", "desc"), limit(MAX_VISIBLE_ACTIVITY_LOGS)),
               (snapshot) => {
                 setPortalState((current) => ({
                   ...current,
@@ -572,7 +650,9 @@ export function usePortalData(profile) {
     operationsAccess.canViewPanel,
     managerWorkspaceAccess.canViewEvents,
     nightDutyAccess.canViewPanel,
+    notificationAudienceTags,
     auditLogAccess.canViewPanel,
+    canLoadTeamDirectory,
     profile?.departmentKey,
     propertyAccess.canViewPanel,
     storeAccess.canViewPanel,
@@ -669,51 +749,75 @@ export function usePortalData(profile) {
       notificationEntry,
       ...operationValues
     } = values;
-    const nextOperations = mergeOperations({
+    const baselineOperations = mergeOperations(portalState.operations);
+    const desiredOperations = mergeOperations({
       ...portalState.operations,
       ...operationValues,
     });
-    const visibleOperations = mergeOperationsWithPropertyStatus(
-      nextOperations,
-      portalState.propertyStatus,
-    );
-    const normalizedActivityEntries = normalizeOperationsActivityEntries(
-      nextOperations.activityEntries ?? [],
-    );
+    const frontOfficeRef = doc(db, "portal", "frontOffice");
+    const notification = notificationEntry ? buildNotificationEntry(notificationEntry) : null;
+    const activity = activityEntry ? buildActivityLogEntry(activityEntry) : null;
+    const notificationRef = notification ? doc(collection(db, "notifications")) : null;
+    const activityRef = activity ? doc(collection(db, "activityLogs")) : null;
 
-    await commitTrackedWrite({
-      writes: [
-        {
-          ref: doc(db, "portal", "frontOffice"),
-          data: {
-            occupiedRooms: nextOperations.occupiedRooms,
-            occupiedRoomNumbers: nextOperations.occupiedRoomNumbers,
-            roomMoves: normalizeOperationsRoomMoves(nextOperations.roomMoves ?? []),
-            activityEntries: normalizedActivityEntries,
-            reportHistory: upsertOperationsReportHistory(
-              portalState.operations.reportHistory ?? [],
-              {
-                ...visibleOperations,
-                activityEntries: normalizedActivityEntries,
-              },
-              profile,
-            ),
-            inHouse: nextOperations.inHouse,
-            availableRooms: visibleOperations.availableRooms,
-            breakfastEntitled: nextOperations.breakfastEntitled,
-            cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
-            cleanedRooms: nextOperations.cleanedRooms,
-            notes: nextOperations.notes ?? "",
-            updatedAt: serverTimestamp(),
-            updatedByUid: profile?.uid ?? null,
-            updatedByName: profile?.fullName ?? "Front Office",
-            updatedByDepartment: profile?.departmentName ?? "Front Office",
-          },
-          options: { merge: true },
-        },
-      ],
-      notification: notificationEntry ? buildNotificationEntry(notificationEntry) : null,
-      activity: activityEntry ? buildActivityLogEntry(activityEntry) : null,
+    await runTransaction(db, async (transaction) => {
+      const currentSnapshot = await transaction.get(frontOfficeRef);
+      const currentOperations = mergeOperations(currentSnapshot.exists() ? currentSnapshot.data() : {});
+      const occupiedRooms = applyKeyedArrayDelta(
+        currentOperations.occupiedRooms,
+        baselineOperations.occupiedRooms,
+        desiredOperations.occupiedRooms,
+        (entry) => entry?.roomNumber ?? "",
+      );
+      const roomMoves = applyKeyedArrayDelta(
+        currentOperations.roomMoves,
+        baselineOperations.roomMoves,
+        desiredOperations.roomMoves,
+        (entry) => entry?.id ?? "",
+      );
+      const activityEntries = applyKeyedArrayDelta(
+        currentOperations.activityEntries,
+        baselineOperations.activityEntries,
+        desiredOperations.activityEntries,
+        (entry) => entry?.id ?? "",
+      );
+      const nextOperations = mergeOperations({
+        ...currentOperations,
+        ...operationValues,
+        occupiedRooms,
+        roomMoves,
+        activityEntries,
+      });
+      const visibleOperations = mergeOperationsWithPropertyStatus(
+        nextOperations,
+        portalState.propertyStatus,
+      );
+      const normalizedActivityEntries = normalizeOperationsActivityEntries(activityEntries);
+
+      transaction.set(frontOfficeRef, {
+        occupiedRooms: nextOperations.occupiedRooms,
+        occupiedRoomNumbers: nextOperations.occupiedRoomNumbers,
+        roomMoves: normalizeOperationsRoomMoves(roomMoves),
+        activityEntries: normalizedActivityEntries,
+        reportHistory: upsertOperationsReportHistory(
+          currentOperations.reportHistory ?? [],
+          { ...visibleOperations, activityEntries: normalizedActivityEntries },
+          profile,
+        ),
+        inHouse: nextOperations.inHouse,
+        availableRooms: visibleOperations.availableRooms,
+        breakfastEntitled: nextOperations.breakfastEntitled,
+        cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
+        cleanedRooms: nextOperations.cleanedRooms,
+        notes: nextOperations.notes ?? "",
+        updatedAt: serverTimestamp(),
+        updatedByUid: profile?.uid ?? null,
+        updatedByName: profile?.fullName ?? "Front Office",
+        updatedByDepartment: profile?.departmentName ?? "Front Office",
+      }, { merge: true });
+
+      if (notificationRef) transaction.set(notificationRef, notification);
+      if (activityRef) transaction.set(activityRef, activity);
     });
   }
 
@@ -758,8 +862,8 @@ export function usePortalData(profile) {
             ),
             housekeepingUpdatedAt: serverTimestamp(),
             housekeepingUpdatedByUid: profile?.uid ?? null,
-            housekeepingUpdatedByName: profile?.fullName ?? "HouseKeeping",
-            housekeepingUpdatedByDepartment: profile?.departmentName ?? "HouseKeeping",
+            housekeepingUpdatedByName: profile?.fullName ?? "Housekeeping",
+            housekeepingUpdatedByDepartment: profile?.departmentName ?? "Housekeeping",
           },
           options: { merge: true },
         },
@@ -958,13 +1062,13 @@ export function usePortalData(profile) {
       ],
       notification: buildNotificationEntry({
         audienceTag: "housekeeping_reports",
-        title: "HouseKeeping report updated",
-        message: `${profile?.fullName ?? "HouseKeeping"} updated the room inspection report.`,
+        title: "Housekeeping report updated",
+        message: `${profile?.fullName ?? "Housekeeping"} updated the room inspection report.`,
       }),
       activity: buildActivityLogEntry({
         area: "housekeeping_reports",
         actionType: "housekeeping_report_update",
-        message: `${profile?.fullName ?? "HouseKeeping"} updated housekeeping room reports.`,
+        message: `${profile?.fullName ?? "Housekeeping"} updated housekeeping room reports.`,
       }),
     });
   }
@@ -1088,9 +1192,9 @@ export function usePortalData(profile) {
       ...targetProfile,
       ...values,
     };
-    const approvalStatus = nextProfile.approvalStatus ?? targetProfile.approvalStatus ?? "approved";
+    const approvalStatus = nextProfile.approvalStatus ?? targetProfile.approvalStatus ?? "pending";
     const approvalJustChanged =
-      approvalStatus !== (targetProfile.approvalStatus ?? "approved");
+      approvalStatus !== (targetProfile.approvalStatus ?? "pending");
     const profileNoteTimestamp = new Date().toISOString();
     let lastProfileNotification = nextProfile.lastProfileNotification ?? targetProfile.lastProfileNotification ?? "";
     let lastProfileNotificationAt =

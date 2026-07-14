@@ -1,38 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function signedIn() {
       return request.auth != null;
     }
 
     function hasUserDoc() {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     function userData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isApprovedActive() {
+      return hasUserDoc() &&
+        userData().approvalStatus == "approved" &&
+        userData().employmentStatus == "active";
+    }
+
     function isSuperAdmin() {
-      return hasUserDoc() && userData().isSuperAdmin == true;
-    }
-
-    function isManager() {
-      return hasUserDoc() && userData().jobLevel == "manager";
-    }
-
-    function isSupervisor() {
-      return hasUserDoc() && userData().jobLevel == "supervisor";
+      return isApprovedActive() && userData().isSuperAdmin == true;
     }
 
     function isLead() {
-      return isManager() || isSupervisor();
+      return isApprovedActive() &&
+        (userData().jobLevel == "manager" || userData().jobLevel == "supervisor");
     }
 
     function belongsTo(departmentId) {
-      return hasUserDoc() && userData().departmentKey == departmentId;
+      return isApprovedActive() && userData().departmentKey == departmentId;
     }
 
     function isFrontOfficeManager() {
@@ -59,253 +56,247 @@ service cloud.firestore {
       return belongsTo("night_duty") && isLead();
     }
 
-    function isStoreStaff() {
-      return belongsTo("store");
+    function isStoreLead() {
+      return belongsTo("store") && isLead();
     }
 
-    function housekeepingManagerCanUpdateFrontOfficeDesk() {
-      return isHousekeepingManager() &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          "cleanedRoomNumbers",
-          "cleanedRooms",
-          "otherCleanedAreas",
-          "reportHistory",
-          "housekeepingUpdatedAt",
-          "housekeepingUpdatedByUid",
-          "housekeepingUpdatedByName",
-          "housekeepingUpdatedByDepartment"
-        ]);
+    function optionalListWithin(data, key, maximum) {
+      return !data.keys().hasAny([key]) || (data[key] is list && data[key].size() <= maximum);
     }
 
-    function housekeepingManagerCanCreateFrontOfficeDesk() {
-      return isHousekeepingManager() &&
-        request.resource.data.keys().hasOnly([
-          "cleanedRoomNumbers",
-          "cleanedRooms",
-          "otherCleanedAreas",
-          "reportHistory",
-          "housekeepingUpdatedAt",
-          "housekeepingUpdatedByUid",
-          "housekeepingUpdatedByName",
-          "housekeepingUpdatedByDepartment"
-        ]);
-    }
-
-    function housekeepingManagerCanUpdateMaintenanceRooms() {
-      return isHousekeepingManager() &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          "roomIssues",
-          "roomIssuesUpdatedAt",
-          "roomIssuesUpdatedByUid",
-          "roomIssuesUpdatedByName",
-          "roomIssuesUpdatedByDepartment"
-        ]);
-    }
-
-    function housekeepingManagerCanCreateMaintenanceDesk() {
-      return isHousekeepingManager() &&
-        request.resource.data.keys().hasOnly([
-          "roomIssues",
-          "roomIssuesUpdatedAt",
-          "roomIssuesUpdatedByUid",
-          "roomIssuesUpdatedByName",
-          "roomIssuesUpdatedByDepartment"
-        ]);
-    }
-
-    function nightDutyManagerCanUpdateMaintenanceUtilities() {
-      return isNightDutyManager() &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          "utilities",
-          "utilitiesUpdatedAt",
-          "utilitiesUpdatedByUid",
-          "utilitiesUpdatedByName",
-          "utilitiesUpdatedByDepartment"
-        ]);
-    }
-
-    function nightDutyManagerCanCreateMaintenanceUtilities() {
-      return isNightDutyManager() &&
-        request.resource.data.keys().hasOnly([
-          "utilities",
-          "utilitiesUpdatedAt",
-          "utilitiesUpdatedByUid",
-          "utilitiesUpdatedByName",
-          "utilitiesUpdatedByDepartment"
-        ]);
-    }
-
-    function roomComplaintLeadCanUpdateComplaints() {
-      return (
-        isFrontOfficeManager() ||
-        isHousekeepingManager() ||
-        isMaintenanceManager()
-      ) &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          "roomComplaints",
-          "roomComplaintsUpdatedAt",
-          "roomComplaintsUpdatedByUid",
-          "roomComplaintsUpdatedByName",
-          "roomComplaintsUpdatedByDepartment"
-        ]);
-    }
-
-    function roomComplaintLeadCanCreateComplaints() {
-      return (
-        isFrontOfficeManager() ||
-        isHousekeepingManager() ||
-        isMaintenanceManager()
-      ) &&
-        request.resource.data.keys().hasOnly([
-          "roomComplaints",
-          "roomComplaintsUpdatedAt",
-          "roomComplaintsUpdatedByUid",
-          "roomComplaintsUpdatedByName",
-          "roomComplaintsUpdatedByDepartment"
-        ]);
-    }
-
-    function canWriteTrackedEntries() {
-      return isSuperAdmin() || isLead() || isStoreStaff();
+    function validSelfRegistration(userId) {
+      return signedIn() && request.auth.uid == userId &&
+        request.resource.data.uid == userId &&
+        request.resource.data.fullName is string && request.resource.data.fullName.size() > 0 &&
+        request.resource.data.fullName.size() <= 80 &&
+        request.resource.data.email is string && request.resource.data.email.size() <= 254 &&
+        request.resource.data.departmentKey is string && request.resource.data.departmentKey.size() <= 40 &&
+        request.resource.data.departmentName is string && request.resource.data.departmentName.size() <= 80 &&
+        request.resource.data.jobLevel in ["manager", "supervisor", "line_staff"] &&
+        request.resource.data.staffTitle is string && request.resource.data.staffTitle.size() <= 80 &&
+        request.resource.data.isSuperAdmin == false &&
+        request.resource.data.approvalStatus == "pending" &&
+        request.resource.data.approvedAt == "" &&
+        request.resource.data.approvedByName == "" &&
+        request.resource.data.employmentStatus == "active" &&
+        request.resource.data.accessLevel in ["department_manager", "department_supervisor", "line_staff"] &&
+        optionalListWithin(request.resource.data, "privileges", 40) &&
+        optionalListWithin(request.resource.data, "leaveRecords", 120);
     }
 
     function selfProfileCanUpdate(userId) {
-      return request.auth.uid == userId &&
+      return signedIn() && request.auth.uid == userId &&
         request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          "fullName",
-          "birthday",
-          "phoneNumber",
-          "homeAddress",
-          "updatedAt"
+          "fullName", "birthday", "phoneNumber", "homeAddress", "updatedAt"
+        ]) &&
+        request.resource.data.fullName is string && request.resource.data.fullName.size() <= 80 &&
+        request.resource.data.phoneNumber is string && request.resource.data.phoneNumber.size() <= 30 &&
+        request.resource.data.homeAddress is string && request.resource.data.homeAddress.size() <= 250;
+    }
+
+    function hrCanUpdateUser(userId) {
+      return isHumanResourceManager() && request.auth.uid != userId &&
+        resource.data.isSuperAdmin != true &&
+        request.resource.data.isSuperAdmin == false &&
+        request.resource.data.accessLevel != "super_admin" &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "fullName", "birthday", "phoneNumber", "homeAddress", "departmentKey",
+          "departmentName", "jobLevel", "staffTitle", "surcharges", "employmentStatus",
+          "approvalStatus", "approvedAt", "approvedByName", "employmentStartDate",
+          "sackedAt", "sackedByName", "accessLevel", "privileges", "leaveRecords",
+          "monthlySalary", "payrollMonthKey", "absenceDays", "lateCount", "pensionAmount",
+          "taxAmount", "salaryUpdatedAt", "salaryUpdatedByName", "lastProfileNotification",
+          "lastProfileNotificationAt", "updatedAt"
+        ]) && optionalListWithin(request.resource.data, "privileges", 40) &&
+        optionalListWithin(request.resource.data, "leaveRecords", 120);
+    }
+
+    function housekeepingCanUpdateFrontOffice() {
+      return isHousekeepingManager() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "cleanedRoomNumbers", "cleanedRooms", "otherCleanedAreas", "reportHistory",
+          "housekeepingUpdatedAt", "housekeepingUpdatedByUid", "housekeepingUpdatedByName",
+          "housekeepingUpdatedByDepartment"
         ]);
     }
 
-    match /users/{userId} {
-      allow create: if signedIn() && request.auth.uid == userId;
-      allow read: if signedIn();
-      allow update: if signedIn() && (
-        isSuperAdmin() ||
-        isHumanResourceManager() ||
-        selfProfileCanUpdate(userId)
+    function housekeepingCanCreateFrontOffice() {
+      return isHousekeepingManager() && request.resource.data.keys().hasOnly([
+        "cleanedRoomNumbers", "cleanedRooms", "otherCleanedAreas", "reportHistory",
+        "housekeepingUpdatedAt", "housekeepingUpdatedByUid", "housekeepingUpdatedByName",
+        "housekeepingUpdatedByDepartment"
+      ]);
+    }
+
+    function validFrontOfficeSize() {
+      return optionalListWithin(request.resource.data, "occupiedRooms", 88) &&
+        optionalListWithin(request.resource.data, "occupiedRoomNumbers", 88) &&
+        optionalListWithin(request.resource.data, "cleanedRoomNumbers", 88) &&
+        optionalListWithin(request.resource.data, "otherCleanedAreas", 40) &&
+        optionalListWithin(request.resource.data, "roomMoves", 500) &&
+        optionalListWithin(request.resource.data, "reportHistory", 120) &&
+        optionalListWithin(request.resource.data, "activityEntries", 300);
+    }
+
+    function housekeepingCanUpdateMaintenance() {
+      return isHousekeepingManager() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "roomIssues", "roomIssuesUpdatedAt", "roomIssuesUpdatedByUid",
+          "roomIssuesUpdatedByName", "roomIssuesUpdatedByDepartment"
+        ]);
+    }
+
+    function housekeepingCanCreateMaintenance() {
+      return isHousekeepingManager() && request.resource.data.keys().hasOnly([
+        "roomIssues", "roomIssuesUpdatedAt", "roomIssuesUpdatedByUid",
+        "roomIssuesUpdatedByName", "roomIssuesUpdatedByDepartment"
+      ]);
+    }
+
+    function nightDutyCanUpdateUtilities() {
+      return isNightDutyManager() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "utilities", "utilitiesUpdatedAt", "utilitiesUpdatedByUid",
+          "utilitiesUpdatedByName", "utilitiesUpdatedByDepartment"
+        ]);
+    }
+
+    function nightDutyCanCreateUtilities() {
+      return isNightDutyManager() && request.resource.data.keys().hasOnly([
+        "utilities", "utilitiesUpdatedAt", "utilitiesUpdatedByUid",
+        "utilitiesUpdatedByName", "utilitiesUpdatedByDepartment"
+      ]);
+    }
+
+    function complaintLead() {
+      return isFrontOfficeManager() || isHousekeepingManager() || isMaintenanceManager();
+    }
+
+    function complaintLeadCanUpdate() {
+      return complaintLead() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "roomComplaints", "roomComplaintsUpdatedAt", "roomComplaintsUpdatedByUid",
+          "roomComplaintsUpdatedByName", "roomComplaintsUpdatedByDepartment"
+        ]);
+    }
+
+    function complaintLeadCanCreate() {
+      return complaintLead() && request.resource.data.keys().hasOnly([
+        "roomComplaints", "roomComplaintsUpdatedAt", "roomComplaintsUpdatedByUid",
+        "roomComplaintsUpdatedByName", "roomComplaintsUpdatedByDepartment"
+      ]);
+    }
+
+    function validMaintenanceSize() {
+      return optionalListWithin(request.resource.data, "roomIssues", 88) &&
+        optionalListWithin(request.resource.data, "roomComplaints", 300);
+    }
+
+    function canWriteTrackedEntries() {
+      return isSuperAdmin() || isLead() || belongsTo("store");
+    }
+
+    function validTrackedEntry() {
+      return request.resource.data.actorUid == request.auth.uid &&
+        request.resource.data.actorName == userData().fullName &&
+        request.resource.data.actorDepartment == userData().departmentName &&
+        request.resource.data.actorDepartmentKey == userData().departmentKey &&
+        request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 40 &&
+        request.resource.data.message is string && request.resource.data.message.size() <= 500;
+    }
+
+    function canReadNotification() {
+      return isApprovedActive() && (
+        resource.data.audienceTag == "all" ||
+        (resource.data.audienceTag == "operations" && (isSuperAdmin() || isFrontOfficeManager() || isHousekeepingManager() || (belongsTo("food_beverages") && isLead()) || (belongsTo("night_duty") && isLead()))) ||
+        (resource.data.audienceTag == "events" && (isSuperAdmin() || isLead())) ||
+        (resource.data.audienceTag == "housekeeping_reports" && (isSuperAdmin() || isHousekeepingManager())) ||
+        (resource.data.audienceTag == "property" && (isSuperAdmin() || isLead())) ||
+        (resource.data.audienceTag == "store" && (isSuperAdmin() || belongsTo("store"))) ||
+        (resource.data.audienceTag == "night-duty" && (isSuperAdmin() || isNightDutyManager()))
       );
-      allow delete: if isSuperAdmin();
+    }
+
+    match /users/{userId} {
+      allow create: if validSelfRegistration(userId);
+      allow get: if (signedIn() && request.auth.uid == userId) ||
+        (isApprovedActive() && (
+          isSuperAdmin() || isHumanResourceManager() || isAuditManager()
+        ));
+      allow list: if isApprovedActive() && (
+        isSuperAdmin() || isHumanResourceManager() || isAuditManager()
+      );
+      allow update: if isSuperAdmin() || hrCanUpdateUser(userId) || selfProfileCanUpdate(userId);
+      allow delete: if isSuperAdmin() && request.auth.uid != userId;
     }
 
     match /portal/highlights {
-      allow read: if signedIn();
+      allow read: if isApprovedActive();
       allow write: if isSuperAdmin();
     }
 
     match /portal/siteContent {
-      allow read: if signedIn();
-      allow write: if isSuperAdmin();
+      allow read: if isApprovedActive();
+      allow write: if isSuperAdmin() &&
+        optionalListWithin(request.resource.data, "announcements", 100) &&
+        optionalListWithin(request.resource.data, "newsItems", 100);
     }
 
     match /portal/frontOffice {
-      allow read: if signedIn() && (
-        isSuperAdmin() ||
-        isFrontOfficeManager() ||
-        (belongsTo("food_beverages") && isLead()) ||
-        (belongsTo("night_duty") && isLead()) ||
-        isHousekeepingManager()
-      );
-      allow create: if signedIn() && (
-        isSuperAdmin() ||
-        isFrontOfficeManager() ||
-        housekeepingManagerCanCreateFrontOfficeDesk()
-      );
-      allow update: if signedIn() && (
-        isSuperAdmin() ||
-        isFrontOfficeManager() ||
-        housekeepingManagerCanUpdateFrontOfficeDesk()
-      );
+      allow read: if isSuperAdmin() || isFrontOfficeManager() || isHousekeepingManager() ||
+        (belongsTo("food_beverages") && isLead()) || (belongsTo("night_duty") && isLead());
+      allow create: if validFrontOfficeSize() && (isSuperAdmin() || isFrontOfficeManager() || housekeepingCanCreateFrontOffice());
+      allow update: if validFrontOfficeSize() && (isSuperAdmin() || isFrontOfficeManager() || housekeepingCanUpdateFrontOffice());
     }
 
     match /portal/maintenance {
-      allow read: if signedIn() && (
-        isSuperAdmin() ||
-        isLead()
-      );
-      allow create: if signedIn() && (
-        isSuperAdmin() ||
-        isMaintenanceManager() ||
-        housekeepingManagerCanCreateMaintenanceDesk() ||
-        nightDutyManagerCanCreateMaintenanceUtilities() ||
-        roomComplaintLeadCanCreateComplaints()
-      );
-      allow update: if signedIn() && (
-        isSuperAdmin() ||
-        isMaintenanceManager() ||
-        housekeepingManagerCanUpdateMaintenanceRooms() ||
-        nightDutyManagerCanUpdateMaintenanceUtilities() ||
-        roomComplaintLeadCanUpdateComplaints()
-      );
+      allow read: if isSuperAdmin() || isLead();
+      allow create: if validMaintenanceSize() && (isSuperAdmin() || isMaintenanceManager() || housekeepingCanCreateMaintenance() || nightDutyCanCreateUtilities() || complaintLeadCanCreate());
+      allow update: if validMaintenanceSize() && (isSuperAdmin() || isMaintenanceManager() || housekeepingCanUpdateMaintenance() || nightDutyCanUpdateUtilities() || complaintLeadCanUpdate());
     }
 
     match /portal/eventsBookings {
-      allow read: if signedIn() && (
-        isSuperAdmin() ||
-        isLead()
-      );
-      allow write: if signedIn() && (
-        isSuperAdmin() ||
-        isFrontOfficeManager()
-      );
+      allow read: if isSuperAdmin() || isLead();
+      allow write: if optionalListWithin(request.resource.data, "events", 200) && (isSuperAdmin() || isFrontOfficeManager());
     }
 
     match /portal/housekeepingReports {
-      allow read: if signedIn() && (
-        isSuperAdmin() ||
-        isHousekeepingManager()
-      );
-      allow write: if signedIn() && (
-        isSuperAdmin() ||
-        isHousekeepingManager()
-      );
+      allow read: if isSuperAdmin() || isHousekeepingManager();
+      allow write: if optionalListWithin(request.resource.data, "morningRooms", 88) &&
+        optionalListWithin(request.resource.data, "afternoonRooms", 88) &&
+        (isSuperAdmin() || isHousekeepingManager());
     }
 
     match /portal/storeInventory {
-      allow read: if signedIn() && (
-        isSuperAdmin() ||
-        isStoreStaff()
-      );
-      allow write: if signedIn() && (
-        isSuperAdmin() ||
-        isStoreStaff()
-      );
+      allow read: if isSuperAdmin() || belongsTo("store");
+      allow write: if optionalListWithin(request.resource.data, "acquisitions", 400) &&
+        optionalListWithin(request.resource.data, "requisitions", 400) &&
+        optionalListWithin(request.resource.data, "returns", 400) &&
+        optionalListWithin(request.resource.data, "adjustments", 400) &&
+        (isSuperAdmin() || isStoreLead());
     }
 
     match /portal/nightDuty {
-      allow read: if signedIn() && (
-        isSuperAdmin() ||
-        isNightDutyManager()
-      );
-      allow write: if signedIn() && (
-        isSuperAdmin() ||
-        isNightDutyManager()
-      );
+      allow read: if isSuperAdmin() || isNightDutyManager();
+      allow write: if optionalListWithin(request.resource.data, "onDutyStaff", 200) && (isSuperAdmin() || isNightDutyManager());
     }
 
     match /notifications/{notificationId} {
-      allow read: if signedIn();
-      allow create: if signedIn() && canWriteTrackedEntries();
+      allow read: if canReadNotification();
+      allow create: if canWriteTrackedEntries() && validTrackedEntry() &&
+        request.resource.data.title is string && request.resource.data.title.size() <= 120 &&
+        request.resource.data.audienceTag in ["all", "operations", "events", "housekeeping_reports", "property", "store", "night-duty"];
     }
 
     match /activityLogs/{logId} {
-      allow read: if signedIn() && (
-        isSuperAdmin() ||
-        isHumanResourceManager() ||
-        isAuditManager()
-      );
-      allow create: if signedIn() && canWriteTrackedEntries();
+      allow read: if isSuperAdmin() || isHumanResourceManager() || isAuditManager();
+      allow create: if canWriteTrackedEntries() && validTrackedEntry();
     }
 
     match /departments/{departmentId} {
-      allow read: if signedIn();
-      allow write: if signedIn() && (
-        isSuperAdmin() ||
-        (belongsTo(departmentId) && isLead())
-      );
+      allow read: if isSuperAdmin() || isHumanResourceManager() || isAuditManager() || belongsTo(departmentId);
+      allow write: if optionalListWithin(request.resource.data, "shifts", 400) &&
+        (isSuperAdmin() || (belongsTo(departmentId) && isLead()));
     }
   }
 }

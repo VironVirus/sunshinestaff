@@ -12,8 +12,13 @@ export const defaultStoreInventory = {
   updatedByDepartment: "",
 };
 
+function normalizeText(value, maximum = 120) {
+  return typeof value === "string" ? value.trim().slice(0, maximum) : "";
+}
+
 function normalizeAmount(value) {
-  return Math.max(Number(value) || 0, 0);
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.min(Math.max(amount, 0), 1000000000) : 0;
 }
 
 function normalizeDate(value) {
@@ -40,8 +45,8 @@ function normalizeDate(value) {
 }
 
 function normalizeAcquisition(entry = {}) {
-  const serialNumber = entry.serialNumber?.trim() ?? "";
-  const itemName = entry.itemName?.trim() ?? "";
+  const serialNumber = normalizeText(entry.serialNumber, 80);
+  const itemName = normalizeText(entry.itemName);
   const unitPrice = normalizeAmount(entry.unitPrice);
   const quantity = normalizeAmount(entry.quantity);
 
@@ -56,17 +61,17 @@ function normalizeAcquisition(entry = {}) {
     unitPrice,
     quantity,
     totalPrice: unitPrice * quantity,
-    purchasedBy: entry.purchasedBy?.trim() ?? "",
+    purchasedBy: normalizeText(entry.purchasedBy),
     acquiredDate: normalizeDate(entry.acquiredDate ?? entry.date),
   };
 }
 
 function normalizeRequisition(entry = {}) {
-  const serialNumber = entry.serialNumber?.trim() ?? "";
-  const itemName = entry.itemName?.trim() ?? "";
+  const serialNumber = normalizeText(entry.serialNumber, 80);
+  const itemName = normalizeText(entry.itemName);
   const unitPrice = normalizeAmount(entry.unitPrice);
   const quantity = normalizeAmount(entry.quantity);
-  const departmentKey = entry.departmentKey?.trim() ?? "";
+  const departmentKey = normalizeText(entry.departmentKey, 40);
 
   if (!serialNumber || !itemName || quantity <= 0 || !departmentKey) {
     return null;
@@ -81,17 +86,17 @@ function normalizeRequisition(entry = {}) {
     totalPrice: unitPrice * quantity,
     departmentKey,
     departmentName:
-      entry.departmentName?.trim() ?? departmentsByKey[departmentKey]?.name ?? departmentKey,
+      normalizeText(entry.departmentName, 80) || departmentsByKey[departmentKey]?.name || departmentKey,
     requisitionDate: normalizeDate(entry.requisitionDate ?? entry.date),
   };
 }
 
 function normalizeReturn(entry = {}) {
-  const serialNumber = entry.serialNumber?.trim() ?? "";
-  const itemName = entry.itemName?.trim() ?? "";
+  const serialNumber = normalizeText(entry.serialNumber, 80);
+  const itemName = normalizeText(entry.itemName);
   const unitPrice = normalizeAmount(entry.unitPrice);
   const quantity = normalizeAmount(entry.quantity);
-  const departmentKey = entry.departmentKey?.trim() ?? "";
+  const departmentKey = normalizeText(entry.departmentKey, 40);
 
   if (!serialNumber || !itemName || quantity <= 0 || !departmentKey) {
     return null;
@@ -106,17 +111,17 @@ function normalizeReturn(entry = {}) {
     totalPrice: unitPrice * quantity,
     departmentKey,
     departmentName:
-      entry.departmentName?.trim() ?? departmentsByKey[departmentKey]?.name ?? departmentKey,
+      normalizeText(entry.departmentName, 80) || departmentsByKey[departmentKey]?.name || departmentKey,
     returnedDate: normalizeDate(entry.returnedDate ?? entry.date),
   };
 }
 
 function normalizeAdjustment(entry = {}) {
-  const serialNumber = entry.serialNumber?.trim() ?? "";
-  const itemName = entry.itemName?.trim() ?? "";
+  const serialNumber = normalizeText(entry.serialNumber, 80);
+  const itemName = normalizeText(entry.itemName);
   const unitPrice = normalizeAmount(entry.unitPrice);
   const quantity = normalizeAmount(entry.quantity);
-  const adjustmentType = entry.adjustmentType?.trim() ?? "";
+  const adjustmentType = normalizeText(entry.adjustmentType, 20);
 
   if (!serialNumber || !itemName || quantity <= 0 || !adjustmentType) {
     return null;
@@ -130,13 +135,13 @@ function normalizeAdjustment(entry = {}) {
     quantity,
     totalPrice: unitPrice * quantity,
     adjustmentType,
-    reason: entry.reason?.trim() ?? "",
+    reason: normalizeText(entry.reason, 500),
     adjustedDate: normalizeDate(entry.adjustedDate ?? entry.date),
   };
 }
 
 export function normalizeAcquisitions(entries = []) {
-  return entries
+  return (Array.isArray(entries) ? entries : []).slice(0, 400)
     .map((entry) => normalizeAcquisition(entry))
     .filter(Boolean)
     .sort((left, right) => {
@@ -149,7 +154,7 @@ export function normalizeAcquisitions(entries = []) {
 }
 
 export function normalizeRequisitions(entries = []) {
-  return entries
+  return (Array.isArray(entries) ? entries : []).slice(0, 400)
     .map((entry) => normalizeRequisition(entry))
     .filter(Boolean)
     .sort((left, right) => {
@@ -162,7 +167,7 @@ export function normalizeRequisitions(entries = []) {
 }
 
 export function normalizeReturns(entries = []) {
-  return entries
+  return (Array.isArray(entries) ? entries : []).slice(0, 400)
     .map((entry) => normalizeReturn(entry))
     .filter(Boolean)
     .sort((left, right) => {
@@ -175,7 +180,7 @@ export function normalizeReturns(entries = []) {
 }
 
 export function normalizeAdjustments(entries = []) {
-  return entries
+  return (Array.isArray(entries) ? entries : []).slice(0, 400)
     .map((entry) => normalizeAdjustment(entry))
     .filter(Boolean)
     .sort((left, right) => {

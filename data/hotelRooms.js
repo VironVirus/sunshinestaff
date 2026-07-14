@@ -51,7 +51,7 @@ function buildAnnexGroup(floorNumber) {
   };
 }
 
-export const statedHotelRoomCount = 93;
+export const statedHotelRoomCount = 88;
 
 export const roomGroups = [
   ...Array.from({ length: 6 }, (_, index) => buildMainFloorGroup(index + 1)),
@@ -94,17 +94,17 @@ const roomMap = new Map(
 );
 
 export function normalizeRoomNumbers(roomNumbers = []) {
-  return [...new Set(roomNumbers.filter(Boolean))]
+  return [...new Set((Array.isArray(roomNumbers) ? roomNumbers : []).filter(Boolean))]
     .filter((roomLabel) => roomOrderMap.has(roomLabel))
     .sort((left, right) => roomOrderMap.get(left) - roomOrderMap.get(right));
 }
 
 function normalizeTextEntries(entries = []) {
   return [...new Set(
-    entries
-      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    (Array.isArray(entries) ? entries : [])
+      .map((entry) => (typeof entry === "string" ? entry.trim().slice(0, 120) : ""))
       .filter(Boolean),
-  )];
+  )].slice(0, 40);
 }
 
 export function filterRoomGroupOptions(excludedRooms = []) {
@@ -138,7 +138,7 @@ export function normalizeOccupiedRooms(
   occupiedRooms = [],
   operationalDateKey = getOperationalDateKey(),
 ) {
-  const normalizedRooms = occupiedRooms
+  const normalizedRooms = (Array.isArray(occupiedRooms) ? occupiedRooms : [])
     .map((roomEntry) => {
       const roomNumber = roomEntry?.roomNumber ?? roomEntry?.label ?? roomEntry;
       const roomRecord = getRoomRecord(roomNumber);
@@ -147,7 +147,7 @@ export function normalizeOccupiedRooms(
         return null;
       }
 
-      const bookedDays = Math.max(
+      const bookedDays = Math.min(Math.max(
         Number(
           roomEntry?.bookedDays ??
             roomEntry?.stayDays ??
@@ -155,7 +155,7 @@ export function normalizeOccupiedRooms(
             1,
         ) || 1,
         1,
-      );
+      ), 365);
       const bookedOnDateKey =
         roomEntry?.bookedOnDateKey ??
         roomEntry?.bookingDateKey ??
@@ -167,14 +167,20 @@ export function normalizeOccupiedRooms(
         floorLabel: roomRecord.groupLabel,
         breakfastIncluded: Boolean(roomEntry?.breakfastIncluded),
         breakfastCount: Boolean(roomEntry?.breakfastIncluded)
-          ? Math.max(Number(roomEntry?.breakfastCount) || 0, 0)
+          ? Math.min(Math.max(Number(roomEntry?.breakfastCount) || 0, 0), 20)
           : 0,
         bookedDays,
         bookedOnDateKey,
         remainingDays: bookedDays,
-        guestType: roomEntry?.guestType ?? "walk_in",
-        checkInCategory: roomEntry?.checkInCategory ?? "normal_check_in",
-        lastCheckoutCategory: roomEntry?.lastCheckoutCategory ?? "",
+        guestType: ["walk_in", "corporate"].includes(roomEntry?.guestType)
+          ? roomEntry.guestType
+          : "walk_in",
+        checkInCategory: typeof roomEntry?.checkInCategory === "string"
+          ? roomEntry.checkInCategory.slice(0, 40)
+          : "normal_check_in",
+        lastCheckoutCategory: typeof roomEntry?.lastCheckoutCategory === "string"
+          ? roomEntry.lastCheckoutCategory.slice(0, 40)
+          : "",
       };
     })
     .filter(Boolean)
@@ -186,7 +192,7 @@ export function normalizeOccupiedRooms(
   return normalizedRooms.filter(
     (roomEntry, index, current) =>
       current.findIndex((candidate) => candidate.roomNumber === roomEntry.roomNumber) === index,
-  );
+  ).slice(0, configuredHotelRoomCount);
 }
 
 export function deriveOperationsSnapshot(rawOperations = {}) {

@@ -5,26 +5,26 @@ Next.js staff portal for Sunshine Hotel with Firebase authentication, Firestore-
 ## What is included
 
 - Role-based staff onboarding with department and job level selection.
-- First registered IT manager becomes the overall admin.
+- Self-registered accounts remain pending until an authorized administrator or HR lead approves them.
 - Shared dashboard with staff of the week, staff of the month, birthdays, hotel news, and announcements.
 - Front Office live updates for in-house guests, available rooms, breakfast entitlement, room complaints, and events/bookings.
 - Read-only operational view for Food and Beverages.
 - Read and print daily report access for the Night Duty manager.
-- HouseKeeping and Maintainance managers can mark rooms out of order and update room issue notes.
+- Housekeeping and Maintenance managers can mark rooms out of order and update room issue notes.
 - HR can update staff details, surcharges, leave eligibility, roles, promotion or demotion, suspension, and sacked status.
 - Out-of-order rooms are automatically removed from Front Office room assignment choices.
 - Department mapping for:
   - Food and Beverages
   - Front Office
   - IT
-  - Maintainance
+  - Maintenance
   - Store
   - Accounts
   - Audit
   - Human Resource
   - Kitchen
   - Security
-  - HouseKeeping
+  - Housekeeping
   - Night Duty
 
 ## Local setup
@@ -59,6 +59,7 @@ npm run firebase:check
    - Create a Firestore database.
    - Publish the rules from `firestore.rules`.
    - Publish the indexes from `firestore.indexes.json`.
+   - For a brand-new project, register the first administrator account, then use the Firebase Console to set its profile to `approvalStatus: "approved"`, `employmentStatus: "active"`, `isSuperAdmin: true`, and `accessLevel: "super_admin"`. Public sign-up never grants administrator access.
 6. Start the app:
 
 ```bash
@@ -77,8 +78,7 @@ npm run firebase:indexes
 npm run firebase:emulators
 ```
 
-The Firebase CLI is no longer bundled into the app dependencies, which keeps Netlify uploads
-lighter. If the Firebase CLI is not installed yet, install it once:
+The Firebase CLI is a development dependency. You may also install it globally if preferred:
 
 ```bash
 npm install -g firebase-tools
@@ -132,6 +132,6 @@ firebase login
 
 ## Next build-out ideas
 
-- Add department-specific modules for Maintainance, HouseKeeping, Accounts, Audit, and HR.
+- Add department-specific modules for Maintenance, Housekeeping, Accounts, Audit, and HR.
 - Add staff profile editing and approval workflows.
 - Add printable daily handover archives for Night Duty.

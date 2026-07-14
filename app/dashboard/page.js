@@ -33,7 +33,6 @@ import {
   getNightDutyAccess,
   getOperationsAccess,
   getPropertyAccess,
-  isLead,
   operationsMetricConfig,
 } from "@/lib/roles";
 
@@ -69,13 +68,13 @@ function MobileSectionTabs({ sections, activeKey, onChange }) {
 
 function SectionTabs({ sections, activeKey, onChange }) {
   return (
-    <div className="no-print flex flex-wrap gap-2 rounded-[24px] bg-slate-100 p-2">
+    <div className="no-print flex gap-2 overflow-x-auto rounded-[24px] bg-slate-100 p-2">
       {sections.map((section) => (
         <button
           key={section.key}
           type="button"
           onClick={() => onChange(section.key)}
-          className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+          className={`min-h-11 shrink-0 rounded-full px-4 py-2.5 text-sm font-semibold transition ${
             activeKey === section.key
               ? "bg-[#162338] text-white"
               : "bg-white text-slate-600 hover:text-[#162338]"
@@ -93,7 +92,7 @@ function TabButton({ active, label, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-4 py-3 text-sm font-semibold transition ${
+      className={`min-h-11 shrink-0 rounded-full px-4 py-3 text-sm font-semibold transition ${
         active
           ? "bg-[#162338] text-white"
           : "bg-white text-slate-600 hover:text-[#162338]"
@@ -318,8 +317,8 @@ export default function DashboardPage() {
     }));
 
     cards.push({
-      label: "Team",
-      value: isLead(profile) ? teamMembers.length : myShiftsCount,
+      label: managerWorkspaceAccess.canManageStaff ? "Team" : "My shifts",
+      value: managerWorkspaceAccess.canManageStaff ? teamMembers.length : myShiftsCount,
     });
 
     while (cards.length < 4) {
@@ -346,6 +345,7 @@ export default function DashboardPage() {
   }, [
     canViewManagerTabs,
     currentDepartment.name,
+    managerWorkspaceAccess.canManageStaff,
     myShiftsCount,
     operations,
     canViewStorePanel,
@@ -443,7 +443,7 @@ export default function DashboardPage() {
         ? [
             {
               key: "housekeeping-reports",
-              label: "HouseKeeping Reports",
+              label: "Housekeeping Reports",
               content: (
                 <HousekeepingStatusPanel
                   profile={profile}
@@ -507,7 +507,7 @@ export default function DashboardPage() {
             },
           ]
         : []),
-      ...(isLead(profile) || profile?.isSuperAdmin
+      ...(managerWorkspaceAccess.canManageStaff
         ? [
             {
               key: "team",
@@ -762,7 +762,7 @@ export default function DashboardPage() {
       </section>
 
       <section className="mt-6">
-        <div className="no-print flex flex-wrap gap-3 rounded-[28px] bg-slate-100 p-2">
+        <div className="no-print flex gap-3 overflow-x-auto rounded-[28px] bg-slate-100 p-2">
           {tabOptions.map((tab) => (
             <TabButton
               key={tab.key}

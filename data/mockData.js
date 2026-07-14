@@ -36,5 +36,5 @@ export const defaultFrontOfficeSnapshot = {
   updatedByDepartment: "Front Office",
   housekeepingUpdatedAt: null,
   housekeepingUpdatedByName: "",
-  housekeepingUpdatedByDepartment: "HouseKeeping",
+  housekeepingUpdatedByDepartment: "Housekeeping",
 };

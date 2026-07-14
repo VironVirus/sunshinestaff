@@ -22,7 +22,7 @@ function joinClasses(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
-export default function PortalLogo({ size = "md", stacked = false, className = "" }) {
+export default function PortalLogo({ size = "md", stacked = false, showText = true, className = "" }) {
   const preset = sizeMap[size] ?? sizeMap.md;
 
   return (
@@ -49,7 +49,7 @@ export default function PortalLogo({ size = "md", stacked = false, className = "
         />
       </div>
 
-      <div className={stacked ? "space-y-1" : "space-y-1.5"}>
+      {showText ? <div className={stacked ? "space-y-1" : "space-y-1.5"}>
         <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[#8a6923]">
           Sunshine Hotel
         </p>
@@ -59,7 +59,7 @@ export default function PortalLogo({ size = "md", stacked = false, className = "
         <p className={joinClasses("max-w-md text-slate-600", preset.subtitle)}>
           Every stay; a reason to smile.
         </p>
-      </div>
+      </div> : null}
     </div>
   );
 }

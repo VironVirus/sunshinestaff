@@ -88,6 +88,127 @@ function downloadPdf(filename, title, lines) {
   });
 }
 
+function InHouseRoomEditor({ room, canEdit, saving, onSave, onDelete }) {
+  const [draft, setDraft] = useState({
+    guestType: room.guestType ?? "walk_in",
+    breakfastIncluded: Boolean(room.breakfastIncluded),
+    breakfastCount: String(room.breakfastCount ?? 0),
+    bookedDays: String(room.bookedDays ?? 1),
+  });
+
+  useEffect(() => {
+    setDraft({
+      guestType: room.guestType ?? "walk_in",
+      breakfastIncluded: Boolean(room.breakfastIncluded),
+      breakfastCount: String(room.breakfastCount ?? 0),
+      bookedDays: String(room.bookedDays ?? 1),
+    });
+  }, [room]);
+
+  function update(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-bold text-[#162338]">Room {room.roomNumber}</p>
+          <p className="mt-1 text-xs text-slate-500">{room.floorLabel}</p>
+        </div>
+        <span className="badge">In-house</span>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <label className="field">
+          <span>Guest type</span>
+          <select value={draft.guestType} disabled={!canEdit || saving}
+            onChange={(event) => update("guestType", event.target.value)}>
+            <option value="walk_in">Walk in</option>
+            <option value="corporate">Corporate</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Breakfast</span>
+          <select value={draft.breakfastIncluded ? "yes" : "no"} disabled={!canEdit || saving}
+            onChange={(event) => {
+              const included = event.target.value === "yes";
+              setDraft((current) => ({
+                ...current,
+                breakfastIncluded: included,
+                breakfastCount: included ? (current.breakfastCount === "0" ? "1" : current.breakfastCount) : "0",
+              }));
+            }}>
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Breakfast count</span>
+          <input type="number" min="0" max="20" value={draft.breakfastIncluded ? draft.breakfastCount : "0"}
+            disabled={!canEdit || saving || !draft.breakfastIncluded}
+            onChange={(event) => update("breakfastCount", event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Booked days</span>
+          <input type="number" min="1" max="365" value={draft.bookedDays} disabled={!canEdit || saving}
+            onChange={(event) => update("bookedDays", event.target.value)} />
+        </label>
+      </div>
+
+      {canEdit ? (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" className="button-secondary" disabled={saving}
+            onClick={() => onDelete(room.roomNumber)}>
+            Delete from in-house
+          </button>
+          <button type="button" className="button-primary" disabled={saving}
+            onClick={() => onSave(room.roomNumber, {
+              guestType: draft.guestType,
+              breakfastIncluded: draft.breakfastIncluded,
+              breakfastCount: draft.breakfastIncluded
+                ? Math.min(Math.max(Number(draft.breakfastCount) || 1, 1), 20)
+                : 0,
+              bookedDays: Math.min(Math.max(Number(draft.bookedDays) || 1, 1), 365),
+            })}>
+            Save changes
+          </button>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function InHouseRoomList({ rooms, canEdit, saving, onSave, onDelete }) {
+  if (rooms.length === 0) {
+    return <div className="subpanel mt-6 text-sm text-slate-500">No rooms are currently in-house.</div>;
+  }
+
+  return (
+    <div className="mt-6 space-y-6">
+      {roomFloorOptions.map((floor) => {
+        const floorRooms = rooms.filter((room) => room.floorKey === floor.value);
+        if (floorRooms.length === 0) return null;
+
+        return (
+          <section key={floor.value} className="subpanel">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-bold text-[#162338]">{floor.label}</h3>
+              <span className="badge">{floorRooms.length} room{floorRooms.length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="mt-4 space-y-3">
+              {floorRooms.map((room) => (
+                <InHouseRoomEditor key={room.roomNumber} room={room} canEdit={canEdit}
+                  saving={saving} onSave={onSave} onDelete={onDelete} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function getOperationsActivitiesForDate(operations, targetDateKey, actionType) {
   return (operations?.activityEntries ?? []).filter(
     (entry) => entry?.operationalDateKey === targetDateKey && entry?.actionType === actionType,
@@ -436,7 +557,7 @@ function buildInHouseReportLines(operations) {
   const sections = buildOccupiedRoomSections(operations?.occupiedRooms ?? [], operationalDateKey);
   const occupiedSections = sections.filter((section) => section.rooms.length > 0);
   const lines = [
-    "Sunshine Hotel In House Report",
+    "Sunshine Hotel In-house Report",
     `Operational day: ${formatDateKey(operationalDateKey)}`,
     `Generated: ${formatFriendlyDate(new Date(), {
       dateStyle: "full",
@@ -724,6 +845,7 @@ export default function OperationsPanel({
   const [selectedCleanedRoom, setSelectedCleanedRoom] = useState("");
   const [reportStartDate, setReportStartDate] = useState(operationalDateKey);
   const [reportEndDate, setReportEndDate] = useState(operationalDateKey);
+  const [activeRoomNav, setActiveRoomNav] = useState("in_house");
   const [feedback, setFeedback] = useState({
     frontOffice: { type: "", message: "" },
     housekeeping: { type: "", message: "" },
@@ -1153,6 +1275,71 @@ export default function OperationsPanel({
     );
   }
 
+  async function handleUpdateInHouseRoom(roomNumber, values) {
+    const targetRoom = occupiedRooms.find((room) => room.roomNumber === roomNumber);
+    if (!targetRoom) return;
+
+    const createdAt = new Date().toISOString();
+    await saveFrontOffice({
+      occupiedRooms: occupiedRooms.map((room) => room.roomNumber === roomNumber
+        ? { ...room, ...values }
+        : room),
+      activityEntries: [{
+        id: `activity-${Date.now()}`,
+        actionType: "in_house_update",
+        operationalDateKey,
+        createdAt,
+        roomNumber,
+        actorName: profile?.fullName ?? "",
+        actorDepartment: profile?.departmentName ?? "",
+      }, ...(operations?.activityEntries ?? [])],
+      activityEntry: {
+        area: "front_office",
+        actionType: "in_house_update",
+        message: `${roomNumber} in-house details were updated.`,
+        targetRoomNumber: roomNumber,
+      },
+      notificationEntry: {
+        audienceTag: "operations",
+        title: "In-house update",
+        message: `${roomNumber} in-house details were updated.`,
+        relatedRoomNumber: roomNumber,
+      },
+    }, `${roomNumber} updated.`);
+  }
+
+  async function handleDeleteInHouseRoom(roomNumber) {
+    if (typeof window !== "undefined" && !window.confirm(`Delete ${roomNumber} from the in-house list?`)) {
+      return;
+    }
+
+    const createdAt = new Date().toISOString();
+    await saveFrontOffice({
+      occupiedRooms: occupiedRooms.filter((room) => room.roomNumber !== roomNumber),
+      activityEntries: [{
+        id: `activity-${Date.now()}`,
+        actionType: "in_house_delete",
+        operationalDateKey,
+        createdAt,
+        roomNumber,
+        actorName: profile?.fullName ?? "",
+        actorDepartment: profile?.departmentName ?? "",
+      }, ...(operations?.activityEntries ?? [])],
+      activityEntry: {
+        area: "front_office",
+        actionType: "in_house_delete",
+        message: `${roomNumber} was deleted from the in-house list.`,
+        targetRoomNumber: roomNumber,
+      },
+      notificationEntry: {
+        audienceTag: "operations",
+        title: "In-house update",
+        message: `${roomNumber} was removed from the in-house list.`,
+        relatedRoomNumber: roomNumber,
+      },
+    }, `${roomNumber} removed from in-house.`);
+  }
+
   async function handleMoveRoom(event) {
     event.preventDefault();
 
@@ -1312,21 +1499,38 @@ export default function OperationsPanel({
         ))}
       </div>
 
+      <nav className="no-print mt-6 flex gap-2 overflow-x-auto rounded-2xl bg-slate-100 p-1" aria-label="Room sections">
+        <button type="button" onClick={() => setActiveRoomNav("in_house")}
+          className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold ${activeRoomNav === "in_house" ? "bg-white text-[#162338] shadow" : "text-slate-500"}`}>
+          In-house ({occupiedRooms.length})
+        </button>
+        <button type="button" onClick={() => setActiveRoomNav("controls")}
+          className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold ${activeRoomNav === "controls" ? "bg-white text-[#162338] shadow" : "text-slate-500"}`}>
+          Room controls &amp; reports
+        </button>
+      </nav>
+
+      {activeRoomNav === "in_house" ? (
+        <InHouseRoomList rooms={occupiedRooms} canEdit={access.canEditFrontOffice}
+          saving={frontOfficeSaving} onSave={handleUpdateInHouseRoom} onDelete={handleDeleteInHouseRoom} />
+      ) : (
+        <>
+
       {access.canPrint ? (
         <div className="mt-6 grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
           <ReportActionGroup
-            title="In House Report"
+            title="In-house Report"
             actions={[
               {
                 label: "Print in-house report",
-                onClick: () => printTextReport("Sunshine Hotel In House Report", inHouseReportLines),
+                onClick: () => printTextReport("Sunshine Hotel In-house Report", inHouseReportLines),
               },
               {
                 label: "Download PDF",
                 onClick: () =>
                   downloadPdf(
                     "sunshine-in-house-report.pdf",
-                    "Sunshine Hotel In House Report",
+                    "Sunshine Hotel In-house Report",
                     inHouseReportLines,
                   ),
               },
@@ -1335,7 +1539,7 @@ export default function OperationsPanel({
 
           {canViewCleanedRooms ? (
             <ReportActionGroup
-              title="HouseKeeping Cleaned Rooms Report"
+              title="Housekeeping Cleaned Rooms Report"
               actions={[
                 {
                   label: "Print cleaned rooms",
@@ -1735,6 +1939,8 @@ export default function OperationsPanel({
           />
         </div>
       ) : null}
+        </>
+      )}
     </section>
   );
 }

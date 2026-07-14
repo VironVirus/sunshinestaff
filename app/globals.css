@@ -12,6 +12,7 @@ html {
 
 body {
   min-height: 100vh;
+  overflow-x: hidden;
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   background:
     radial-gradient(circle at top left, rgba(255, 244, 211, 0.72), transparent 34%),
@@ -115,6 +116,7 @@ body {
     font-weight: 600;
     color: #ffffff;
     transition: background 160ms ease, opacity 160ms ease;
+    min-height: 44px;
   }
 
   .button-primary:hover {
@@ -138,6 +140,7 @@ body {
     font-weight: 600;
     color: #334155;
     transition: border-color 160ms ease, color 160ms ease;
+    min-height: 44px;
   }
 
   .button-secondary:hover {
@@ -264,6 +267,26 @@ body {
   .metric-value {
     font-size: clamp(1.6rem, 8vw, 2.2rem);
   }
+
+  .field input,
+  .field select,
+  .field textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .badge {
+    max-width: 100%;
+    letter-spacing: 0.08em;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .button-primary,
+  .button-secondary {
+    width: 100%;
+  }
+
 }
 
 @media print {

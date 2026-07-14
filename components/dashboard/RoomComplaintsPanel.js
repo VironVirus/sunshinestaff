@@ -322,7 +322,7 @@ export default function RoomComplaintsPanel({
                     : "border-slate-200 bg-white text-slate-500"
               }`}
             >
-              {section.label} ({section.complaintsCount})
+              {section.label} ({section.rooms.length})
             </button>
           ))}
         </div>
@@ -338,7 +338,7 @@ export default function RoomComplaintsPanel({
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-[#162338]">{activeFloorSection.label}</p>
               <span className="text-[11px] font-semibold text-slate-500">
-                {activeFloorSection.complaintsCount} issue(s)
+                {activeFloorSection.rooms.length} room(s) with issues
               </span>
             </div>
 

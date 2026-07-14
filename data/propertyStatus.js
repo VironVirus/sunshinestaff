@@ -45,7 +45,7 @@ export const roomComplaintOptions = [
   { value: "power_issue", label: "Power Issue" },
   { value: "bathroom_issue", label: "Bathroom Issue" },
   { value: "door_lock_issue", label: "Door Lock Issue" },
-  { value: "housekeeping_request", label: "HouseKeeping Request" },
+  { value: "housekeeping_request", label: "Housekeeping Request" },
   { value: "noise_complaint", label: "Noise Complaint" },
   { value: "other", label: "Other" },
 ];
@@ -92,7 +92,7 @@ export function getRoomComplaintLabel(value) {
 }
 
 export function normalizeRoomIssues(roomIssues = []) {
-  return roomIssues
+  return (Array.isArray(roomIssues) ? roomIssues : [])
     .map((roomIssue) => {
       const roomNumber = roomIssue?.roomNumber ?? roomIssue?.label ?? "";
       const roomRecord = getRoomRecord(roomNumber);
@@ -106,7 +106,7 @@ export function normalizeRoomIssues(roomIssues = []) {
         floorKey: roomRecord.groupKey,
         floorLabel: roomRecord.groupLabel,
         outOfOrder: true,
-        issueNote: roomIssue?.issueNote?.trim() ?? "",
+        issueNote: typeof roomIssue?.issueNote === "string" ? roomIssue.issueNote.trim().slice(0, 500) : "",
         updatedByName: roomIssue?.updatedByName ?? "",
         updatedByDepartment: roomIssue?.updatedByDepartment ?? "",
         sortOrder: roomRecord.sortOrder,
@@ -114,7 +114,8 @@ export function normalizeRoomIssues(roomIssues = []) {
     })
     .filter(Boolean)
     .sort((left, right) => left.sortOrder - right.sortOrder)
-    .map(({ sortOrder, ...roomIssue }) => roomIssue);
+    .map(({ sortOrder, ...roomIssue }) => roomIssue)
+    .slice(0, 88);
 }
 
 function deriveRoomIssuesFromComplaints(roomComplaints = []) {
@@ -148,12 +149,14 @@ function deriveRoomIssuesFromComplaints(roomComplaints = []) {
 }
 
 export function normalizeRoomComplaints(roomComplaints = []) {
-  return roomComplaints
+  const seenIds = new Set();
+
+  return (Array.isArray(roomComplaints) ? roomComplaints : [])
     .map((complaintEntry) => {
       const roomNumber = complaintEntry?.roomNumber ?? complaintEntry?.label ?? "";
       const roomRecord = getRoomRecord(roomNumber);
 
-      if (!roomRecord || !complaintEntry?.complaintType) {
+      if (!roomRecord || !roomComplaintOptions.some((option) => option.value === complaintEntry?.complaintType)) {
         return null;
       }
 
@@ -163,7 +166,9 @@ export function normalizeRoomComplaints(roomComplaints = []) {
         floorKey: roomRecord.groupKey,
         floorLabel: roomRecord.groupLabel,
         complaintType: complaintEntry.complaintType,
-        complaintNote: complaintEntry?.complaintNote?.trim() ?? "",
+        complaintNote: typeof complaintEntry?.complaintNote === "string"
+          ? complaintEntry.complaintNote.trim().slice(0, 500)
+          : "",
         reportedAt: complaintEntry?.reportedAt ?? "",
         resolvedAt: complaintEntry?.resolvedAt ?? "",
         updatedByName: complaintEntry?.updatedByName ?? "",
@@ -174,10 +179,12 @@ export function normalizeRoomComplaints(roomComplaints = []) {
     .filter(Boolean)
     .sort((left, right) => left.sortOrder - right.sortOrder)
     .map(({ sortOrder, ...complaintEntry }) => complaintEntry)
-    .filter(
-      (complaintEntry, index, current) =>
-        current.findIndex((candidate) => candidate.id === complaintEntry.id) === index,
-    );
+    .filter((complaintEntry) => {
+      if (seenIds.has(complaintEntry.id)) return false;
+      seenIds.add(complaintEntry.id);
+      return true;
+    })
+    .slice(0, 300);
 }
 
 export function mergePropertyStatus(payload = {}) {
@@ -202,9 +209,13 @@ export function mergePropertyStatus(payload = {}) {
       return leftOrder - rightOrder;
     }),
     roomComplaints: normalizedComplaints,
-    utilities: {
-      ...defaultUtilities,
-      ...(payload.utilities ?? {}),
-    },
+    utilities: Object.fromEntries(propertyUtilityFields.map((field) => {
+      const value = payload?.utilities?.[field.key];
+      if (field.inputType === "number") {
+        const amount = Number(value);
+        return [field.key, Number.isFinite(amount) ? Math.min(Math.max(amount, 0), 1000000) : ""];
+      }
+      return [field.key, field.options.some((option) => option.value === value) ? value : ""];
+    })),
   };
 }
