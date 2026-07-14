@@ -116,64 +116,86 @@ function InHouseRoomEditor({ room, canEdit, saving, onSave, onDelete }) {
     setDraft((current) => ({ ...current, [field]: value }));
   }
 
+  const guestTypeLabel = room.guestType === "corporate" ? "Corporate" : "Walk in";
+  const breakfastLabel = room.breakfastIncluded
+    ? `${room.breakfastCount ?? 0} breakfast`
+    : "No breakfast";
+  const bookedDays = room.bookedDays ?? 1;
+  const bookedDaysLabel = `${bookedDays} day${bookedDays === 1 ? "" : "s"}`;
+
   return (
-    <article className="rounded-xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm">
-      <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center">
-        <div className="flex items-start justify-between gap-3 2xl:min-w-[8rem] 2xl:flex-col 2xl:justify-center">
+    <article className="border-b border-slate-200 last:border-b-0">
+      <button
+        type="button"
+        className="flex w-full flex-col gap-3 px-3 py-3 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c59d40]"
+        onClick={room.onToggle}
+        aria-expanded={room.isExpanded}
+      >
+        <div className="flex items-center justify-between gap-3">
           <div>
             <p className="font-bold text-[#162338]">Room {room.roomNumber}</p>
-            <p className="mt-1 text-xs text-slate-500">{room.guestType === "corporate" ? "Corporate" : "Walk in"}</p>
+            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">{room.floorLabel}</p>
           </div>
-          <span className="badge whitespace-nowrap">In-house</span>
+          <span className="text-lg font-semibold leading-none text-slate-400">
+            {room.isExpanded ? "-" : "+"}
+          </span>
         </div>
 
-        <div className="grid flex-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            <span>Guest type</span>
-            <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
-              value={draft.guestType} disabled={!canEdit || saving}
-              onChange={(event) => update("guestType", event.target.value)}>
-              <option value="walk_in">Walk in</option>
-              <option value="corporate">Corporate</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            <span>Breakfast</span>
-            <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
-              value={draft.breakfastIncluded ? "yes" : "no"} disabled={!canEdit || saving}
-              onChange={(event) => {
-                const included = event.target.value === "yes";
-                setDraft((current) => ({
-                  ...current,
-                  breakfastIncluded: included,
-                  breakfastCount: included ? (current.breakfastCount === "0" ? "1" : current.breakfastCount) : "0",
-                }));
-              }}>
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            <span>Breakfast count</span>
-            <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
-              type="number" min="0" max="20" value={draft.breakfastIncluded ? draft.breakfastCount : "0"}
-              disabled={!canEdit || saving || !draft.breakfastIncluded}
-              onChange={(event) => update("breakfastCount", event.target.value)} />
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            <span>Booked days</span>
-            <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
-              type="number" min="1" max="365" value={draft.bookedDays} disabled={!canEdit || saving}
-              onChange={(event) => update("bookedDays", event.target.value)} />
-          </label>
+        <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium">{guestTypeLabel}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium">{breakfastLabel}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium">{bookedDaysLabel}</span>
         </div>
+      </button>
 
-        <div className="flex flex-col gap-2 sm:flex-row 2xl:w-auto 2xl:flex-col">
+      {room.isExpanded ? (
+        <div className="border-t border-slate-100 bg-slate-50/70 px-3 py-3">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <span>Guest type</span>
+              <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+                value={draft.guestType} disabled={!canEdit || saving}
+                onChange={(event) => update("guestType", event.target.value)}>
+                <option value="walk_in">Walk in</option>
+                <option value="corporate">Corporate</option>
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <span>Breakfast</span>
+              <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+                value={draft.breakfastIncluded ? "yes" : "no"} disabled={!canEdit || saving}
+                onChange={(event) => {
+                  const included = event.target.value === "yes";
+                  setDraft((current) => ({
+                    ...current,
+                    breakfastIncluded: included,
+                    breakfastCount: included ? (current.breakfastCount === "0" ? "1" : current.breakfastCount) : "0",
+                  }));
+                }}>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <span>Breakfast count</span>
+              <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+                type="number" min="0" max="20" value={draft.breakfastIncluded ? draft.breakfastCount : "0"}
+                disabled={!canEdit || saving || !draft.breakfastIncluded}
+                onChange={(event) => update("breakfastCount", event.target.value)} />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <span>Booked days</span>
+              <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+                type="number" min="1" max="365" value={draft.bookedDays} disabled={!canEdit || saving}
+                onChange={(event) => update("bookedDays", event.target.value)} />
+            </label>
+          </div>
+
           {canEdit ? (
-            <>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button type="button" className="button-secondary !min-h-10 !px-4 !py-2 !text-sm" disabled={saving}
                 onClick={() => onDelete(room.roomNumber)}>
                 Delete
@@ -187,17 +209,18 @@ function InHouseRoomEditor({ room, canEdit, saving, onSave, onDelete }) {
                     : 0,
                   bookedDays: Math.min(Math.max(Number(draft.bookedDays) || 1, 1), 365),
                 })}>
-                Save
+                Save changes
               </button>
-            </>
+            </div>
           ) : null}
         </div>
-      </div>
+      ) : null}
     </article>
   );
 }
 
 function InHouseRoomList({ rooms, canEdit, saving, onSave, onDelete }) {
+  const [expandedRoomNumber, setExpandedRoomNumber] = useState("");
   const floorsWithRooms = useMemo(
     () =>
       roomFloorOptions
@@ -217,11 +240,11 @@ function InHouseRoomList({ rooms, canEdit, saving, onSave, onDelete }) {
 
   return (
     <div className="mt-6 space-y-4">
-      <div className="subpanel !p-4">
+      <div className="subpanel !p-3 sm:!p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h3 className="font-bold text-[#162338]">In-house by floor</h3>
-            <p className="mt-1 text-sm text-slate-500">Rooms are grouped floor by floor and arranged from lowest to highest room number.</p>
+            <p className="mt-1 text-sm text-slate-500">Tap any room to edit or delete it. Rooms are grouped by floor and sorted by room number.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {floorsWithRooms.map((floor) => (
@@ -234,8 +257,8 @@ function InHouseRoomList({ rooms, canEdit, saving, onSave, onDelete }) {
       </div>
 
       {floorsWithRooms.map((floor) => (
-        <section key={floor.value} className="subpanel !p-4">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <section key={floor.value} className="subpanel !overflow-hidden !p-0">
+          <div className="flex items-center justify-between gap-3 px-3 py-3 sm:px-4">
             <div>
               <h3 className="font-bold text-[#162338]">{floor.label}</h3>
               <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">Occupied rooms</p>
@@ -243,9 +266,16 @@ function InHouseRoomList({ rooms, canEdit, saving, onSave, onDelete }) {
             <span className="badge">{floor.rooms.length} room{floor.rooms.length === 1 ? "" : "s"}</span>
           </div>
 
-          <div className="mt-3 grid gap-2 xl:grid-cols-2">
+          <div className="bg-white/70">
             {floor.rooms.map((room) => (
-              <InHouseRoomEditor key={room.roomNumber} room={room} canEdit={canEdit}
+              <InHouseRoomEditor key={room.roomNumber} room={{
+                ...room,
+                isExpanded: expandedRoomNumber === room.roomNumber,
+                onToggle: () =>
+                  setExpandedRoomNumber((current) =>
+                    current === room.roomNumber ? "" : room.roomNumber,
+                  ),
+              }} canEdit={canEdit}
                 saving={saving} onSave={onSave} onDelete={onDelete} />
             ))}
           </div>
