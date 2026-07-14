@@ -88,6 +88,13 @@ function downloadPdf(filename, title, lines) {
   });
 }
 
+function sortRoomsByNumber(leftRoom, rightRoom) {
+  return String(leftRoom.roomNumber).localeCompare(String(rightRoom.roomNumber), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
 function InHouseRoomEditor({ room, canEdit, saving, onSave, onDelete }) {
   const [draft, setDraft] = useState({
     guestType: room.guestType ?? "walk_in",
@@ -110,101 +117,140 @@ function InHouseRoomEditor({ room, canEdit, saving, onSave, onDelete }) {
   }
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-bold text-[#162338]">Room {room.roomNumber}</p>
-          <p className="mt-1 text-xs text-slate-500">{room.floorLabel}</p>
+    <article className="rounded-xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm">
+      <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center">
+        <div className="flex items-start justify-between gap-3 2xl:min-w-[8rem] 2xl:flex-col 2xl:justify-center">
+          <div>
+            <p className="font-bold text-[#162338]">Room {room.roomNumber}</p>
+            <p className="mt-1 text-xs text-slate-500">{room.guestType === "corporate" ? "Corporate" : "Walk in"}</p>
+          </div>
+          <span className="badge whitespace-nowrap">In-house</span>
         </div>
-        <span className="badge">In-house</span>
-      </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <label className="field">
-          <span>Guest type</span>
-          <select value={draft.guestType} disabled={!canEdit || saving}
-            onChange={(event) => update("guestType", event.target.value)}>
-            <option value="walk_in">Walk in</option>
-            <option value="corporate">Corporate</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>Breakfast</span>
-          <select value={draft.breakfastIncluded ? "yes" : "no"} disabled={!canEdit || saving}
-            onChange={(event) => {
-              const included = event.target.value === "yes";
-              setDraft((current) => ({
-                ...current,
-                breakfastIncluded: included,
-                breakfastCount: included ? (current.breakfastCount === "0" ? "1" : current.breakfastCount) : "0",
-              }));
-            }}>
-            <option value="no">No</option>
-            <option value="yes">Yes</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>Breakfast count</span>
-          <input type="number" min="0" max="20" value={draft.breakfastIncluded ? draft.breakfastCount : "0"}
-            disabled={!canEdit || saving || !draft.breakfastIncluded}
-            onChange={(event) => update("breakfastCount", event.target.value)} />
-        </label>
-        <label className="field">
-          <span>Booked days</span>
-          <input type="number" min="1" max="365" value={draft.bookedDays} disabled={!canEdit || saving}
-            onChange={(event) => update("bookedDays", event.target.value)} />
-        </label>
-      </div>
+        <div className="grid flex-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <span>Guest type</span>
+            <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+              value={draft.guestType} disabled={!canEdit || saving}
+              onChange={(event) => update("guestType", event.target.value)}>
+              <option value="walk_in">Walk in</option>
+              <option value="corporate">Corporate</option>
+            </select>
+          </label>
 
-      {canEdit ? (
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button type="button" className="button-secondary" disabled={saving}
-            onClick={() => onDelete(room.roomNumber)}>
-            Delete from in-house
-          </button>
-          <button type="button" className="button-primary" disabled={saving}
-            onClick={() => onSave(room.roomNumber, {
-              guestType: draft.guestType,
-              breakfastIncluded: draft.breakfastIncluded,
-              breakfastCount: draft.breakfastIncluded
-                ? Math.min(Math.max(Number(draft.breakfastCount) || 1, 1), 20)
-                : 0,
-              bookedDays: Math.min(Math.max(Number(draft.bookedDays) || 1, 1), 365),
-            })}>
-            Save changes
-          </button>
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <span>Breakfast</span>
+            <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+              value={draft.breakfastIncluded ? "yes" : "no"} disabled={!canEdit || saving}
+              onChange={(event) => {
+                const included = event.target.value === "yes";
+                setDraft((current) => ({
+                  ...current,
+                  breakfastIncluded: included,
+                  breakfastCount: included ? (current.breakfastCount === "0" ? "1" : current.breakfastCount) : "0",
+                }));
+              }}>
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <span>Breakfast count</span>
+            <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+              type="number" min="0" max="20" value={draft.breakfastIncluded ? draft.breakfastCount : "0"}
+              disabled={!canEdit || saving || !draft.breakfastIncluded}
+              onChange={(event) => update("breakfastCount", event.target.value)} />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <span>Booked days</span>
+            <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+              type="number" min="1" max="365" value={draft.bookedDays} disabled={!canEdit || saving}
+              onChange={(event) => update("bookedDays", event.target.value)} />
+          </label>
         </div>
-      ) : null}
+
+        <div className="flex flex-col gap-2 sm:flex-row 2xl:w-auto 2xl:flex-col">
+          {canEdit ? (
+            <>
+              <button type="button" className="button-secondary !min-h-10 !px-4 !py-2 !text-sm" disabled={saving}
+                onClick={() => onDelete(room.roomNumber)}>
+                Delete
+              </button>
+              <button type="button" className="button-primary !min-h-10 !px-4 !py-2 !text-sm" disabled={saving}
+                onClick={() => onSave(room.roomNumber, {
+                  guestType: draft.guestType,
+                  breakfastIncluded: draft.breakfastIncluded,
+                  breakfastCount: draft.breakfastIncluded
+                    ? Math.min(Math.max(Number(draft.breakfastCount) || 1, 1), 20)
+                    : 0,
+                  bookedDays: Math.min(Math.max(Number(draft.bookedDays) || 1, 1), 365),
+                })}>
+                Save
+              </button>
+            </>
+          ) : null}
+        </div>
+      </div>
     </article>
   );
 }
 
 function InHouseRoomList({ rooms, canEdit, saving, onSave, onDelete }) {
+  const floorsWithRooms = useMemo(
+    () =>
+      roomFloorOptions
+        .map((floor) => ({
+          ...floor,
+          rooms: rooms
+            .filter((room) => room.floorKey === floor.value)
+            .sort(sortRoomsByNumber),
+        }))
+        .filter((floor) => floor.rooms.length > 0),
+    [rooms],
+  );
+
   if (rooms.length === 0) {
     return <div className="subpanel mt-6 text-sm text-slate-500">No rooms are currently in-house.</div>;
   }
 
   return (
-    <div className="mt-6 space-y-6">
-      {roomFloorOptions.map((floor) => {
-        const floorRooms = rooms.filter((room) => room.floorKey === floor.value);
-        if (floorRooms.length === 0) return null;
+    <div className="mt-6 space-y-4">
+      <div className="subpanel !p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="font-bold text-[#162338]">In-house by floor</h3>
+            <p className="mt-1 text-sm text-slate-500">Rooms are grouped floor by floor and arranged from lowest to highest room number.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {floorsWithRooms.map((floor) => (
+              <span key={floor.value} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+                {floor.label}: {floor.rooms.length}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
 
-        return (
-          <section key={floor.value} className="subpanel">
-            <div className="flex items-center justify-between gap-3">
+      {floorsWithRooms.map((floor) => (
+        <section key={floor.value} className="subpanel !p-4">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+            <div>
               <h3 className="font-bold text-[#162338]">{floor.label}</h3>
-              <span className="badge">{floorRooms.length} room{floorRooms.length === 1 ? "" : "s"}</span>
+              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">Occupied rooms</p>
             </div>
-            <div className="mt-4 space-y-3">
-              {floorRooms.map((room) => (
-                <InHouseRoomEditor key={room.roomNumber} room={room} canEdit={canEdit}
-                  saving={saving} onSave={onSave} onDelete={onDelete} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+            <span className="badge">{floor.rooms.length} room{floor.rooms.length === 1 ? "" : "s"}</span>
+          </div>
+
+          <div className="mt-3 grid gap-2 xl:grid-cols-2">
+            {floor.rooms.map((room) => (
+              <InHouseRoomEditor key={room.roomNumber} room={room} canEdit={canEdit}
+                saving={saving} onSave={onSave} onDelete={onDelete} />
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
