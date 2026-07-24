@@ -5,6 +5,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -24,6 +25,7 @@ import {
 import {
   deriveOperationsSnapshot,
   getRoomRecord,
+  hotelRooms,
   normalizeRoomNumbers,
 } from "@/data/hotelRooms";
 import {
@@ -699,6 +701,28 @@ export function usePortalData(profile) {
     );
 
     return buildRoomPropertyStatusRecord(snapshot.exists() ? snapshot.data() : {}, room);
+  }, [roomPropertyStatusAccess.canViewPanel]);
+
+  const loadAllRoomPropertyStatuses = useCallback(async () => {
+    if (!roomPropertyStatusAccess.canViewPanel) {
+      throw new Error("This report is available to managers and supervisors only.");
+    }
+
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    const snapshot = await getDocs(collection(db, "roomPropertyStatus"));
+    const reportMap = new Map(
+      snapshot.docs
+        .map((reportDocument) => reportDocument.data())
+        .filter((report) => getRoomRecord(report?.roomNumber))
+        .map((report) => [report.roomNumber, report]),
+    );
+
+    return hotelRooms
+      .filter((room) => reportMap.has(room.label))
+      .map((room) => buildRoomPropertyStatusRecord(reportMap.get(room.label), room));
   }, [roomPropertyStatusAccess.canViewPanel]);
 
   const saveRoomPropertyStatus = useCallback(async (values) => {
@@ -1444,6 +1468,7 @@ export function usePortalData(profile) {
     saveEventBooking,
     saveHousekeepingReports,
     loadRoomPropertyStatus,
+    loadAllRoomPropertyStatuses,
     saveRoomPropertyStatus,
     saveStoreAcquisition,
     saveStoreRequisition,

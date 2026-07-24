@@ -171,6 +171,7 @@ export default function DashboardPage() {
     saveEventBooking,
     saveHousekeepingReports,
     loadRoomPropertyStatus,
+    loadAllRoomPropertyStatuses,
     saveRoomPropertyStatus,
     saveStoreAcquisition,
     saveStoreRequisition,
@@ -471,6 +472,7 @@ export default function DashboardPage() {
                 <RoomPropertyStatusPanel
                   profile={profile}
                   onLoadRoomPropertyStatus={loadRoomPropertyStatus}
+                  onLoadAllRoomPropertyStatuses={loadAllRoomPropertyStatuses}
                   onSaveRoomPropertyStatus={saveRoomPropertyStatus}
                 />
               ),
