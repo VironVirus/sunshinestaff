@@ -47,6 +47,7 @@ import {
   getManagerWorkspaceAccess,
   getOperationsAccess,
   getPropertyAccess,
+  getRoomPropertyStatusAccess,
   getStoreAccess,
 } from "@/lib/roles";
 
@@ -330,6 +331,7 @@ export function usePortalData(profile) {
   const propertyAccess = getPropertyAccess(profile);
   const managerWorkspaceAccess = getManagerWorkspaceAccess(profile);
   const housekeepingReportAccess = getHousekeepingReportAccess(profile);
+  const roomPropertyStatusAccess = getRoomPropertyStatusAccess(profile);
   const storeAccess = getStoreAccess(profile);
   const nightDutyAccess = getNightDutyAccess(profile);
   const auditLogAccess = getAuditLogAccess(profile);
@@ -678,6 +680,10 @@ export function usePortalData(profile) {
   }
 
   const loadRoomPropertyStatus = useCallback(async (roomNumber) => {
+    if (!roomPropertyStatusAccess.canViewPanel) {
+      throw new Error("This report is available to managers and supervisors only.");
+    }
+
     if (!db) {
       throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
     }
@@ -693,9 +699,13 @@ export function usePortalData(profile) {
     );
 
     return buildRoomPropertyStatusRecord(snapshot.exists() ? snapshot.data() : {}, room);
-  }, []);
+  }, [roomPropertyStatusAccess.canViewPanel]);
 
   const saveRoomPropertyStatus = useCallback(async (values) => {
+    if (!roomPropertyStatusAccess.canEditPanel) {
+      throw new Error("Only Housekeeping managers and supervisors can edit this report.");
+    }
+
     if (!db) {
       throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
     }
@@ -725,7 +735,12 @@ export function usePortalData(profile) {
     );
 
     return savedReport;
-  }, [profile?.departmentName, profile?.fullName, profile?.uid]);
+  }, [
+    profile?.departmentName,
+    profile?.fullName,
+    profile?.uid,
+    roomPropertyStatusAccess.canEditPanel,
+  ]);
 
   function buildNotificationEntry({
     audienceTag = "all",

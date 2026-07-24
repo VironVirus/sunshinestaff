@@ -8,7 +8,7 @@ import {
 } from "@/data/roomPropertyStatus";
 import { formatFriendlyDate } from "@/lib/format";
 import { downloadTextPdf } from "@/lib/pdf";
-import { getHousekeepingReportAccess } from "@/lib/roles";
+import { getRoomPropertyStatusAccess } from "@/lib/roles";
 
 function escapeHtml(value = "") {
   return String(value)
@@ -20,7 +20,7 @@ function escapeHtml(value = "") {
 }
 
 function getStatusLabel(status) {
-  return roomPropertyStatusOptions.find((option) => option.value === status)?.label ?? "Not checked";
+  return roomPropertyStatusOptions.find((option) => option.value === status)?.label ?? "Not selected";
 }
 
 function wrapReportText(value, maximumLength = 78) {
@@ -155,6 +155,7 @@ function StatusSelect({ value, onChange, disabled, ariaLabel }) {
       aria-label={ariaLabel}
       className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
     >
+      <option value="">Select status</option>
       {roomPropertyStatusOptions.map((option) => (
         <option key={option.value} value={option.value}>{option.label}</option>
       ))}
@@ -167,7 +168,7 @@ export default function RoomPropertyStatusPanel({
   onLoadRoomPropertyStatus,
   onSaveRoomPropertyStatus,
 }) {
-  const access = getHousekeepingReportAccess(profile);
+  const access = getRoomPropertyStatusAccess(profile);
   const [selectedFloor, setSelectedFloor] = useState("");
   const [selectedRoom, setSelectedRoom] = useState("");
   const [report, setReport] = useState(null);
@@ -179,10 +180,10 @@ export default function RoomPropertyStatusPanel({
     [selectedFloor],
   );
   const attentionCount = useMemo(
-    () => report?.items.filter((item) => ![
-      "good",
-      "not_applicable",
-      "not_checked",
+    () => report?.items.filter((item) => [
+      "needs_attention",
+      "damaged",
+      "needs_replacement",
     ].includes(item.status)).length ?? 0,
     [report?.items],
   );
@@ -238,7 +239,7 @@ export default function RoomPropertyStatusPanel({
   async function handleSave(event) {
     event.preventDefault();
 
-    if (!report || !selectedRoom) {
+    if (!access.canEditPanel || !report || !selectedRoom) {
       return;
     }
 
@@ -278,13 +279,20 @@ export default function RoomPropertyStatusPanel({
           <p className="eyebrow">Housekeeping</p>
           <h2 className="section-title">Room Property Status</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Select a room, record the quantity and condition of each item, then save,
-            print or download the room report.
+            {access.canEditPanel
+              ? "Select a room, record the quantity and condition of each item, then save, print or download the room report."
+              : "Select a room to review, print or download its housekeeping property report."}
           </p>
         </div>
 
-        {report ? (
-          <div className="no-print flex flex-wrap gap-2">
+        <div className="no-print flex flex-wrap items-center gap-2">
+          {!access.canEditPanel ? (
+            <span className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-sky-700">
+              View only
+            </span>
+          ) : null}
+          {report ? (
+            <>
             <button
               type="button"
               onClick={() => printRoomPropertyStatusReport(report)}
@@ -301,8 +309,9 @@ export default function RoomPropertyStatusPanel({
             >
               Download PDF
             </button>
-          </div>
-        ) : null}
+            </>
+          ) : null}
+        </div>
       </div>
 
       <div className="no-print mt-6 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
@@ -373,15 +382,16 @@ export default function RoomPropertyStatusPanel({
                   ...current,
                   inspectionDate: event.target.value,
                 }))}
-                disabled={saving}
+                disabled={saving || !access.canEditPanel}
                 required
               />
             </label>
           </div>
 
-          <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
+          {access.canEditPanel ? (
+            <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-500">
-              Use “Mark all as good” for a fully checked room, then change only exceptions.
+              Use “Mark all as perfect” for a fully checked room, then change only exceptions.
             </p>
             <button
               type="button"
@@ -389,12 +399,13 @@ export default function RoomPropertyStatusPanel({
               disabled={saving}
               onClick={() => setReport((current) => ({
                 ...current,
-                items: current.items.map((item) => ({ ...item, status: "good" })),
+                items: current.items.map((item) => ({ ...item, status: "perfect" })),
               }))}
             >
-              Mark all as good
+              Mark all as perfect
             </button>
-          </div>
+            </div>
+          ) : null}
 
           <div className="hidden overflow-hidden rounded-2xl border border-slate-200 md:block">
             <table className="w-full table-fixed border-collapse bg-white text-left text-sm">
@@ -420,7 +431,7 @@ export default function RoomPropertyStatusPanel({
                         inputMode="numeric"
                         value={item.quantity ?? ""}
                         onChange={(event) => updateItem(item.id, "quantity", event.target.value)}
-                        disabled={saving}
+                        disabled={saving || !access.canEditPanel}
                         aria-label={`${item.name} quantity`}
                         className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
                       />
@@ -429,7 +440,7 @@ export default function RoomPropertyStatusPanel({
                       <StatusSelect
                         value={item.status}
                         onChange={(event) => updateItem(item.id, "status", event.target.value)}
-                        disabled={saving}
+                        disabled={saving || !access.canEditPanel}
                         ariaLabel={`${item.name} status`}
                       />
                     </td>
@@ -439,7 +450,7 @@ export default function RoomPropertyStatusPanel({
                         maxLength={300}
                         value={item.remark}
                         onChange={(event) => updateItem(item.id, "remark", event.target.value)}
-                        disabled={saving}
+                        disabled={saving || !access.canEditPanel}
                         placeholder="Add remark"
                         aria-label={`${item.name} remark`}
                         className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
@@ -470,7 +481,7 @@ export default function RoomPropertyStatusPanel({
                       inputMode="numeric"
                       value={item.quantity ?? ""}
                       onChange={(event) => updateItem(item.id, "quantity", event.target.value)}
-                      disabled={saving}
+                      disabled={saving || !access.canEditPanel}
                     />
                   </label>
                   <label className="field">
@@ -478,7 +489,7 @@ export default function RoomPropertyStatusPanel({
                     <StatusSelect
                       value={item.status}
                       onChange={(event) => updateItem(item.id, "status", event.target.value)}
-                      disabled={saving}
+                      disabled={saving || !access.canEditPanel}
                       ariaLabel={`${item.name} status`}
                     />
                   </label>
@@ -490,7 +501,7 @@ export default function RoomPropertyStatusPanel({
                     maxLength={300}
                     value={item.remark}
                     onChange={(event) => updateItem(item.id, "remark", event.target.value)}
-                    disabled={saving}
+                    disabled={saving || !access.canEditPanel}
                     placeholder="Add remark"
                   />
                 </label>
@@ -508,7 +519,7 @@ export default function RoomPropertyStatusPanel({
                 ...current,
                 otherDamages: event.target.value,
               }))}
-              disabled={saving}
+              disabled={saving || !access.canEditPanel}
               placeholder="Add any damage or room property not covered in the list above."
             />
           </label>
@@ -523,11 +534,13 @@ export default function RoomPropertyStatusPanel({
             </div>
           ) : null}
 
-          <div className="no-print sticky bottom-3 z-10 mt-5 flex justify-end">
-            <button type="submit" className="button-primary min-w-48 shadow-xl" disabled={saving}>
-              {saving ? "Saving report..." : "Save room report"}
-            </button>
-          </div>
+          {access.canEditPanel ? (
+            <div className="no-print sticky bottom-3 z-10 mt-5 flex justify-end">
+              <button type="submit" className="button-primary min-w-48 shadow-xl" disabled={saving}>
+                {saving ? "Saving report..." : "Save room report"}
+              </button>
+            </div>
+          ) : null}
         </form>
       ) : null}
     </section>

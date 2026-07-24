@@ -34,6 +34,7 @@ import {
   getNightDutyAccess,
   getOperationsAccess,
   getPropertyAccess,
+  getRoomPropertyStatusAccess,
   operationsMetricConfig,
 } from "@/lib/roles";
 
@@ -192,6 +193,7 @@ export default function DashboardPage() {
   const operationsAccess = getOperationsAccess(profile);
   const propertyAccess = getPropertyAccess(profile);
   const housekeepingReportAccess = getHousekeepingReportAccess(profile);
+  const roomPropertyStatusAccess = getRoomPropertyStatusAccess(profile);
   const nightDutyAccess = getNightDutyAccess(profile);
   const managerWorkspaceAccess = getManagerWorkspaceAccess(profile);
   const auditLogAccess = getAuditLogAccess(profile);
@@ -458,6 +460,10 @@ export default function DashboardPage() {
                 />
               ),
             },
+          ]
+        : []),
+      ...(roomPropertyStatusAccess.canViewPanel
+        ? [
             {
               key: "room-property-status",
               label: "Room Property Status",

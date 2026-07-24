@@ -208,7 +208,7 @@ service cloud.firestore {
         request.resource.data.inspectionDate is string &&
         request.resource.data.inspectionDate.size() == 10 &&
         request.resource.data.items is list &&
-        request.resource.data.items.size() == 50 &&
+        request.resource.data.items.size() == 53 &&
         request.resource.data.otherDamages is string &&
         request.resource.data.otherDamages.size() <= 2000 &&
         request.resource.data.updatedAt is timestamp &&
@@ -295,8 +295,8 @@ service cloud.firestore {
     }
 
     match /roomPropertyStatus/{reportId} {
-      allow read: if isSuperAdmin() || isHousekeepingManager();
-      allow create, update: if (isSuperAdmin() || isHousekeepingManager()) &&
+      allow read: if isSuperAdmin() || isLead();
+      allow create, update: if isHousekeepingManager() &&
         validRoomPropertyStatusReport();
       allow delete: if false;
     }

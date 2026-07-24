@@ -51,6 +51,9 @@ export const roomPropertyStatusItems = [
   "Mirror",
   "Toilet Ceiling / POP",
   "Room Ceiling / POP",
+  "Toilet Glass",
+  "Tissue Holder",
+  "TV",
 ].map((name, index) => ({
   id: `item-${index + 1}`,
   number: index + 1,
@@ -58,13 +61,12 @@ export const roomPropertyStatusItems = [
 }));
 
 export const roomPropertyStatusOptions = [
-  { value: "not_checked", label: "Not checked" },
+  { value: "perfect", label: "Perfect" },
   { value: "good", label: "Good" },
+  { value: "average", label: "Average" },
   { value: "needs_attention", label: "Needs attention" },
   { value: "damaged", label: "Damaged" },
-  { value: "missing", label: "Missing" },
-  { value: "replace", label: "Replace" },
-  { value: "not_applicable", label: "Not applicable" },
+  { value: "needs_replacement", label: "Needs replacement" },
 ];
 
 const allowedStatusValues = new Set(
@@ -92,11 +94,14 @@ export function buildRoomPropertyStatusItems(savedItems = []) {
 
   return roomPropertyStatusItems.map((definition) => {
     const savedItem = savedItemMap.get(definition.id) ?? {};
+    const migratedStatus = savedItem.status === "replace" || savedItem.status === "missing"
+      ? "needs_replacement"
+      : savedItem.status;
 
     return {
       ...definition,
       quantity: normalizeQuantity(savedItem.quantity),
-      status: allowedStatusValues.has(savedItem.status) ? savedItem.status : "not_checked",
+      status: allowedStatusValues.has(migratedStatus) ? migratedStatus : "",
       remark: typeof savedItem.remark === "string"
         ? savedItem.remark.trim().slice(0, 300)
         : "",
