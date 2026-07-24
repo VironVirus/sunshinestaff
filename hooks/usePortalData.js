@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   collection,
   doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   where,
   writeBatch,
 } from "@firebase/firestore";
@@ -19,7 +21,15 @@ import {
   defaultHighlights,
   defaultSiteContent,
 } from "@/data/mockData";
-import { deriveOperationsSnapshot, normalizeRoomNumbers } from "@/data/hotelRooms";
+import {
+  deriveOperationsSnapshot,
+  getRoomRecord,
+  normalizeRoomNumbers,
+} from "@/data/hotelRooms";
+import {
+  buildRoomPropertyStatusRecord,
+  getRoomPropertyStatusDocumentId,
+} from "@/data/roomPropertyStatus";
 import { defaultPropertyStatus, mergePropertyStatus } from "@/data/propertyStatus";
 import { defaultEventsBookings, mergeEventsBookings } from "@/data/eventsBookings";
 import {
@@ -666,6 +676,56 @@ export function usePortalData(profile) {
       actorDepartmentKey: profile?.departmentKey ?? "",
     };
   }
+
+  const loadRoomPropertyStatus = useCallback(async (roomNumber) => {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    const room = getRoomRecord(roomNumber);
+
+    if (!room) {
+      throw new Error("Select a valid hotel room.");
+    }
+
+    const snapshot = await getDoc(
+      doc(db, "roomPropertyStatus", getRoomPropertyStatusDocumentId(roomNumber)),
+    );
+
+    return buildRoomPropertyStatusRecord(snapshot.exists() ? snapshot.data() : {}, room);
+  }, []);
+
+  const saveRoomPropertyStatus = useCallback(async (values) => {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    const room = getRoomRecord(values?.roomNumber);
+
+    if (!room) {
+      throw new Error("Select a valid hotel room before saving.");
+    }
+
+    const normalizedReport = buildRoomPropertyStatusRecord(values, room);
+    const updatedAtIso = new Date().toISOString();
+    const savedReport = {
+      ...normalizedReport,
+      updatedAtIso,
+      updatedByName: profile?.fullName ?? "",
+      updatedByDepartment: profile?.departmentName ?? "Housekeeping",
+    };
+
+    await setDoc(
+      doc(db, "roomPropertyStatus", getRoomPropertyStatusDocumentId(room.label)),
+      {
+        ...savedReport,
+        updatedAt: serverTimestamp(),
+        updatedByUid: profile?.uid ?? "",
+      },
+    );
+
+    return savedReport;
+  }, [profile?.departmentName, profile?.fullName, profile?.uid]);
 
   function buildNotificationEntry({
     audienceTag = "all",
@@ -1368,6 +1428,8 @@ export function usePortalData(profile) {
     saveUtilities,
     saveEventBooking,
     saveHousekeepingReports,
+    loadRoomPropertyStatus,
+    saveRoomPropertyStatus,
     saveStoreAcquisition,
     saveStoreRequisition,
     saveStoreReturn,

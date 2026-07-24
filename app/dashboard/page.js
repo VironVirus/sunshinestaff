@@ -16,6 +16,7 @@ import NotificationsPanel, {
 import OperationsPanel from "@/components/dashboard/OperationsPanel";
 import PropertyPanel from "@/components/dashboard/PropertyPanel";
 import RoomComplaintsPanel from "@/components/dashboard/RoomComplaintsPanel";
+import RoomPropertyStatusPanel from "@/components/dashboard/RoomPropertyStatusPanel";
 import StaffDashboardPanel from "@/components/dashboard/StaffDashboardPanel";
 import StaffManagementPanel from "@/components/dashboard/StaffManagementPanel";
 import TeamSchedulePanel from "@/components/dashboard/TeamSchedulePanel";
@@ -168,6 +169,8 @@ export default function DashboardPage() {
     saveUtilities,
     saveEventBooking,
     saveHousekeepingReports,
+    loadRoomPropertyStatus,
+    saveRoomPropertyStatus,
     saveStoreAcquisition,
     saveStoreRequisition,
     saveStoreReturn,
@@ -452,6 +455,17 @@ export default function DashboardPage() {
                   operations={operations}
                   onSaveHousekeepingReports={saveHousekeepingReports}
                   onSaveHousekeeping={saveHousekeepingProgress}
+                />
+              ),
+            },
+            {
+              key: "room-property-status",
+              label: "Room Property Status",
+              content: (
+                <RoomPropertyStatusPanel
+                  profile={profile}
+                  onLoadRoomPropertyStatus={loadRoomPropertyStatus}
+                  onSaveRoomPropertyStatus={saveRoomPropertyStatus}
                 />
               ),
             },

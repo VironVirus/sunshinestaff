@@ -192,6 +192,33 @@ service cloud.firestore {
         optionalListWithin(request.resource.data, "roomComplaints", 300);
     }
 
+    function validRoomPropertyStatusReport() {
+      return request.resource.data.keys().hasOnly([
+          "roomNumber", "floorKey", "floorLabel", "inspectionDate", "items",
+          "otherDamages", "updatedAt", "updatedAtIso", "updatedByUid",
+          "updatedByName", "updatedByDepartment"
+        ]) &&
+        request.resource.data.roomNumber is string &&
+        request.resource.data.roomNumber.size() > 0 &&
+        request.resource.data.roomNumber.size() <= 20 &&
+        request.resource.data.floorKey is string &&
+        request.resource.data.floorKey.size() <= 40 &&
+        request.resource.data.floorLabel is string &&
+        request.resource.data.floorLabel.size() <= 80 &&
+        request.resource.data.inspectionDate is string &&
+        request.resource.data.inspectionDate.size() == 10 &&
+        request.resource.data.items is list &&
+        request.resource.data.items.size() == 50 &&
+        request.resource.data.otherDamages is string &&
+        request.resource.data.otherDamages.size() <= 2000 &&
+        request.resource.data.updatedAt is timestamp &&
+        request.resource.data.updatedAtIso is string &&
+        request.resource.data.updatedAtIso.size() <= 40 &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        request.resource.data.updatedByName == userData().fullName &&
+        request.resource.data.updatedByDepartment == userData().departmentName;
+    }
+
     function canWriteTrackedEntries() {
       return isSuperAdmin() || isLead() || belongsTo("store");
     }
@@ -265,6 +292,13 @@ service cloud.firestore {
       allow write: if optionalListWithin(request.resource.data, "morningRooms", 88) &&
         optionalListWithin(request.resource.data, "afternoonRooms", 88) &&
         (isSuperAdmin() || isHousekeepingManager());
+    }
+
+    match /roomPropertyStatus/{reportId} {
+      allow read: if isSuperAdmin() || isHousekeepingManager();
+      allow create, update: if (isSuperAdmin() || isHousekeepingManager()) &&
+        validRoomPropertyStatusReport();
+      allow delete: if false;
     }
 
     match /portal/storeInventory {
