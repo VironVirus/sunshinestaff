@@ -194,7 +194,8 @@ service cloud.firestore {
 
     function validRoomPropertyStatusReport() {
       return request.resource.data.keys().hasOnly([
-          "roomNumber", "floorKey", "floorLabel", "inspectionDate", "items",
+          "roomNumber", "floorKey", "floorLabel", "inspectionDate",
+          "sellabilityStatus", "items",
           "otherDamages", "updatedAt", "updatedAtIso", "updatedByUid",
           "updatedByName", "updatedByDepartment"
         ]) &&
@@ -207,6 +208,9 @@ service cloud.firestore {
         request.resource.data.floorLabel.size() <= 80 &&
         request.resource.data.inspectionDate is string &&
         request.resource.data.inspectionDate.size() == 10 &&
+        request.resource.data.sellabilityStatus in [
+          "sellable", "sellable_80_percent", "sellable_last_resort", "not_sellable"
+        ] &&
         request.resource.data.items is list &&
         request.resource.data.items.size() == 53 &&
         request.resource.data.otherDamages is string &&

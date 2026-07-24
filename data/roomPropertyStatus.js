@@ -2,7 +2,7 @@ import { getOperationalDateKey } from "@/lib/hotelTime";
 
 export const roomPropertyStatusItems = [
   "Duvet Covers",
-  "Flat Sheets (23 pcs)",
+  "Flat Sheets",
   "Pillow Cases",
   "Bath Towel",
   "Floor Towel",
@@ -27,7 +27,7 @@ export const roomPropertyStatusItems = [
   "Bathrobe",
   "Mattress",
   "Luggage Rack",
-  "Bedside Lamp (Old 53)",
+  "Bedside Lamp",
   "Bed Frame / Bed Head",
   "Doors",
   "Shower Mixer",
@@ -69,8 +69,18 @@ export const roomPropertyStatusOptions = [
   { value: "needs_replacement", label: "Needs replacement" },
 ];
 
+export const roomSellabilityStatusOptions = [
+  { value: "sellable", label: "Sellable" },
+  { value: "sellable_80_percent", label: "Sellable at 80% occupancy" },
+  { value: "sellable_last_resort", label: "Sellable as last resort" },
+  { value: "not_sellable", label: "Not sellable" },
+];
+
 const allowedStatusValues = new Set(
   roomPropertyStatusOptions.map((option) => option.value),
+);
+const allowedSellabilityStatusValues = new Set(
+  roomSellabilityStatusOptions.map((option) => option.value),
 );
 
 function normalizeQuantity(value) {
@@ -117,6 +127,9 @@ export function buildRoomPropertyStatusRecord(record = {}, room = {}) {
     inspectionDate: typeof record.inspectionDate === "string" && record.inspectionDate
       ? record.inspectionDate.slice(0, 10)
       : getOperationalDateKey(),
+    sellabilityStatus: allowedSellabilityStatusValues.has(record.sellabilityStatus)
+      ? record.sellabilityStatus
+      : "",
     items: buildRoomPropertyStatusItems(record.items),
     otherDamages: typeof record.otherDamages === "string"
       ? record.otherDamages.trim().slice(0, 2000)

@@ -5,6 +5,7 @@ import { getRoomOptionsForFloor, getRoomRecord, roomFloorOptions } from "@/data/
 import {
   buildRoomPropertyStatusRecord,
   roomPropertyStatusOptions,
+  roomSellabilityStatusOptions,
 } from "@/data/roomPropertyStatus";
 import { formatFriendlyDate } from "@/lib/format";
 import { downloadTextPdf } from "@/lib/pdf";
@@ -21,6 +22,10 @@ function escapeHtml(value = "") {
 
 function getStatusLabel(status) {
   return roomPropertyStatusOptions.find((option) => option.value === status)?.label ?? "Not selected";
+}
+
+function getSellabilityStatusLabel(status) {
+  return roomSellabilityStatusOptions.find((option) => option.value === status)?.label ?? "Not selected";
 }
 
 function wrapReportText(value, maximumLength = 78) {
@@ -58,6 +63,7 @@ function buildReportLines(report) {
     `Room: ${report.roomNumber}`,
     `Floor: ${report.floorLabel}`,
     `Inspection date: ${report.inspectionDate}`,
+    `Room sellability status: ${getSellabilityStatusLabel(report.sellabilityStatus)}`,
     `Prepared by: ${report.updatedByName || "Not saved yet"}`,
     `Last updated: ${formatFriendlyDate(report.updatedAtIso)}`,
     "",
@@ -125,6 +131,7 @@ function printRoomPropertyStatusReport(report) {
           <span><strong>Room:</strong> ${escapeHtml(report.roomNumber)}</span>
           <span><strong>Floor:</strong> ${escapeHtml(report.floorLabel)}</span>
           <span><strong>Inspection date:</strong> ${escapeHtml(report.inspectionDate)}</span>
+          <span><strong>Room sellability status:</strong> ${escapeHtml(getSellabilityStatusLabel(report.sellabilityStatus))}</span>
           <span><strong>Prepared by:</strong> ${escapeHtml(report.updatedByName || "Not saved yet")}</span>
           <span><strong>Last updated:</strong> ${escapeHtml(formatFriendlyDate(report.updatedAtIso))}</span>
         </div>
@@ -364,7 +371,7 @@ export default function RoomPropertyStatusPanel({
         </div>
       ) : report ? (
         <form onSubmit={handleSave} className="mt-6">
-          <div className="mb-4 grid gap-4 sm:grid-cols-3">
+          <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl bg-[#162338] px-4 py-3 text-white">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">Room</span>
               <strong className="mt-1 block text-xl">{report.roomNumber}</strong>
@@ -385,6 +392,23 @@ export default function RoomPropertyStatusPanel({
                 disabled={saving || !access.canEditPanel}
                 required
               />
+            </label>
+            <label className="field rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <span>Room sellability status</span>
+              <select
+                value={report.sellabilityStatus}
+                onChange={(event) => setReport((current) => ({
+                  ...current,
+                  sellabilityStatus: event.target.value,
+                }))}
+                disabled={saving || !access.canEditPanel}
+                required
+              >
+                <option value="">Select sellability</option>
+                {roomSellabilityStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
             </label>
           </div>
 
