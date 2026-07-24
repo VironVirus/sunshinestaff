@@ -197,7 +197,8 @@ service cloud.firestore {
           "roomNumber", "floorKey", "floorLabel", "inspectionDate",
           "sellabilityStatus", "items",
           "otherDamages", "updatedAt", "updatedAtIso", "updatedByUid",
-          "updatedByName", "updatedByDepartment"
+          "updatedByName", "updatedByDepartment", "signedByName",
+          "signedByTitle", "signedAtIso"
         ]) &&
         request.resource.data.roomNumber is string &&
         request.resource.data.roomNumber.size() > 0 &&
@@ -220,7 +221,11 @@ service cloud.firestore {
         request.resource.data.updatedAtIso.size() <= 40 &&
         request.resource.data.updatedByUid == request.auth.uid &&
         request.resource.data.updatedByName == userData().fullName &&
-        request.resource.data.updatedByDepartment == userData().departmentName;
+        request.resource.data.updatedByDepartment == userData().departmentName &&
+        request.resource.data.signedByName == userData().fullName &&
+        request.resource.data.signedByTitle == userData().staffTitle &&
+        request.resource.data.signedAtIso is string &&
+        request.resource.data.signedAtIso.size() <= 40;
     }
 
     function canWriteTrackedEntries() {

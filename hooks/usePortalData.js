@@ -747,6 +747,9 @@ export function usePortalData(profile) {
       updatedAtIso,
       updatedByName: profile?.fullName ?? "",
       updatedByDepartment: profile?.departmentName ?? "Housekeeping",
+      signedByName: profile?.fullName ?? "",
+      signedByTitle: profile?.staffTitle ?? "",
+      signedAtIso: updatedAtIso,
     };
 
     await setDoc(
@@ -762,6 +765,7 @@ export function usePortalData(profile) {
   }, [
     profile?.departmentName,
     profile?.fullName,
+    profile?.staffTitle,
     profile?.uid,
     roomPropertyStatusAccess.canEditPanel,
   ]);

@@ -139,6 +139,15 @@ export function buildRoomPropertyStatusRecord(record = {}, room = {}) {
     updatedByDepartment: typeof record.updatedByDepartment === "string"
       ? record.updatedByDepartment
       : "",
+    signedByName: typeof record.signedByName === "string"
+      ? record.signedByName
+      : (typeof record.updatedByName === "string" ? record.updatedByName : ""),
+    signedByTitle: typeof record.signedByTitle === "string"
+      ? record.signedByTitle
+      : "",
+    signedAtIso: typeof record.signedAtIso === "string"
+      ? record.signedAtIso
+      : (typeof record.updatedAtIso === "string" ? record.updatedAtIso : ""),
   };
 }
 

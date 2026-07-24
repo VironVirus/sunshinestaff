@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { sendPasswordResetEmail } from "@firebase/auth";
 import { departmentOptions } from "@/data/departments";
 import {
   buildLeaveGrant,
@@ -13,6 +14,7 @@ import {
   normalizeLeaveRecords,
 } from "@/lib/hr";
 import { formatFriendlyDate } from "@/lib/format";
+import { auth } from "@/lib/firebase";
 import { getHotelDateKey } from "@/lib/hotelTime";
 import { downloadTextPdf } from "@/lib/pdf";
 import {
@@ -443,6 +445,7 @@ export default function StaffManagementPanel({
     taxAmount: "0",
   });
   const [savingProfile, setSavingProfile] = useState(false);
+  const [sendingPasswordReset, setSendingPasswordReset] = useState(false);
   const [savingLeave, setSavingLeave] = useState(false);
   const [savingPayroll, setSavingPayroll] = useState(false);
   const [profileFeedback, setProfileFeedback] = useState({ type: "", message: "" });
@@ -775,6 +778,36 @@ export default function StaffManagementPanel({
   async function handleSubmit(event) {
     event.preventDefault();
     await saveStaff("Staff profile updated.");
+  }
+
+  async function handleSendPasswordReset() {
+    const email = toText(selectedStaff?.email).trim().toLowerCase();
+
+    if (!auth || !email) {
+      setProfileFeedback({
+        type: "error",
+        message: "This staff account does not have a valid sign-in email.",
+      });
+      return;
+    }
+
+    setSendingPasswordReset(true);
+    setProfileFeedback({ type: "", message: "" });
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setProfileFeedback({
+        type: "success",
+        message: `Password reset instructions were sent to ${email}.`,
+      });
+    } catch {
+      setProfileFeedback({
+        type: "error",
+        message: "The password reset email could not be sent. Check the staff email and try again.",
+      });
+    } finally {
+      setSendingPasswordReset(false);
+    }
   }
 
   async function handleSackStaff() {
@@ -1262,9 +1295,17 @@ export default function StaffManagementPanel({
                     type="button"
                     onClick={handleSackStaff}
                     disabled={savingProfile || activeSection === "sacked"}
-                    className="button-secondary flex-1 md:col-span-2 xl:col-span-3"
+                    className="button-secondary flex-1"
                   >
                     {savingProfile ? "Saving..." : "Move to sacked staff"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendPasswordReset}
+                    disabled={savingProfile || sendingPasswordReset || !selectedStaff.email}
+                    className="button-secondary flex-1 md:col-span-2"
+                  >
+                    {sendingPasswordReset ? "Sending reset..." : "Send password reset"}
                   </button>
                 </div>
               </>

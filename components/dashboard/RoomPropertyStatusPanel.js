@@ -79,7 +79,7 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
         <td class="number">${counts.needs_attention ?? 0}</td>
         <td class="number">${counts.damaged ?? 0}</td>
         <td class="number">${counts.needs_replacement ?? 0}</td>
-        <td>${escapeHtml(report.updatedByName || "-")}</td>
+        <td>${escapeHtml(report.signedByName || "-")}</td>
       </tr>
     `;
   }).join("");
@@ -101,8 +101,9 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
           <span><strong>Floor:</strong> ${escapeHtml(report.floorLabel)}</span>
           <span><strong>Inspection date:</strong> ${escapeHtml(report.inspectionDate)}</span>
           <span><strong>Sellability:</strong> ${escapeHtml(getSellabilityStatusLabel(report.sellabilityStatus))}</span>
-          <span><strong>Prepared by:</strong> ${escapeHtml(report.updatedByName || "-")}</span>
-          <span><strong>Last updated:</strong> ${escapeHtml(formatFriendlyDate(report.updatedAtIso))}</span>
+          <span><strong>Signed by:</strong> ${escapeHtml(report.signedByName || "-")}</span>
+          <span><strong>Role:</strong> ${escapeHtml(report.signedByTitle || "Housekeeping")}</span>
+          <span><strong>Signed:</strong> ${escapeHtml(formatFriendlyDate(report.signedAtIso))}</span>
         </div>
         <table>
           <thead><tr><th>No.</th><th>Item</th><th>Quantity</th><th>Status</th><th>Remark</th></tr></thead>
@@ -159,7 +160,7 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
         </div>
         <table>
           <thead>
-            <tr><th>Room</th><th>Floor</th><th>Date</th><th>Sellability</th><th>Perfect</th><th>Good</th><th>Average</th><th>Attention</th><th>Damaged</th><th>Replace</th><th>Prepared by</th></tr>
+            <tr><th>Room</th><th>Floor</th><th>Date</th><th>Sellability</th><th>Perfect</th><th>Good</th><th>Average</th><th>Attention</th><th>Damaged</th><th>Replace</th><th>Signed by</th></tr>
           </thead>
           <tbody>${summaryRows}</tbody>
         </table>
@@ -199,8 +200,8 @@ function downloadAllRoomPropertyStatusSpreadsheet(reports) {
     ["ROOM SUMMARY"],
     [
       "Room", "Floor", "Inspection date", "Sellability", "Perfect", "Good",
-      "Average", "Needs attention", "Damaged", "Needs replacement", "Prepared by",
-      "Last updated",
+      "Average", "Needs attention", "Damaged", "Needs replacement", "Signed by",
+      "Signer role", "Signed at",
     ],
     ...reports.map((report) => {
       const counts = getReportStatusCounts(report);
@@ -216,8 +217,9 @@ function downloadAllRoomPropertyStatusSpreadsheet(reports) {
         counts.needs_attention ?? 0,
         counts.damaged ?? 0,
         counts.needs_replacement ?? 0,
-        report.updatedByName || "",
-        formatFriendlyDate(report.updatedAtIso),
+        report.signedByName || "",
+        report.signedByTitle || "",
+        formatFriendlyDate(report.signedAtIso),
       ];
     }),
     [],
@@ -281,6 +283,8 @@ export default function RoomPropertyStatusPanel({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState("");
+  const [savedReports, setSavedReports] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const roomOptions = useMemo(
     () => getRoomOptionsForFloor(selectedFloor),
@@ -294,6 +298,36 @@ export default function RoomPropertyStatusPanel({
     ].includes(item.status)).length ?? 0,
     [report?.items],
   );
+  const portfolioSummary = useMemo(
+    () => getPortfolioSummary(savedReports),
+    [savedReports],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setReportsLoading(true);
+    onLoadAllRoomPropertyStatuses()
+      .then((reports) => {
+        if (!cancelled) {
+          setSavedReports(reports);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setFeedback({ type: "error", message: error.message });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setReportsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onLoadAllRoomPropertyStatuses]);
 
   useEffect(() => {
     if (!selectedRoom) {
@@ -356,9 +390,16 @@ export default function RoomPropertyStatusPanel({
     try {
       const savedReport = await onSaveRoomPropertyStatus(report);
       setReport(savedReport);
+      setSavedReports((current) => [
+        ...current.filter((entry) => entry.roomNumber !== savedReport.roomNumber),
+        savedReport,
+      ].sort((left, right) => (
+        (getRoomRecord(left.roomNumber)?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+        (getRoomRecord(right.roomNumber)?.sortOrder ?? Number.MAX_SAFE_INTEGER)
+      )));
       setFeedback({
         type: "success",
-        message: `Room ${selectedRoom} property status report saved.`,
+        message: `Room ${selectedRoom} property status report signed and saved.`,
       });
     } catch (error) {
       setFeedback({ type: "error", message: error.message });
@@ -390,6 +431,7 @@ export default function RoomPropertyStatusPanel({
         return;
       }
 
+      setSavedReports(reports);
       printAllRoomPropertyStatusReports(reports, preparedWindow);
     } catch (error) {
       preparedWindow.close();
@@ -411,12 +453,24 @@ export default function RoomPropertyStatusPanel({
         return;
       }
 
+      setSavedReports(reports);
       downloadAllRoomPropertyStatusSpreadsheet(reports);
     } catch (error) {
       setFeedback({ type: "error", message: error.message });
     } finally {
       setExporting("");
     }
+  }
+
+  function openSavedReport(savedReport) {
+    const room = getRoomRecord(savedReport.roomNumber);
+
+    if (!room) {
+      return;
+    }
+
+    setSelectedFloor(room.groupKey);
+    setSelectedRoom(room.label);
   }
 
   return (
@@ -455,6 +509,83 @@ export default function RoomPropertyStatusPanel({
             {exporting === "excel" ? "Preparing sheet..." : "Download Excel sheet"}
           </button>
         </div>
+      </div>
+
+      <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-bold text-[#162338]">Saved room reports</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Select any signed room report to review it or continue the inspection.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-white px-3 py-2 text-slate-700">
+              {portfolioSummary.totalReports} completed
+            </span>
+            <span className="rounded-full bg-amber-50 px-3 py-2 text-amber-800">
+              {portfolioSummary.roomsNeedingAttention} need attention
+            </span>
+            <span className="rounded-full bg-rose-50 px-3 py-2 text-rose-700">
+              {portfolioSummary.sellabilityCounts.not_sellable ?? 0} not sellable
+            </span>
+          </div>
+        </div>
+
+        {reportsLoading ? (
+          <div className="px-4 py-8 text-center text-sm text-slate-500">Loading saved reports...</div>
+        ) : savedReports.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-[900px] w-full border-collapse text-left text-sm">
+              <thead className="bg-[#162338] text-xs uppercase tracking-[0.08em] text-white">
+                <tr>
+                  <th className="px-4 py-3">Room</th>
+                  <th className="px-4 py-3">Floor</th>
+                  <th className="px-4 py-3">Sellability</th>
+                  <th className="px-4 py-3">Attention items</th>
+                  <th className="px-4 py-3">Signed by</th>
+                  <th className="px-4 py-3">Signed at</th>
+                  <th className="px-4 py-3 text-right">Report</th>
+                </tr>
+              </thead>
+              <tbody>
+                {savedReports.map((savedReport) => {
+                  const statusCounts = getReportStatusCounts(savedReport);
+                  const savedAttentionCount =
+                    (statusCounts.needs_attention ?? 0) +
+                    (statusCounts.damaged ?? 0) +
+                    (statusCounts.needs_replacement ?? 0);
+
+                  return (
+                    <tr key={savedReport.roomNumber} className="border-t border-slate-200 odd:bg-slate-50/60">
+                      <td className="px-4 py-3 font-bold text-[#162338]">{savedReport.roomNumber}</td>
+                      <td className="px-4 py-3 text-slate-600">{savedReport.floorLabel}</td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {getSellabilityStatusLabel(savedReport.sellabilityStatus)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{savedAttentionCount}</td>
+                      <td className="px-4 py-3 text-slate-700">{savedReport.signedByName || "-"}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatFriendlyDate(savedReport.signedAtIso)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-[#162338] hover:border-amber-500"
+                          onClick={() => openSavedReport(savedReport)}
+                        >
+                          {access.canEditPanel ? "Open / edit" : "Open"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="px-4 py-8 text-center text-sm text-slate-500">No signed room reports yet.</div>
+        )}
       </div>
 
       <div className="no-print mt-6 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
@@ -557,6 +688,21 @@ export default function RoomPropertyStatusPanel({
               </select>
             </label>
           </div>
+
+          {report.signedByName ? (
+            <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              <strong>Signed by {report.signedByName}</strong>
+              {report.signedByTitle ? ` — ${report.signedByTitle}` : ""}
+              {report.signedAtIso ? ` on ${formatFriendlyDate(report.signedAtIso)}` : ""}.
+              {access.canEditPanel
+                ? " The saved entries are displayed below and can be continued or corrected."
+                : " This is the latest signed room report."}
+            </div>
+          ) : access.canEditPanel ? (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              This room has no signed report yet. Complete the inspection and sign it by saving.
+            </div>
+          ) : null}
 
           {access.canEditPanel ? (
             <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -697,7 +843,7 @@ export default function RoomPropertyStatusPanel({
           {access.canEditPanel ? (
             <div className="no-print sticky bottom-3 z-10 mt-5 flex justify-end">
               <button type="submit" className="button-primary min-w-48 shadow-xl" disabled={saving}>
-                {saving ? "Saving report..." : "Save room report"}
+                {saving ? "Signing report..." : "Sign and save report"}
               </button>
             </div>
           ) : null}
