@@ -686,14 +686,14 @@ export function usePortalData(profile) {
       throw new Error("This report is available to managers and supervisors only.");
     }
 
-    if (!db) {
-      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
-    }
-
     const room = getRoomRecord(roomNumber);
 
     if (!room) {
       throw new Error("Select a valid hotel room.");
+    }
+
+    if (!db) {
+      return buildRoomPropertyStatusRecord({}, room);
     }
 
     const snapshot = await getDoc(
@@ -709,7 +709,7 @@ export function usePortalData(profile) {
     }
 
     if (!db) {
-      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+      return hotelRooms.map((room) => buildRoomPropertyStatusRecord({}, room));
     }
 
     const snapshot = await getDocs(collection(db, "roomPropertyStatus"));
@@ -721,8 +721,7 @@ export function usePortalData(profile) {
     );
 
     return hotelRooms
-      .filter((room) => reportMap.has(room.label))
-      .map((room) => buildRoomPropertyStatusRecord(reportMap.get(room.label), room));
+      .map((room) => buildRoomPropertyStatusRecord(reportMap.get(room.label) ?? {}, room));
   }, [roomPropertyStatusAccess.canViewPanel]);
 
   const saveRoomPropertyStatus = useCallback(async (values) => {

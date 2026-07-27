@@ -27,6 +27,14 @@ function getSellabilityStatusLabel(status) {
   return roomSellabilityStatusOptions.find((option) => option.value === status)?.label ?? "Not selected";
 }
 
+function hasSignedReport(report) {
+  return Boolean(report?.signedAtIso || report?.updatedAtIso);
+}
+
+function getReportStateLabel(report) {
+  return hasSignedReport(report) ? "Signed" : "Default report";
+}
+
 function getReportStatusCounts(report) {
   return roomPropertyStatusOptions.reduce((counts, option) => ({
     ...counts,
@@ -46,7 +54,8 @@ function getPortfolioSummary(reports) {
   ].includes(item.status))).length;
 
   return {
-    totalReports: reports.length,
+    totalRooms: reports.length,
+    completedReports: reports.filter(hasSignedReport).length,
     roomsNeedingAttention,
     sellabilityCounts,
   };
@@ -71,6 +80,7 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
       <tr>
         <td>${escapeHtml(report.roomNumber)}</td>
         <td>${escapeHtml(report.floorLabel)}</td>
+        <td>${escapeHtml(getReportStateLabel(report))}</td>
         <td>${escapeHtml(report.inspectionDate)}</td>
         <td>${escapeHtml(getSellabilityStatusLabel(report.sellabilityStatus))}</td>
         <td class="number">${counts.perfect ?? 0}</td>
@@ -101,9 +111,10 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
           <span><strong>Floor:</strong> ${escapeHtml(report.floorLabel)}</span>
           <span><strong>Inspection date:</strong> ${escapeHtml(report.inspectionDate)}</span>
           <span><strong>Sellability:</strong> ${escapeHtml(getSellabilityStatusLabel(report.sellabilityStatus))}</span>
-          <span><strong>Signed by:</strong> ${escapeHtml(report.signedByName || "-")}</span>
-          <span><strong>Role:</strong> ${escapeHtml(report.signedByTitle || "Housekeeping")}</span>
-          <span><strong>Signed:</strong> ${escapeHtml(formatFriendlyDate(report.signedAtIso))}</span>
+          <span><strong>Report status:</strong> ${escapeHtml(getReportStateLabel(report))}</span>
+          <span><strong>Signed by:</strong> ${escapeHtml(report.signedByName || "Not signed")}</span>
+          <span><strong>Role:</strong> ${escapeHtml(report.signedByTitle || "-")}</span>
+          <span><strong>Signed:</strong> ${escapeHtml(report.signedAtIso ? formatFriendlyDate(report.signedAtIso) : "Not signed")}</span>
         </div>
         <table>
           <thead><tr><th>No.</th><th>Item</th><th>Quantity</th><th>Status</th><th>Remark</th></tr></thead>
@@ -131,7 +142,7 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
           h1 { font-size: 22px; margin: 0 0 6px; text-align: center; }
           h2 { font-size: 18px; margin: 0 0 8px; }
           .generated { color: #64748b; font-size: 11px; margin-bottom: 14px; text-align: center; }
-          .summary-cards { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); margin: 14px 0; }
+          .summary-cards { display: grid; gap: 8px; grid-template-columns: repeat(5, 1fr); margin: 14px 0; }
           .summary-card { border: 1px solid #cbd5e1; padding: 9px; }
           .summary-card span { color: #64748b; display: block; font-size: 9px; text-transform: uppercase; }
           .summary-card strong { display: block; font-size: 18px; margin-top: 4px; }
@@ -153,14 +164,15 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
         <h1>ROOM PROPERTY STATUS REPORTS</h1>
         <div class="generated">Generated ${escapeHtml(formatFriendlyDate(new Date()))}</div>
         <div class="summary-cards">
-          <div class="summary-card"><span>Completed room reports</span><strong>${summary.totalReports}</strong></div>
+          <div class="summary-card"><span>Rooms included</span><strong>${summary.totalRooms}</strong></div>
+          <div class="summary-card"><span>Signed reports</span><strong>${summary.completedReports}</strong></div>
           <div class="summary-card"><span>Rooms needing attention</span><strong>${summary.roomsNeedingAttention}</strong></div>
           <div class="summary-card"><span>Sellable rooms</span><strong>${summary.sellabilityCounts.sellable ?? 0}</strong></div>
           <div class="summary-card"><span>Not sellable rooms</span><strong>${summary.sellabilityCounts.not_sellable ?? 0}</strong></div>
         </div>
         <table>
           <thead>
-            <tr><th>Room</th><th>Floor</th><th>Date</th><th>Sellability</th><th>Perfect</th><th>Good</th><th>Average</th><th>Attention</th><th>Damaged</th><th>Replace</th><th>Signed by</th></tr>
+            <tr><th>Room</th><th>Floor</th><th>Report status</th><th>Date</th><th>Sellability</th><th>Perfect</th><th>Good</th><th>Average</th><th>Attention</th><th>Damaged</th><th>Replace</th><th>Signed by</th></tr>
           </thead>
           <tbody>${summaryRows}</tbody>
         </table>
@@ -190,7 +202,8 @@ function downloadAllRoomPropertyStatusSpreadsheet(reports) {
   const rows = [
     ["ROOM PROPERTY STATUS REPORTS"],
     ["Generated", formatFriendlyDate(new Date())],
-    ["Completed room reports", summary.totalReports],
+    ["Rooms included", summary.totalRooms],
+    ["Signed reports", summary.completedReports],
     ["Rooms needing attention", summary.roomsNeedingAttention],
     ["Sellable rooms", summary.sellabilityCounts.sellable ?? 0],
     ["Sellable at 80% occupancy", summary.sellabilityCounts.sellable_80_percent ?? 0],
@@ -199,7 +212,7 @@ function downloadAllRoomPropertyStatusSpreadsheet(reports) {
     [],
     ["ROOM SUMMARY"],
     [
-      "Room", "Floor", "Inspection date", "Sellability", "Perfect", "Good",
+      "Room", "Floor", "Report status", "Inspection date", "Sellability", "Perfect", "Good",
       "Average", "Needs attention", "Damaged", "Needs replacement", "Signed by",
       "Signer role", "Signed at",
     ],
@@ -209,6 +222,7 @@ function downloadAllRoomPropertyStatusSpreadsheet(reports) {
       return [
         report.roomNumber,
         report.floorLabel,
+        getReportStateLabel(report),
         report.inspectionDate,
         getSellabilityStatusLabel(report.sellabilityStatus),
         counts.perfect ?? 0,
@@ -225,12 +239,13 @@ function downloadAllRoomPropertyStatusSpreadsheet(reports) {
     [],
     ["ROOM DETAILS"],
     [
-      "Room", "Floor", "Inspection date", "Sellability", "Item no.", "Item",
+      "Room", "Floor", "Report status", "Inspection date", "Sellability", "Item no.", "Item",
       "Quantity", "Status", "Remark", "Other damages",
     ],
     ...reports.flatMap((report) => report.items.map((item, itemIndex) => [
       report.roomNumber,
       report.floorLabel,
+      getReportStateLabel(report),
       report.inspectionDate,
       getSellabilityStatusLabel(report.sellabilityStatus),
       item.number,
@@ -423,11 +438,13 @@ export default function RoomPropertyStatusPanel({
     setFeedback({ type: "", message: "" });
 
     try {
-      const reports = await onLoadAllRoomPropertyStatuses();
+      const reports = savedReports.length > 0
+        ? savedReports
+        : await onLoadAllRoomPropertyStatuses();
 
       if (reports.length === 0) {
         preparedWindow.close();
-        setFeedback({ type: "error", message: "No saved room property reports are available yet." });
+        setFeedback({ type: "error", message: "No room property reports are available yet." });
         return;
       }
 
@@ -446,10 +463,12 @@ export default function RoomPropertyStatusPanel({
     setFeedback({ type: "", message: "" });
 
     try {
-      const reports = await onLoadAllRoomPropertyStatuses();
+      const reports = savedReports.length > 0
+        ? savedReports
+        : await onLoadAllRoomPropertyStatuses();
 
       if (reports.length === 0) {
-        setFeedback({ type: "error", message: "No saved room property reports are available yet." });
+        setFeedback({ type: "error", message: "No room property reports are available yet." });
         return;
       }
 
@@ -481,7 +500,7 @@ export default function RoomPropertyStatusPanel({
           <h2 className="section-title">Room Property Status</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
             {access.canEditPanel
-              ? "Select a room to update it. The report actions produce a summary followed by every saved room report."
+              ? "Select a room to update it. Every room starts with the supplied report values, and saved room changes take priority."
               : "Select a room to review it, or export the complete room-by-room property report."}
           </p>
         </div>
@@ -514,14 +533,14 @@ export default function RoomPropertyStatusPanel({
       <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-bold text-[#162338]">Saved room reports</p>
+            <p className="text-sm font-bold text-[#162338]">Room reports</p>
             <p className="mt-1 text-xs text-slate-500">
-              Select any signed room report to review it or continue the inspection.
+              Select any room to review the default report or continue a signed inspection.
             </p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
             <span className="rounded-full bg-white px-3 py-2 text-slate-700">
-              {portfolioSummary.totalReports} completed
+              {portfolioSummary.completedReports} signed of {portfolioSummary.totalRooms}
             </span>
             <span className="rounded-full bg-amber-50 px-3 py-2 text-amber-800">
               {portfolioSummary.roomsNeedingAttention} need attention
@@ -533,14 +552,15 @@ export default function RoomPropertyStatusPanel({
         </div>
 
         {reportsLoading ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-500">Loading saved reports...</div>
+          <div className="px-4 py-8 text-center text-sm text-slate-500">Loading room reports...</div>
         ) : savedReports.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="min-w-[900px] w-full border-collapse text-left text-sm">
+            <table className="min-w-[980px] w-full border-collapse text-left text-sm">
               <thead className="bg-[#162338] text-xs uppercase tracking-[0.08em] text-white">
                 <tr>
                   <th className="px-4 py-3">Room</th>
                   <th className="px-4 py-3">Floor</th>
+                  <th className="px-4 py-3">Report status</th>
                   <th className="px-4 py-3">Sellability</th>
                   <th className="px-4 py-3">Attention items</th>
                   <th className="px-4 py-3">Signed by</th>
@@ -560,13 +580,16 @@ export default function RoomPropertyStatusPanel({
                     <tr key={savedReport.roomNumber} className="border-t border-slate-200 odd:bg-slate-50/60">
                       <td className="px-4 py-3 font-bold text-[#162338]">{savedReport.roomNumber}</td>
                       <td className="px-4 py-3 text-slate-600">{savedReport.floorLabel}</td>
+                      <td className="px-4 py-3 text-slate-700">{getReportStateLabel(savedReport)}</td>
                       <td className="px-4 py-3 text-slate-700">
                         {getSellabilityStatusLabel(savedReport.sellabilityStatus)}
                       </td>
                       <td className="px-4 py-3 text-slate-700">{savedAttentionCount}</td>
                       <td className="px-4 py-3 text-slate-700">{savedReport.signedByName || "-"}</td>
                       <td className="px-4 py-3 text-slate-600">
-                        {formatFriendlyDate(savedReport.signedAtIso)}
+                        {savedReport.signedAtIso
+                          ? formatFriendlyDate(savedReport.signedAtIso)
+                          : "Not signed"}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
@@ -584,7 +607,7 @@ export default function RoomPropertyStatusPanel({
             </table>
           </div>
         ) : (
-          <div className="px-4 py-8 text-center text-sm text-slate-500">No signed room reports yet.</div>
+          <div className="px-4 py-8 text-center text-sm text-slate-500">No room reports are available.</div>
         )}
       </div>
 
@@ -689,7 +712,7 @@ export default function RoomPropertyStatusPanel({
             </label>
           </div>
 
-          {report.signedByName ? (
+          {hasSignedReport(report) ? (
             <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               <strong>Signed by {report.signedByName}</strong>
               {report.signedByTitle ? ` — ${report.signedByTitle}` : ""}
@@ -700,9 +723,13 @@ export default function RoomPropertyStatusPanel({
             </div>
           ) : access.canEditPanel ? (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              This room has no signed report yet. Complete the inspection and sign it by saving.
+              This room is showing the editable starter values from the supplied report. Review them, choose a sellability status, then sign by saving.
             </div>
-          ) : null}
+          ) : (
+            <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+              This is the unsigned default report. A Housekeeping manager or supervisor can review, edit and sign it.
+            </div>
+          )}
 
           {access.canEditPanel ? (
             <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -741,10 +768,10 @@ export default function RoomPropertyStatusPanel({
                     <td className="px-3 py-2.5 font-semibold text-slate-800">{item.name}</td>
                     <td className="px-3 py-2.5">
                       <input
-                        type="number"
-                        min="0"
-                        max="999"
+                        type="text"
                         inputMode="numeric"
+                        maxLength={7}
+                        pattern="(?:nil|[0-9]{1,3}(?:/[0-9]{1,3})?)"
                         value={item.quantity ?? ""}
                         onChange={(event) => updateItem(item.id, "quantity", event.target.value)}
                         disabled={saving || !access.canEditPanel}
@@ -791,10 +818,10 @@ export default function RoomPropertyStatusPanel({
                   <label className="field">
                     <span>Quantity</span>
                     <input
-                      type="number"
-                      min="0"
-                      max="999"
+                      type="text"
                       inputMode="numeric"
+                      maxLength={7}
+                      pattern="(?:nil|[0-9]{1,3}(?:/[0-9]{1,3})?)"
                       value={item.quantity ?? ""}
                       onChange={(event) => updateItem(item.id, "quantity", event.target.value)}
                       disabled={saving || !access.canEditPanel}

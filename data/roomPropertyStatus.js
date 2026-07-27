@@ -83,27 +83,97 @@ const allowedSellabilityStatusValues = new Set(
   roomSellabilityStatusOptions.map((option) => option.value),
 );
 
+// Starter values transcribed from the supplied ROOMS UPDATE report. These are
+// kept locally so every room can open with an editable report without creating
+// 88 Firestore documents. A saved room report always replaces these values.
+const defaultRoomPropertyStatusValues = {
+  "Duvet Covers": { quantity: "1", status: "average", remark: "Worn out" },
+  "Flat Sheets": { quantity: "1", status: "average", remark: "Worn out" },
+  "Pillow Cases": { quantity: "1", status: "average", remark: "Worn out" },
+  "Bath Towel": { quantity: "1", status: "average", remark: "Worn out" },
+  "Floor Towel": { quantity: "1", status: "average", remark: "Worn out" },
+  "Face Towel": { quantity: "nil" },
+  "Hand Towel": { quantity: "nil" },
+  "Tea Cup": { quantity: "2" },
+  "Tea Tray": { quantity: "2" },
+  Saucer: { quantity: "1", status: "good" },
+  "Tea Spoons": { quantity: "2", status: "good" },
+  "Electric Jug": { quantity: "1", status: "good" },
+  "Whisky Glass Cups": { quantity: "1", status: "good" },
+  "Bathroom Amenities Tray": {
+    remark: "Dental kit, shower cap and shaving stick",
+  },
+  "Toilet Brush": { quantity: "1", status: "average" },
+  "Waste Bin": { quantity: "2", status: "average" },
+  "Mini Fridge": { quantity: "1", status: "good" },
+  Scales: { quantity: "nil" },
+  "Linen Throw Bag": { quantity: "nil" },
+  "TV Remote": { quantity: "1", status: "good" },
+  "A/C Remote": { quantity: "1", status: "good" },
+  Bathrobe: { quantity: "1", status: "average" },
+  Mattress: { quantity: "1", status: "good" },
+  "Bedside Lamp": { quantity: "2", status: "average" },
+  "Bed Frame / Bed Head": { quantity: "1/1", status: "average" },
+  Doors: { remark: "No door issue" },
+  "Shower Mixer": { quantity: "1", status: "good" },
+  WC: { quantity: "1", status: "good" },
+  "Wash Hand Basin / Tap": { quantity: "1/1", status: "good" },
+  "Shower Area Tiles": { remark: "Requires deep cleaning" },
+  Cubicle: { quantity: "1", status: "good" },
+  "Towel Hanger": { quantity: "1", status: "good" },
+  Switches: { quantity: "3", status: "average" },
+  Socket: { quantity: "4", status: "average" },
+  "A/C": { quantity: "1", status: "average" },
+  Wall: { remark: "No significant wall issues" },
+  Painting: { remark: "Needs retouching or repainting" },
+  Mould: { quantity: "nil" },
+  Curtain: { quantity: "2", status: "average" },
+  Sofa: {
+    quantity: "2",
+    status: "average",
+    remark: "One double and one single; both look worn",
+  },
+  "Tables / Drawers": { status: "average" },
+  Artwork: { quantity: "1" },
+  Mirror: { quantity: "1", status: "good" },
+  "Toilet Ceiling / POP": { status: "average" },
+  "Room Ceiling / POP": { status: "average" },
+  "Toilet Glass": { quantity: "1", remark: "The glass is stuck" },
+  "Tissue Holder": { remark: "No tissue holder" },
+};
+
 function normalizeQuantity(value) {
   if (value === "" || value === null || value === undefined) {
     return null;
   }
 
-  const quantity = Number(value);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(Math.min(Math.max(Math.trunc(value), 0), 999));
+  }
 
-  if (!Number.isFinite(quantity)) {
+  const quantity = String(value).trim().toLowerCase();
+
+  if (quantity === "nil") {
+    return "nil";
+  }
+
+  if (!/^\d{1,3}(?:\s*\/\s*\d{1,3})?$/.test(quantity)) {
     return null;
   }
 
-  return Math.min(Math.max(Math.trunc(quantity), 0), 999);
+  return quantity.replace(/\s+/g, "");
 }
 
 export function buildRoomPropertyStatusItems(savedItems = []) {
+  const hasSavedItems = Array.isArray(savedItems) && savedItems.length > 0;
   const savedItemMap = new Map(
     (Array.isArray(savedItems) ? savedItems : []).map((item) => [item?.id, item]),
   );
 
   return roomPropertyStatusItems.map((definition) => {
-    const savedItem = savedItemMap.get(definition.id) ?? {};
+    const savedItem = hasSavedItems
+      ? savedItemMap.get(definition.id) ?? {}
+      : defaultRoomPropertyStatusValues[definition.name] ?? {};
     const migratedStatus = savedItem.status === "replace" || savedItem.status === "missing"
       ? "needs_replacement"
       : savedItem.status;
