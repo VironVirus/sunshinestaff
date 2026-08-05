@@ -213,7 +213,12 @@ service cloud.firestore {
           "sellable", "sellable_80_percent", "sellable_last_resort", "not_sellable"
         ] &&
         request.resource.data.items is list &&
-        request.resource.data.items.size() == 53 &&
+        (
+          (request.resource.data.roomNumber == "105" &&
+            request.resource.data.items.size() == 12) ||
+          (request.resource.data.roomNumber != "105" &&
+            request.resource.data.items.size() == 53)
+        ) &&
         request.resource.data.otherDamages is string &&
         request.resource.data.otherDamages.size() <= 2000 &&
         request.resource.data.updatedAt is timestamp &&

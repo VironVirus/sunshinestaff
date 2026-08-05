@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getRoomOptionsForFloor, getRoomRecord, roomFloorOptions } from "@/data/hotelRooms";
 import {
   buildRoomPropertyStatusRecord,
+  isRoomPropertyStatusEventSpace,
   roomPropertyStatusOptions,
   roomSellabilityStatusOptions,
 } from "@/data/roomPropertyStatus";
@@ -42,6 +43,14 @@ function getReportStatusCounts(report) {
   }), {});
 }
 
+function getReportAttentionCount(report) {
+  const counts = getReportStatusCounts(report);
+
+  return (counts.needs_attention ?? 0) +
+    (counts.damaged ?? 0) +
+    (counts.needs_replacement ?? 0);
+}
+
 function getPortfolioSummary(reports) {
   const sellabilityCounts = roomSellabilityStatusOptions.reduce((counts, option) => ({
     ...counts,
@@ -61,10 +70,12 @@ function getPortfolioSummary(reports) {
   };
 }
 
-function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
+function printAllRoomPropertyStatusReports(allReports, preparedWindow = null) {
   if (typeof window === "undefined") {
     return;
   }
+
+  const reports = allReports.filter(hasSignedReport);
 
   const reportWindow = preparedWindow ?? window.open("", "_blank", "width=1100,height=780");
 
@@ -106,7 +117,7 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
 
     return `
       <section class="room-report">
-        <h2>Room ${escapeHtml(report.roomNumber)}</h2>
+        <h2>${isRoomPropertyStatusEventSpace(report.roomNumber) ? "Event Space" : "Room"} ${escapeHtml(report.roomNumber)}</h2>
         <div class="meta">
           <span><strong>Floor:</strong> ${escapeHtml(report.floorLabel)}</span>
           <span><strong>Inspection date:</strong> ${escapeHtml(report.inspectionDate)}</span>
@@ -134,7 +145,7 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
     <!doctype html>
     <html>
       <head>
-        <title>Room Property Status Reports</title>
+        <title>Signed Room Property Status Reports</title>
         <style>
           @page { size: A4 landscape; margin: 12mm; }
           * { box-sizing: border-box; }
@@ -142,7 +153,7 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
           h1 { font-size: 22px; margin: 0 0 6px; text-align: center; }
           h2 { font-size: 18px; margin: 0 0 8px; }
           .generated { color: #64748b; font-size: 11px; margin-bottom: 14px; text-align: center; }
-          .summary-cards { display: grid; gap: 8px; grid-template-columns: repeat(5, 1fr); margin: 14px 0; }
+          .summary-cards { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); margin: 14px 0; }
           .summary-card { border: 1px solid #cbd5e1; padding: 9px; }
           .summary-card span { color: #64748b; display: block; font-size: 9px; text-transform: uppercase; }
           .summary-card strong { display: block; font-size: 18px; margin-top: 4px; }
@@ -161,10 +172,9 @@ function printAllRoomPropertyStatusReports(reports, preparedWindow = null) {
         </style>
       </head>
       <body>
-        <h1>ROOM PROPERTY STATUS REPORTS</h1>
+        <h1>SIGNED ROOM PROPERTY STATUS REPORTS</h1>
         <div class="generated">Generated ${escapeHtml(formatFriendlyDate(new Date()))}</div>
         <div class="summary-cards">
-          <div class="summary-card"><span>Rooms included</span><strong>${summary.totalRooms}</strong></div>
           <div class="summary-card"><span>Signed reports</span><strong>${summary.completedReports}</strong></div>
           <div class="summary-card"><span>Rooms needing attention</span><strong>${summary.roomsNeedingAttention}</strong></div>
           <div class="summary-card"><span>Sellable rooms</span><strong>${summary.sellabilityCounts.sellable ?? 0}</strong></div>
@@ -193,16 +203,17 @@ function escapeCsvCell(value = "") {
   return `"${safeText.replaceAll('"', '""')}"`;
 }
 
-function downloadAllRoomPropertyStatusSpreadsheet(reports) {
+function downloadAllRoomPropertyStatusSpreadsheet(allReports) {
   if (typeof window === "undefined") {
     return;
   }
 
+  const reports = allReports.filter(hasSignedReport);
+
   const summary = getPortfolioSummary(reports);
   const rows = [
-    ["ROOM PROPERTY STATUS REPORTS"],
+    ["SIGNED ROOM PROPERTY STATUS REPORTS"],
     ["Generated", formatFriendlyDate(new Date())],
-    ["Rooms included", summary.totalRooms],
     ["Signed reports", summary.completedReports],
     ["Rooms needing attention", summary.roomsNeedingAttention],
     ["Sellable rooms", summary.sellabilityCounts.sellable ?? 0],
@@ -263,7 +274,7 @@ function downloadAllRoomPropertyStatusSpreadsheet(reports) {
   const link = document.createElement("a");
 
   link.href = blobUrl;
-  link.download = "room-property-status-reports.csv";
+  link.download = "signed-room-property-status-reports.csv";
   link.click();
   window.URL.revokeObjectURL(blobUrl);
 }
@@ -315,6 +326,18 @@ export default function RoomPropertyStatusPanel({
   );
   const portfolioSummary = useMemo(
     () => getPortfolioSummary(savedReports),
+    [savedReports],
+  );
+  const floorReportGroups = useMemo(
+    () => roomFloorOptions.map((floor) => {
+      const reports = savedReports.filter((savedReport) => savedReport.floorKey === floor.value);
+
+      return {
+        ...floor,
+        reports,
+        signedCount: reports.filter(hasSignedReport).length,
+      };
+    }).filter((floor) => floor.reports.length > 0),
     [savedReports],
   );
 
@@ -433,22 +456,23 @@ export default function RoomPropertyStatusPanel({
       return;
     }
 
-    preparedWindow.document.write("<p style='font-family:Arial;padding:24px'>Preparing all room reports...</p>");
+    preparedWindow.document.write("<p style='font-family:Arial;padding:24px'>Preparing signed room reports...</p>");
     setExporting("print");
     setFeedback({ type: "", message: "" });
 
     try {
-      const reports = savedReports.length > 0
+      const allReports = savedReports.length > 0
         ? savedReports
         : await onLoadAllRoomPropertyStatuses();
+      const reports = allReports.filter(hasSignedReport);
 
       if (reports.length === 0) {
         preparedWindow.close();
-        setFeedback({ type: "error", message: "No room property reports are available yet." });
+        setFeedback({ type: "error", message: "No signed room property reports are available yet." });
         return;
       }
 
-      setSavedReports(reports);
+      setSavedReports(allReports);
       printAllRoomPropertyStatusReports(reports, preparedWindow);
     } catch (error) {
       preparedWindow.close();
@@ -463,16 +487,17 @@ export default function RoomPropertyStatusPanel({
     setFeedback({ type: "", message: "" });
 
     try {
-      const reports = savedReports.length > 0
+      const allReports = savedReports.length > 0
         ? savedReports
         : await onLoadAllRoomPropertyStatuses();
+      const reports = allReports.filter(hasSignedReport);
 
       if (reports.length === 0) {
-        setFeedback({ type: "error", message: "No room property reports are available yet." });
+        setFeedback({ type: "error", message: "No signed room property reports are available yet." });
         return;
       }
 
-      setSavedReports(reports);
+      setSavedReports(allReports);
       downloadAllRoomPropertyStatusSpreadsheet(reports);
     } catch (error) {
       setFeedback({ type: "error", message: error.message });
@@ -500,8 +525,8 @@ export default function RoomPropertyStatusPanel({
           <h2 className="section-title">Room Property Status</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
             {access.canEditPanel
-              ? "Select a room to update it. Every room starts with the supplied report values, and saved room changes take priority."
-              : "Select a room to review it, or export the complete room-by-room property report."}
+              ? "Open a floor, select a room and update its report. Print and download include signed reports only."
+              : "Open a floor to review a room. Print and download include signed reports only."}
           </p>
         </div>
 
@@ -517,7 +542,7 @@ export default function RoomPropertyStatusPanel({
             className="button-secondary"
             disabled={Boolean(exporting)}
           >
-            {exporting === "print" ? "Preparing reports..." : "Print / Save PDF"}
+            {exporting === "print" ? "Preparing reports..." : "Print signed reports"}
           </button>
           <button
             type="button"
@@ -525,7 +550,7 @@ export default function RoomPropertyStatusPanel({
             className="button-secondary"
             disabled={Boolean(exporting)}
           >
-            {exporting === "excel" ? "Preparing sheet..." : "Download Excel sheet"}
+            {exporting === "excel" ? "Preparing sheet..." : "Download signed reports"}
           </button>
         </div>
       </div>
@@ -553,58 +578,66 @@ export default function RoomPropertyStatusPanel({
 
         {reportsLoading ? (
           <div className="px-4 py-8 text-center text-sm text-slate-500">Loading room reports...</div>
-        ) : savedReports.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-[980px] w-full border-collapse text-left text-sm">
-              <thead className="bg-[#162338] text-xs uppercase tracking-[0.08em] text-white">
-                <tr>
-                  <th className="px-4 py-3">Room</th>
-                  <th className="px-4 py-3">Floor</th>
-                  <th className="px-4 py-3">Report status</th>
-                  <th className="px-4 py-3">Sellability</th>
-                  <th className="px-4 py-3">Attention items</th>
-                  <th className="px-4 py-3">Signed by</th>
-                  <th className="px-4 py-3">Signed at</th>
-                  <th className="px-4 py-3 text-right">Report</th>
-                </tr>
-              </thead>
-              <tbody>
-                {savedReports.map((savedReport) => {
-                  const statusCounts = getReportStatusCounts(savedReport);
-                  const savedAttentionCount =
-                    (statusCounts.needs_attention ?? 0) +
-                    (statusCounts.damaged ?? 0) +
-                    (statusCounts.needs_replacement ?? 0);
+        ) : floorReportGroups.length > 0 ? (
+          <div className="space-y-3 p-3 sm:p-4">
+            {floorReportGroups.map((floor, floorIndex) => (
+              <details
+                key={floor.value}
+                className="group overflow-hidden rounded-xl border border-slate-200 bg-white"
+                defaultOpen={floorIndex === 0}
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-slate-50 px-4 py-3 marker:content-none">
+                  <span className="font-bold text-[#162338]">{floor.label}</span>
+                  <span className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                    <span>{floor.reports.length} rooms</span>
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                      {floor.signedCount} signed
+                    </span>
+                    <span aria-hidden="true" className="text-base transition-transform group-open:rotate-180">⌄</span>
+                  </span>
+                </summary>
 
-                  return (
-                    <tr key={savedReport.roomNumber} className="border-t border-slate-200 odd:bg-slate-50/60">
-                      <td className="px-4 py-3 font-bold text-[#162338]">{savedReport.roomNumber}</td>
-                      <td className="px-4 py-3 text-slate-600">{savedReport.floorLabel}</td>
-                      <td className="px-4 py-3 text-slate-700">{getReportStateLabel(savedReport)}</td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {getSellabilityStatusLabel(savedReport.sellabilityStatus)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">{savedAttentionCount}</td>
-                      <td className="px-4 py-3 text-slate-700">{savedReport.signedByName || "-"}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {savedReport.signedAtIso
-                          ? formatFriendlyDate(savedReport.signedAtIso)
-                          : "Not signed"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-[#162338] hover:border-amber-500"
-                          onClick={() => openSavedReport(savedReport)}
-                        >
-                          {access.canEditPanel ? "Open / edit" : "Open"}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                <div className="grid grid-cols-2 gap-2 border-t border-slate-200 p-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                  {floor.reports.map((savedReport) => {
+                    const isSelected = selectedRoom === savedReport.roomNumber;
+                    const isSigned = hasSignedReport(savedReport);
+                    const attentionItems = getReportAttentionCount(savedReport);
+                    const isEventSpace = isRoomPropertyStatusEventSpace(savedReport.roomNumber);
+
+                    return (
+                      <button
+                        key={savedReport.roomNumber}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => openSavedReport(savedReport)}
+                        className={`min-h-20 rounded-xl border px-3 py-2.5 text-left transition ${
+                          isSelected
+                            ? "border-amber-500 bg-amber-50 ring-2 ring-amber-100"
+                            : "border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50/40"
+                        }`}
+                      >
+                        <span className="flex items-start justify-between gap-2">
+                          <strong className="text-base text-[#162338]">{savedReport.roomNumber}</strong>
+                          <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                            isSigned ? "bg-emerald-500" : "bg-slate-300"
+                          }`} aria-hidden="true" />
+                        </span>
+                        <span className="mt-1 block text-[11px] font-semibold text-slate-500">
+                          {isEventSpace
+                            ? `Event space · ${getReportStateLabel(savedReport)}`
+                            : getReportStateLabel(savedReport)}
+                        </span>
+                        {attentionItems > 0 ? (
+                          <span className="mt-1 block text-[11px] font-semibold text-amber-700">
+                            {attentionItems} need attention
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </details>
+            ))}
           </div>
         ) : (
           <div className="px-4 py-8 text-center text-sm text-slate-500">No room reports are available.</div>
@@ -675,6 +708,11 @@ export default function RoomPropertyStatusPanel({
             <div className="rounded-2xl bg-[#162338] px-4 py-3 text-white">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">Room</span>
               <strong className="mt-1 block text-xl">{report.roomNumber}</strong>
+              {isRoomPropertyStatusEventSpace(report.roomNumber) ? (
+                <span className="mt-2 inline-flex rounded-full bg-amber-400/20 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-200">
+                  Event space
+                </span>
+              ) : null}
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Floor</span>
@@ -723,7 +761,9 @@ export default function RoomPropertyStatusPanel({
             </div>
           ) : access.canEditPanel ? (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              This room is showing the editable starter values from the supplied report. Review them, choose a sellability status, then sign by saving.
+              {isRoomPropertyStatusEventSpace(report.roomNumber)
+                ? "Room 105 is an event space. Complete its dedicated event-space checklist, choose a sellability status, then sign by saving."
+                : "This room is showing the editable starter values from the supplied report. Review them, choose a sellability status, then sign by saving."}
             </div>
           ) : (
             <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">

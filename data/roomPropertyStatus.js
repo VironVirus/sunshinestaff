@@ -39,7 +39,7 @@ export const roomPropertyStatusItems = [
   "Switches",
   "Socket",
   "Bulb / LED",
-  "A/C",
+  "AC",
   "Wall",
   "Painting",
   "Mould",
@@ -59,6 +59,37 @@ export const roomPropertyStatusItems = [
   number: index + 1,
   name,
 }));
+
+export const roomPropertyStatusEventSpaceRoom = "105";
+
+export const eventSpacePropertyStatusItems = [
+  "Chairs",
+  "Chair Type",
+  "Chair Covers",
+  "A/C",
+  "TV",
+  "Table",
+  "Painting",
+  "Artworks",
+  "Door Keys",
+  "Curtain",
+  "Lounge Area",
+  "Lights",
+].map((name, index) => ({
+  id: `event-item-${index + 1}`,
+  number: index + 1,
+  name,
+}));
+
+export function isRoomPropertyStatusEventSpace(roomNumber = "") {
+  return String(roomNumber).trim() === roomPropertyStatusEventSpaceRoom;
+}
+
+function getRoomPropertyStatusItemDefinitions(roomNumber = "") {
+  return isRoomPropertyStatusEventSpace(roomNumber)
+    ? eventSpacePropertyStatusItems
+    : roomPropertyStatusItems;
+}
 
 export const roomPropertyStatusOptions = [
   { value: "perfect", label: "Perfect" },
@@ -164,16 +195,19 @@ function normalizeQuantity(value) {
   return quantity.replace(/\s+/g, "");
 }
 
-export function buildRoomPropertyStatusItems(savedItems = []) {
+export function buildRoomPropertyStatusItems(savedItems = [], roomNumber = "") {
   const hasSavedItems = Array.isArray(savedItems) && savedItems.length > 0;
   const savedItemMap = new Map(
     (Array.isArray(savedItems) ? savedItems : []).map((item) => [item?.id, item]),
   );
+  const itemDefinitions = getRoomPropertyStatusItemDefinitions(roomNumber);
 
-  return roomPropertyStatusItems.map((definition) => {
+  return itemDefinitions.map((definition) => {
     const savedItem = hasSavedItems
       ? savedItemMap.get(definition.id) ?? {}
-      : defaultRoomPropertyStatusValues[definition.name] ?? {};
+      : isRoomPropertyStatusEventSpace(roomNumber)
+        ? {}
+        : defaultRoomPropertyStatusValues[definition.name] ?? {};
     const migratedStatus = savedItem.status === "replace" || savedItem.status === "missing"
       ? "needs_replacement"
       : savedItem.status;
@@ -190,34 +224,41 @@ export function buildRoomPropertyStatusItems(savedItems = []) {
 }
 
 export function buildRoomPropertyStatusRecord(record = {}, room = {}) {
+  const roomNumber = room.label ?? record.roomNumber ?? "";
+  const isLegacyEventSpaceReport = isRoomPropertyStatusEventSpace(roomNumber) &&
+    Array.isArray(record.items) &&
+    record.items.length > 0 &&
+    !record.items.some((item) => String(item?.id ?? "").startsWith("event-item-"));
+  const savedRecord = isLegacyEventSpaceReport ? {} : record;
+
   return {
-    roomNumber: room.label ?? record.roomNumber ?? "",
-    floorKey: room.groupKey ?? record.floorKey ?? "",
-    floorLabel: room.groupLabel ?? record.floorLabel ?? "",
-    inspectionDate: typeof record.inspectionDate === "string" && record.inspectionDate
-      ? record.inspectionDate.slice(0, 10)
+    roomNumber,
+    floorKey: room.groupKey ?? savedRecord.floorKey ?? "",
+    floorLabel: room.groupLabel ?? savedRecord.floorLabel ?? "",
+    inspectionDate: typeof savedRecord.inspectionDate === "string" && savedRecord.inspectionDate
+      ? savedRecord.inspectionDate.slice(0, 10)
       : getOperationalDateKey(),
-    sellabilityStatus: allowedSellabilityStatusValues.has(record.sellabilityStatus)
-      ? record.sellabilityStatus
+    sellabilityStatus: allowedSellabilityStatusValues.has(savedRecord.sellabilityStatus)
+      ? savedRecord.sellabilityStatus
       : "",
-    items: buildRoomPropertyStatusItems(record.items),
-    otherDamages: typeof record.otherDamages === "string"
-      ? record.otherDamages.trim().slice(0, 2000)
+    items: buildRoomPropertyStatusItems(savedRecord.items, roomNumber),
+    otherDamages: typeof savedRecord.otherDamages === "string"
+      ? savedRecord.otherDamages.trim().slice(0, 2000)
       : "",
-    updatedAtIso: typeof record.updatedAtIso === "string" ? record.updatedAtIso : "",
-    updatedByName: typeof record.updatedByName === "string" ? record.updatedByName : "",
-    updatedByDepartment: typeof record.updatedByDepartment === "string"
-      ? record.updatedByDepartment
+    updatedAtIso: typeof savedRecord.updatedAtIso === "string" ? savedRecord.updatedAtIso : "",
+    updatedByName: typeof savedRecord.updatedByName === "string" ? savedRecord.updatedByName : "",
+    updatedByDepartment: typeof savedRecord.updatedByDepartment === "string"
+      ? savedRecord.updatedByDepartment
       : "",
-    signedByName: typeof record.signedByName === "string"
-      ? record.signedByName
-      : (typeof record.updatedByName === "string" ? record.updatedByName : ""),
-    signedByTitle: typeof record.signedByTitle === "string"
-      ? record.signedByTitle
+    signedByName: typeof savedRecord.signedByName === "string"
+      ? savedRecord.signedByName
+      : (typeof savedRecord.updatedByName === "string" ? savedRecord.updatedByName : ""),
+    signedByTitle: typeof savedRecord.signedByTitle === "string"
+      ? savedRecord.signedByTitle
       : "",
-    signedAtIso: typeof record.signedAtIso === "string"
-      ? record.signedAtIso
-      : (typeof record.updatedAtIso === "string" ? record.updatedAtIso : ""),
+    signedAtIso: typeof savedRecord.signedAtIso === "string"
+      ? savedRecord.signedAtIso
+      : (typeof savedRecord.updatedAtIso === "string" ? savedRecord.updatedAtIso : ""),
   };
 }
 
