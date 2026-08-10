@@ -155,6 +155,7 @@ export default function DashboardPage() {
     housekeepingReports,
     storeInventory,
     nightDutyData,
+    nightDutyReportHistory,
     siteContent,
     notifications,
     activityLogs,
@@ -438,6 +439,7 @@ export default function DashboardPage() {
                   eventsBookings={eventsBookings}
                   propertyStatus={propertyStatus}
                   nightDutyData={nightDutyData}
+                  reportHistory={nightDutyReportHistory}
                   onSaveNightDuty={saveNightDutyData}
                   onSaveUtilities={saveUtilities}
                 />

@@ -192,6 +192,124 @@ service cloud.firestore {
         optionalListWithin(request.resource.data, "roomComplaints", 300);
     }
 
+    function validNightDutyReport() {
+      return request.resource.data.operationalDateKey is string &&
+        request.resource.data.operationalDateKey.size() == 10 &&
+        request.resource.data.occupancyByFloor is list &&
+        optionalListWithin(request.resource.data, "occupancyByFloor", 8) &&
+        request.resource.data.frontOfficeOccupancyByFloor is list &&
+        optionalListWithin(request.resource.data, "frontOfficeOccupancyByFloor", 8) &&
+        request.resource.data.occupancyQuery is map &&
+        request.resource.data.occupancyQuery.keys().hasOnly(["hasDiscrepancy", "note"]) &&
+        request.resource.data.occupancyQuery.hasDiscrepancy is bool &&
+        request.resource.data.occupancyQuery.note is string &&
+        request.resource.data.occupancyQuery.note.size() <= 1500 &&
+        validNightDutyIncome() &&
+        request.resource.data.onDutyStaff is list &&
+        optionalListWithin(request.resource.data, "onDutyStaff", 200) &&
+        validNightDutyDepartmentNotes(request.resource.data.departmentNotes) &&
+        request.resource.data.gasLevels is map &&
+        request.resource.data.gasLevels.keys().hasOnly(["gas_a", "gas_b", "gas_c", "gas_d"]) &&
+        validGasLevel(request.resource.data.gasLevels.gas_a) &&
+        validGasLevel(request.resource.data.gasLevels.gas_b) &&
+        validGasLevel(request.resource.data.gasLevels.gas_c) &&
+        validGasLevel(request.resource.data.gasLevels.gas_d) &&
+        (request.resource.data.hotWaterTemperature == null ||
+          (request.resource.data.hotWaterTemperature is number &&
+            request.resource.data.hotWaterTemperature >= 0 &&
+            request.resource.data.hotWaterTemperature <= 120)) &&
+        request.resource.data.powerSupplies is list &&
+        optionalListWithin(request.resource.data, "powerSupplies", 20) &&
+        request.resource.data.waterSupplyCount is int &&
+        request.resource.data.waterSupplyCount >= 0 &&
+        request.resource.data.waterSupplyCount <= 1000 &&
+        validNightDutyIncident(request.resource.data.guestIncident) &&
+        validNightDutyIncident(request.resource.data.employeeIncident) &&
+        request.resource.data.housekeepingSupervisorSignature is string &&
+        request.resource.data.housekeepingSupervisorSignature.size() <= 120 &&
+        request.resource.data.utilitiesSnapshot is map &&
+        request.resource.data.eventsSnapshot is list &&
+        optionalListWithin(request.resource.data, "eventsSnapshot", 100) &&
+        request.resource.data.complaintsSnapshot is list &&
+        optionalListWithin(request.resource.data, "complaintsSnapshot", 100) &&
+        request.resource.data.updatedAt is timestamp &&
+        request.resource.data.updatedAtIso is string &&
+        request.resource.data.updatedAtIso.size() <= 40 &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        request.resource.data.updatedByName == userData().fullName &&
+        request.resource.data.updatedByDepartment == userData().departmentName;
+    }
+
+    function validNightDutyAmount(value) {
+      return value is number && value >= 0 && value <= 1000000000;
+    }
+
+    function validNightDutyIncome() {
+      return request.resource.data.income is map &&
+        request.resource.data.income.keys().hasOnly([
+          "kennysBar", "tropicsBar", "restaurant", "frontOffice"
+        ]) &&
+        request.resource.data.income.kennysBar is map &&
+        request.resource.data.income.kennysBar.keys().hasOnly(["food", "beverage"]) &&
+        validNightDutyAmount(request.resource.data.income.kennysBar.food) &&
+        validNightDutyAmount(request.resource.data.income.kennysBar.beverage) &&
+        request.resource.data.income.tropicsBar is map &&
+        request.resource.data.income.tropicsBar.keys().hasOnly(["food", "beverage"]) &&
+        validNightDutyAmount(request.resource.data.income.tropicsBar.food) &&
+        validNightDutyAmount(request.resource.data.income.tropicsBar.beverage) &&
+        request.resource.data.income.restaurant is map &&
+        request.resource.data.income.restaurant.keys().hasOnly(["food", "beverage", "trayCharge"]) &&
+        validNightDutyAmount(request.resource.data.income.restaurant.food) &&
+        validNightDutyAmount(request.resource.data.income.restaurant.beverage) &&
+        validNightDutyAmount(request.resource.data.income.restaurant.trayCharge) &&
+        request.resource.data.income.frontOffice is map &&
+        request.resource.data.income.frontOffice.keys().hasOnly([
+          "roomRevenue", "advancePayment", "deposits", "hallHire",
+          "swimming", "photoshoot", "sundry", "laundry"
+        ]) &&
+        validNightDutyAmount(request.resource.data.income.frontOffice.roomRevenue) &&
+        validNightDutyAmount(request.resource.data.income.frontOffice.advancePayment) &&
+        validNightDutyAmount(request.resource.data.income.frontOffice.deposits) &&
+        validNightDutyAmount(request.resource.data.income.frontOffice.hallHire) &&
+        validNightDutyAmount(request.resource.data.income.frontOffice.swimming) &&
+        validNightDutyAmount(request.resource.data.income.frontOffice.photoshoot) &&
+        validNightDutyAmount(request.resource.data.income.frontOffice.sundry) &&
+        validNightDutyAmount(request.resource.data.income.frontOffice.laundry);
+    }
+
+    function validGasLevel(value) {
+      return value in ["", "empty", "low", "half", "three_quarter", "full"];
+    }
+
+    function validNightDutyDepartmentNotes(notes) {
+      return notes is map &&
+        notes.keys().hasOnly([
+          "front_office", "food_beverages", "housekeeping", "kitchen",
+          "maintainance", "it", "security", "police"
+        ]) &&
+        notes.front_office is string && notes.front_office.size() <= 1000 &&
+        notes.food_beverages is string && notes.food_beverages.size() <= 1000 &&
+        notes.housekeeping is string && notes.housekeeping.size() <= 1000 &&
+        notes.kitchen is string && notes.kitchen.size() <= 1000 &&
+        notes.maintainance is string && notes.maintainance.size() <= 1000 &&
+        notes.it is string && notes.it.size() <= 1000 &&
+        notes.security is string && notes.security.size() <= 1000 &&
+        notes.police is string && notes.police.size() <= 1000;
+    }
+
+    function validNightDutyIncident(incident) {
+      return incident is map &&
+        incident.keys().hasOnly(["hasIncident", "who", "how", "when", "description"]) &&
+        incident.hasIncident is bool &&
+        incident.who is string && incident.who.size() <= 200 &&
+        incident.how is string && incident.how.size() <= 500 &&
+        incident.when is string && incident.when.size() <= 40 &&
+        incident.description is string && incident.description.size() <= 1500 &&
+        (incident.hasIncident ||
+          (incident.who == "" && incident.how == "" &&
+            incident.when == "" && incident.description == ""));
+    }
+
     function validRoomPropertyStatusReport() {
       return request.resource.data.keys().hasOnly([
           "roomNumber", "floorKey", "floorLabel", "inspectionDate",
@@ -326,7 +444,15 @@ service cloud.firestore {
 
     match /portal/nightDuty {
       allow read: if isSuperAdmin() || isNightDutyManager();
-      allow write: if optionalListWithin(request.resource.data, "onDutyStaff", 200) && (isSuperAdmin() || isNightDutyManager());
+      allow write: if validNightDutyReport() && (isSuperAdmin() || isNightDutyManager());
+    }
+
+    match /nightDutyReports/{reportDate} {
+      allow read: if isSuperAdmin() || isNightDutyManager();
+      allow create, update: if validNightDutyReport() &&
+        request.resource.data.operationalDateKey == reportDate &&
+        (isSuperAdmin() || isNightDutyManager());
+      allow delete: if false;
     }
 
     match /notifications/{notificationId} {

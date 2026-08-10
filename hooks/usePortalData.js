@@ -39,7 +39,11 @@ import {
   mergeHousekeepingReports,
 } from "@/data/housekeepingReports";
 import { defaultStoreInventory, mergeStoreInventory } from "@/data/storeInventory";
-import { defaultNightDutyData, mergeNightDutyData } from "@/data/nightDuty";
+import {
+  defaultNightDutyData,
+  mergeNightDutyData,
+  normalizeStoredNightDutyReport,
+} from "@/data/nightDuty";
 import { db, hasFirebaseConfig } from "@/lib/firebase";
 import { getOperationalDateKey } from "@/lib/hotelTime";
 import {
@@ -62,6 +66,7 @@ const defaultPortalState = {
   housekeepingReports: mergeHousekeepingReports(buildDefaultHousekeepingReports()),
   storeInventory: mergeStoreInventory(defaultStoreInventory),
   nightDutyData: mergeNightDutyData(defaultNightDutyData),
+  nightDutyReportHistory: [],
   siteContent: defaultSiteContent,
   notifications: [],
   activityLogs: [],
@@ -376,7 +381,7 @@ export function usePortalData(profile) {
       (managerWorkspaceAccess.canViewEvents ? 1 : 0) +
       (housekeepingReportAccess.canViewPanel ? 1 : 0) +
       (storeAccess.canViewPanel ? 1 : 0) +
-      (nightDutyAccess.canViewPanel ? 1 : 0) +
+      (nightDutyAccess.canViewPanel ? 2 : 0) +
       (auditLogAccess.canViewPanel ? 1 : 0);
 
     const markResolved = () => {
@@ -601,6 +606,29 @@ export function usePortalData(profile) {
                   nightDutyData: snapshot.exists()
                     ? mergeNightDutyData(snapshot.data())
                     : mergeNightDutyData(defaultNightDutyData),
+                }));
+                markResolved();
+              },
+              (snapshotError) => {
+                setError(snapshotError.message);
+                markResolved();
+              },
+            ),
+            onSnapshot(
+              query(
+                collection(db, "nightDutyReports"),
+                orderBy("operationalDateKey", "desc"),
+                limit(MAX_REPORT_HISTORY_DAYS),
+              ),
+              (snapshot) => {
+                setPortalState((current) => ({
+                  ...current,
+                  nightDutyReportHistory: snapshot.docs.map((reportDocument) =>
+                    normalizeStoredNightDutyReport({
+                      id: reportDocument.id,
+                      ...reportDocument.data(),
+                    }),
+                  ),
                 }));
                 markResolved();
               },
@@ -1244,21 +1272,42 @@ export function usePortalData(profile) {
       ...portalState.nightDutyData,
       ...values,
     });
+    const updatedAtIso = new Date().toISOString();
+    const persistedReport = {
+      operationalDateKey: nextNightDutyData.operationalDateKey,
+      occupancyByFloor: nextNightDutyData.occupancyByFloor,
+      frontOfficeOccupancyByFloor: nextNightDutyData.frontOfficeOccupancyByFloor,
+      occupancyQuery: nextNightDutyData.occupancyQuery,
+      income: nextNightDutyData.income,
+      onDutyStaff: nextNightDutyData.onDutyStaff,
+      departmentNotes: nextNightDutyData.departmentNotes,
+      gasLevels: nextNightDutyData.gasLevels,
+      hotWaterTemperature: nextNightDutyData.hotWaterTemperature,
+      powerSupplies: nextNightDutyData.powerSupplies,
+      waterSupplyCount: nextNightDutyData.waterSupplyCount,
+      guestIncident: nextNightDutyData.guestIncident,
+      employeeIncident: nextNightDutyData.employeeIncident,
+      housekeepingSupervisorSignature: nextNightDutyData.housekeepingSupervisorSignature,
+      utilitiesSnapshot: nextNightDutyData.utilitiesSnapshot,
+      eventsSnapshot: nextNightDutyData.eventsSnapshot,
+      complaintsSnapshot: nextNightDutyData.complaintsSnapshot,
+      updatedAt: serverTimestamp(),
+      updatedAtIso,
+      updatedByUid: profile?.uid ?? null,
+      updatedByName: profile?.fullName ?? "",
+      updatedByDepartment: profile?.departmentName ?? "",
+    };
 
     await commitTrackedWrite({
       writes: [
         {
           ref: doc(db, "portal", "nightDuty"),
-          data: {
-            operationalDateKey: nextNightDutyData.operationalDateKey,
-            income: nextNightDutyData.income,
-            onDutyStaff: nextNightDutyData.onDutyStaff,
-            cookingGas: nextNightDutyData.cookingGas,
-            updatedAt: serverTimestamp(),
-            updatedByUid: profile?.uid ?? null,
-            updatedByName: profile?.fullName ?? "",
-            updatedByDepartment: profile?.departmentName ?? "",
-          },
+          data: persistedReport,
+          options: { merge: true },
+        },
+        {
+          ref: doc(db, "nightDutyReports", nextNightDutyData.operationalDateKey),
+          data: persistedReport,
           options: { merge: true },
         },
       ],
