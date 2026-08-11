@@ -675,7 +675,7 @@ export default function NightDutyPanel({
     } catch (error) {
       const permissionMessage = error?.code === "permission-denied" ||
         error?.code === "firestore/permission-denied"
-        ? "Firestore rejected this save. Publish the latest firestore.rules, then confirm this login still has a matching users document with approved/active status and either Super Admin access or the Night Duty manager/supervisor role."
+        ? error.message || "Firestore rejected this save. Publish the latest firestore.rules and confirm the staff profile permissions."
         : error.message;
       setFeedback({ type: "error", message: permissionMessage });
     } finally {

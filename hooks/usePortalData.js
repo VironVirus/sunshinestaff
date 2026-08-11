@@ -1343,19 +1343,63 @@ export function usePortalData(profile) {
       });
     }
 
-    await commitTrackedWrite({
-      writes: reportWrites,
-      notification: buildNotificationEntry({
-        audienceTag: "night-duty",
-        title: "Night Duty update",
-        message: `${profile?.fullName ?? "Night Duty"} updated the ${nextNightDutyData.operationalDateKey} night duty report.`,
-      }),
-      activity: buildActivityLogEntry({
-        area: "night_duty",
-        actionType: "night_duty_update",
-        message: `${profile?.fullName ?? "Night Duty"} updated Night Duty records for ${nextNightDutyData.operationalDateKey}.`,
-      }),
-    });
+    try {
+      await commitTrackedWrite({
+        writes: reportWrites,
+        notification: buildNotificationEntry({
+          audienceTag: "night-duty",
+          title: "Night Duty update",
+          message: `${profile?.fullName ?? "Night Duty"} updated the ${nextNightDutyData.operationalDateKey} night duty report.`,
+        }),
+        activity: buildActivityLogEntry({
+          area: "night_duty",
+          actionType: "night_duty_update",
+          message: `${profile?.fullName ?? "Night Duty"} updated Night Duty records for ${nextNightDutyData.operationalDateKey}.`,
+        }),
+      });
+    } catch (error) {
+      const permissionDenied = error?.code === "permission-denied" ||
+        error?.code === "firestore/permission-denied";
+
+      if (!permissionDenied || !profile?.uid) throw error;
+
+      let message = "Firestore rejected the Night Duty save.";
+
+      try {
+        const profileSnapshot = await getDoc(doc(db, "users", profile.uid));
+
+        if (!profileSnapshot.exists()) {
+          message += " The matching users document is missing. Recreate users/" +
+            `${profile.uid} using the same UID shown in Firebase Authentication.`;
+        } else {
+          const storedProfile = profileSnapshot.data();
+          const approvedActive = storedProfile.approvalStatus === "approved" &&
+            storedProfile.employmentStatus === "active";
+          const superAdmin = storedProfile.isSuperAdmin === true;
+          const nightDutyLead = storedProfile.departmentKey === "night_duty" &&
+            ["manager", "supervisor"].includes(storedProfile.jobLevel);
+
+          if (!approvedActive) {
+            message += " The users document must have approvalStatus set to approved and employmentStatus set to active.";
+          } else if (!superAdmin && !nightDutyLead) {
+            message += " The users document must contain isSuperAdmin as Boolean true, or departmentKey night_duty with jobLevel manager or supervisor.";
+          } else if (
+            storedProfile.fullName !== profile.fullName ||
+            storedProfile.departmentName !== profile.departmentName
+          ) {
+            message += " The browser has an older staff profile. Sign out completely and sign in again before saving.";
+          } else {
+            message += " The staff profile is valid, so the deployed rules do not match this application. Republish the entire firestore.rules file and confirm Hostinger uses the same Firebase project ID.";
+          }
+        }
+      } catch {
+        message += " The app could not read the matching users document; confirm it still exists and that its document ID equals the Authentication UID.";
+      }
+
+      const diagnosedError = new Error(message);
+      diagnosedError.code = error.code;
+      throw diagnosedError;
+    }
   }
 
   const loadNightDutyReport = useCallback(async (operationalDateKey) => {

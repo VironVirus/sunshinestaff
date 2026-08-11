@@ -64,6 +64,16 @@ service cloud.firestore {
       return !data.keys().hasAny([key]) || (data[key] is list && data[key].size() <= maximum);
     }
 
+    function matchesActorName(value) {
+      return (userData().keys().hasAny(["fullName"]) && value == userData().fullName) ||
+        (!userData().keys().hasAny(["fullName"]) && value == "");
+    }
+
+    function matchesActorDepartment(value) {
+      return (userData().keys().hasAny(["departmentName"]) && value == userData().departmentName) ||
+        (!userData().keys().hasAny(["departmentName"]) && value == "");
+    }
+
     function validDepartmentSelection(data) {
       return (data.departmentKey == "food_beverages" && data.departmentName == "Food and Beverages") ||
         (data.departmentKey == "front_office" && data.departmentName == "Front Office") ||
@@ -189,8 +199,8 @@ service cloud.firestore {
     function validFrontOfficeActor() {
       return request.resource.data.updatedAt is timestamp &&
         request.resource.data.updatedByUid == request.auth.uid &&
-        request.resource.data.updatedByName == userData().fullName &&
-        request.resource.data.updatedByDepartment == userData().departmentName;
+        matchesActorName(request.resource.data.updatedByName) &&
+        matchesActorDepartment(request.resource.data.updatedByDepartment);
     }
 
     function frontOfficeCanCreate() {
@@ -315,8 +325,8 @@ service cloud.firestore {
         request.resource.data.updatedAtIso is string &&
         request.resource.data.updatedAtIso.size() <= 40 &&
         request.resource.data.updatedByUid == request.auth.uid &&
-        request.resource.data.updatedByName == userData().fullName &&
-        request.resource.data.updatedByDepartment == userData().departmentName;
+        matchesActorName(request.resource.data.updatedByName) &&
+        matchesActorDepartment(request.resource.data.updatedByDepartment);
     }
 
     function validNightDutyAmount(value) {
@@ -422,9 +432,9 @@ service cloud.firestore {
         request.resource.data.updatedAtIso is string &&
         request.resource.data.updatedAtIso.size() <= 40 &&
         request.resource.data.updatedByUid == request.auth.uid &&
-        request.resource.data.updatedByName == userData().fullName &&
-        request.resource.data.updatedByDepartment == userData().departmentName &&
-        request.resource.data.signedByName == userData().fullName &&
+        matchesActorName(request.resource.data.updatedByName) &&
+        matchesActorDepartment(request.resource.data.updatedByDepartment) &&
+        matchesActorName(request.resource.data.signedByName) &&
         request.resource.data.signedByTitle == userData().staffTitle &&
         request.resource.data.signedAtIso is string &&
         request.resource.data.signedAtIso.size() <= 40;
@@ -436,8 +446,8 @@ service cloud.firestore {
 
     function validTrackedEntry() {
       return request.resource.data.actorUid == request.auth.uid &&
-        request.resource.data.actorName == userData().fullName &&
-        request.resource.data.actorDepartment == userData().departmentName &&
+        matchesActorName(request.resource.data.actorName) &&
+        matchesActorDepartment(request.resource.data.actorDepartment) &&
         request.resource.data.actorDepartmentKey == userData().departmentKey &&
         request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 40 &&
         request.resource.data.message is string && request.resource.data.message.size() <= 500;
