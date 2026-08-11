@@ -48,6 +48,7 @@ export const nightDutyOutletConfig = [
       { key: "hallHire", label: "Hall hire" },
       { key: "swimming", label: "Swimming" },
       { key: "photoshoot", label: "Photoshoot" },
+      { key: "miniMart", label: "Mini Mart sales" },
       { key: "sundry", label: "Sundry" },
       { key: "laundry", label: "Laundry" },
     ],
