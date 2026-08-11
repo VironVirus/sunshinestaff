@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildDefaultNightDutyData,
   cookingGasOptions,
@@ -411,6 +411,7 @@ export default function NightDutyPanel({
   propertyStatus,
   nightDutyData,
   reportHistory = [],
+  onLoadNightDutyReport,
   onSaveNightDuty,
   onSaveUtilities,
 }) {
@@ -434,45 +435,92 @@ export default function NightDutyPanel({
   const [guestIncident, setGuestIncident] = useState(buildDefaultNightDutyData().guestIncident);
   const [employeeIncident, setEmployeeIncident] = useState(buildDefaultNightDutyData().employeeIncident);
   const [housekeepingSupervisorSignature, setHousekeepingSupervisorSignature] = useState("");
+  const [selectedReportDate, setSelectedReportDate] = useState(getOperationalDateKey());
+  const [loadedSelectedReport, setLoadedSelectedReport] = useState(null);
+  const [loadingSelectedReport, setLoadingSelectedReport] = useState(false);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState("");
+  const [loadedHistoryReport, setLoadedHistoryReport] = useState(null);
+  const [loadingHistoryReport, setLoadingHistoryReport] = useState(false);
   const [savingSection, setSavingSection] = useState("");
   const [feedback, setFeedback] = useState({ type: "", message: "" });
-  const operationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
-  const frontOfficeOccupancyByFloor = useMemo(
+  const selectedLoadRequest = useRef(0);
+  const historyLoadRequest = useRef(0);
+  const currentOperationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
+  const currentFrontOfficeOccupancyByFloor = useMemo(
     () => buildOccupancyByFloor(operations),
     [operations],
   );
+  const cachedSelectedReport = useMemo(
+    () => reportHistory.find((entry) => entry.operationalDateKey === selectedReportDate) ?? null,
+    [reportHistory, selectedReportDate],
+  );
+  const liveSelectedReport = nightDutyData?.operationalDateKey === selectedReportDate
+    ? nightDutyData
+    : null;
+  const editableReport = cachedSelectedReport ?? loadedSelectedReport ?? liveSelectedReport;
+  const hasSavedSelectedReport = Boolean(
+    editableReport?.updatedAt || editableReport?.updatedAtIso,
+  );
+  const frontOfficeOccupancyByFloor = useMemo(() => {
+    if (hasSavedSelectedReport) {
+      return editableReport.frontOfficeOccupancyByFloor;
+    }
+
+    return selectedReportDate === currentOperationalDateKey
+      ? currentFrontOfficeOccupancyByFloor
+      : buildDefaultNightDutyData(selectedReportDate).frontOfficeOccupancyByFloor;
+  }, [
+    currentFrontOfficeOccupancyByFloor,
+    currentOperationalDateKey,
+    editableReport,
+    hasSavedSelectedReport,
+    selectedReportDate,
+  ]);
   const eventsSnapshot = useMemo(
-    () => buildEventSnapshots(eventsBookings, operationalDateKey),
-    [eventsBookings, operationalDateKey],
+    () => hasSavedSelectedReport
+      ? editableReport.eventsSnapshot
+      : buildEventSnapshots(eventsBookings, selectedReportDate),
+    [editableReport, eventsBookings, hasSavedSelectedReport, selectedReportDate],
   );
   const complaintsSnapshot = useMemo(
-    () => buildComplaintSnapshots(propertyStatus, operationalDateKey),
-    [operationalDateKey, propertyStatus],
+    () => hasSavedSelectedReport
+      ? editableReport.complaintsSnapshot
+      : buildComplaintSnapshots(propertyStatus, selectedReportDate),
+    [editableReport, hasSavedSelectedReport, propertyStatus, selectedReportDate],
   );
 
   useEffect(() => {
-    const hasSavedReport = Boolean(nightDutyData?.updatedAt || nightDutyData?.updatedAtIso);
+    const defaultReport = buildDefaultNightDutyData(selectedReportDate);
+    const report = hasSavedSelectedReport ? editableReport : defaultReport;
     setOccupancyByFloor(
-      hasSavedReport ? nightDutyData.occupancyByFloor : frontOfficeOccupancyByFloor,
+      hasSavedSelectedReport ? report.occupancyByFloor : frontOfficeOccupancyByFloor,
     );
-    setOccupancyQuery(nightDutyData?.occupancyQuery ?? { hasDiscrepancy: false, note: "" });
-    setIncomeForm(nightDutyData?.income ?? buildDefaultNightDutyData().income);
-    setOnDutyStaff(nightDutyData?.onDutyStaff ?? []);
-    setDepartmentNotes(nightDutyData?.departmentNotes ?? {});
-    setGasLevels(nightDutyData?.gasLevels ?? buildDefaultNightDutyData().gasLevels);
-    setHotWaterTemperature(nightDutyData?.hotWaterTemperature ?? "");
-    setWaterSupplyCount(nightDutyData?.waterSupplyCount ?? 0);
-    setPowerSupplies(nightDutyData?.powerSupplies ?? []);
-    setGuestIncident(nightDutyData?.guestIncident ?? buildDefaultNightDutyData().guestIncident);
-    setEmployeeIncident(nightDutyData?.employeeIncident ?? buildDefaultNightDutyData().employeeIncident);
-    setHousekeepingSupervisorSignature(nightDutyData?.housekeepingSupervisorSignature ?? "");
+    setOccupancyQuery(report.occupancyQuery);
+    setIncomeForm(report.income);
+    setOnDutyStaff(report.onDutyStaff);
+    setDepartmentNotes(report.departmentNotes);
+    setGasLevels(report.gasLevels);
+    setHotWaterTemperature(report.hotWaterTemperature ?? "");
+    setWaterSupplyCount(report.waterSupplyCount);
+    setPowerSupplies(report.powerSupplies);
+    setGuestIncident(report.guestIncident);
+    setEmployeeIncident(report.employeeIncident);
+    setHousekeepingSupervisorSignature(report.housekeepingSupervisorSignature);
     setUtilitiesForm(
-      Object.keys(nightDutyData?.utilitiesSnapshot ?? {}).length > 0
-        ? nightDutyData.utilitiesSnapshot
-        : propertyStatus?.utilities ?? defaultUtilities,
+      hasSavedSelectedReport && Object.keys(report.utilitiesSnapshot ?? {}).length > 0
+        ? report.utilitiesSnapshot
+        : selectedReportDate === currentOperationalDateKey
+          ? propertyStatus?.utilities ?? defaultUtilities
+          : defaultUtilities,
     );
-  }, [frontOfficeOccupancyByFloor, nightDutyData, propertyStatus?.utilities]);
+  }, [
+    currentOperationalDateKey,
+    editableReport,
+    frontOfficeOccupancyByFloor,
+    hasSavedSelectedReport,
+    propertyStatus?.utilities,
+    selectedReportDate,
+  ]);
 
   useEffect(() => {
     if (!selectedHistoryDate && reportHistory.length > 0) {
@@ -481,7 +529,7 @@ export default function NightDutyPanel({
   }, [reportHistory, selectedHistoryDate]);
 
   const currentRecord = useMemo(() => ({
-    operationalDateKey,
+    operationalDateKey: selectedReportDate,
     occupancyByFloor,
     frontOfficeOccupancyByFloor,
     occupancyQuery,
@@ -512,7 +560,7 @@ export default function NightDutyPanel({
     occupancyByFloor,
     occupancyQuery,
     onDutyStaff,
-    operationalDateKey,
+    selectedReportDate,
     powerSupplies,
     utilitiesForm,
     waterSupplyCount,
@@ -524,24 +572,92 @@ export default function NightDutyPanel({
   );
   const selectedHistoryReport = reportHistory.find(
     (entry) => entry.operationalDateKey === selectedHistoryDate,
-  ) ?? null;
+  ) ?? (loadedHistoryReport?.operationalDateKey === selectedHistoryDate
+    ? loadedHistoryReport
+    : null);
   const selectedHistoryReportData = selectedHistoryReport
     ? buildNightDutyReportData(selectedHistoryReport)
     : null;
-  const currentMonth = operationalDateKey.slice(0, 7);
-  const currentDate = new Date(`${operationalDateKey}T12:00:00Z`);
+  const currentMonth = selectedReportDate.slice(0, 7);
+  const currentDate = new Date(`${selectedReportDate}T12:00:00Z`);
   const weekStart = new Date(currentDate);
   weekStart.setUTCDate(weekStart.getUTCDate() - 6);
   const weekStartKey = weekStart.toISOString().slice(0, 10);
   const weeklyRoomRevenue = reportHistory
-    .filter((entry) => entry.operationalDateKey >= weekStartKey && entry.operationalDateKey <= operationalDateKey)
+    .filter((entry) => entry.operationalDateKey >= weekStartKey && entry.operationalDateKey <= selectedReportDate)
     .reduce((total, entry) => total + getFrontOfficeRoomRevenue(entry.income), 0);
   const monthlyRoomRevenue = reportHistory
     .filter((entry) => entry.operationalDateKey.startsWith(currentMonth))
     .reduce((total, entry) => total + getFrontOfficeRoomRevenue(entry.income), 0);
-  const readOnly = !access.canEditPanel;
+  const readOnly = !access.canEditPanel || loadingSelectedReport;
 
   if (!access.canViewPanel) return null;
+
+  async function selectReportDate(dateKey) {
+    if (!dateKey) return;
+
+    const requestId = selectedLoadRequest.current + 1;
+    selectedLoadRequest.current = requestId;
+    setSelectedReportDate(dateKey);
+    setLoadedSelectedReport(null);
+    setFeedback({ type: "", message: "" });
+
+    const cachedReport = reportHistory.find(
+      (entry) => entry.operationalDateKey === dateKey,
+    );
+    const liveReport = nightDutyData?.operationalDateKey === dateKey
+      ? nightDutyData
+      : null;
+
+    if (cachedReport || liveReport || !onLoadNightDutyReport) {
+      setLoadingSelectedReport(false);
+      return;
+    }
+
+    setLoadingSelectedReport(true);
+    try {
+      const storedReport = await onLoadNightDutyReport(dateKey);
+      if (selectedLoadRequest.current === requestId) {
+        setLoadedSelectedReport(storedReport);
+      }
+    } catch (error) {
+      if (selectedLoadRequest.current === requestId) {
+        setFeedback({ type: "error", message: error.message });
+      }
+    } finally {
+      if (selectedLoadRequest.current === requestId) {
+        setLoadingSelectedReport(false);
+      }
+    }
+  }
+
+  async function selectHistoryDate(dateKey) {
+    const requestId = historyLoadRequest.current + 1;
+    historyLoadRequest.current = requestId;
+    setSelectedHistoryDate(dateKey);
+    setLoadedHistoryReport(null);
+    setLoadingHistoryReport(false);
+
+    if (!dateKey) return;
+    if (reportHistory.some((entry) => entry.operationalDateKey === dateKey)) return;
+    if (!onLoadNightDutyReport) return;
+
+    setLoadingHistoryReport(true);
+    try {
+      const storedReport = await onLoadNightDutyReport(dateKey);
+      if (historyLoadRequest.current === requestId) {
+        setLoadedHistoryReport(storedReport);
+      }
+    } catch (error) {
+      if (historyLoadRequest.current === requestId) {
+        setFeedback({ type: "error", message: error.message });
+      }
+    } finally {
+      if (historyLoadRequest.current === requestId) {
+        setLoadingHistoryReport(false);
+      }
+    }
+  }
 
   async function saveCurrentReport(sectionName, saveSharedUtilities = false) {
     setSavingSection(sectionName);
@@ -551,7 +667,11 @@ export default function NightDutyPanel({
       const saves = [onSaveNightDuty(currentRecord)];
       if (saveSharedUtilities) saves.push(onSaveUtilities({ utilities: utilitiesForm }));
       await Promise.all(saves);
-      setFeedback({ type: "success", message: `${sectionName} saved and added to the ${formatDateKey(operationalDateKey)} report.` });
+      setLoadedSelectedReport({
+        ...currentRecord,
+        updatedAtIso: new Date().toISOString(),
+      });
+      setFeedback({ type: "success", message: `${sectionName} saved and added to the ${formatDateKey(selectedReportDate)} report.` });
     } catch (error) {
       setFeedback({ type: "error", message: error.message });
     } finally {
@@ -608,7 +728,13 @@ export default function NightDutyPanel({
 
   const summaryCards = [
     { label: "Night Duty occupancy", value: reportData.occupancyTotal },
-    { label: "Front Office occupancy", value: operations?.inHouse ?? 0 },
+    {
+      label: "Front Office occupancy",
+      value: frontOfficeOccupancyByFloor.reduce(
+        (total, floor) => total + Number(floor.occupiedRooms || 0),
+        0,
+      ),
+    },
     { label: "Grand revenue", value: formatAmount(reportData.grandIncomeTotal) },
     { label: "Archived reports", value: reportHistory.length },
   ];
@@ -623,9 +749,39 @@ export default function NightDutyPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-3 no-print">
-          <button type="button" onClick={() => printNightDutyReport(reportData)} className="button-secondary">Print current report</button>
-          <button type="button" onClick={() => handleDownload(reportData)} className="button-secondary">Download current PDF</button>
+          <button type="button" onClick={() => printNightDutyReport(reportData)} className="button-secondary" disabled={loadingSelectedReport}>Print selected date</button>
+          <button type="button" onClick={() => handleDownload(reportData)} className="button-secondary" disabled={loadingSelectedReport}>Download selected PDF</button>
         </div>
+      </div>
+
+      <div className="subpanel mt-6 no-print">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <label className="field">
+            <span>Report date</span>
+            <input
+              type="date"
+              value={selectedReportDate}
+              max={getOperationalDateKey()}
+              onChange={(event) => selectReportDate(event.target.value)}
+              disabled={Boolean(savingSection)}
+            />
+          </label>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => selectReportDate(currentOperationalDateKey)}
+            disabled={Boolean(savingSection) || selectedReportDate === currentOperationalDateKey}
+          >
+            Use current operational date
+          </button>
+        </div>
+        <p className="mt-3 text-sm text-slate-600">
+          {loadingSelectedReport
+            ? "Loading the report for this date..."
+            : hasSavedSelectedReport
+              ? `Saved report loaded for ${formatDateKey(selectedReportDate)}. You can continue editing it.`
+              : `No saved report exists for ${formatDateKey(selectedReportDate)}. Saving any section will create it.`}
+        </p>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -725,7 +881,7 @@ export default function NightDutyPanel({
       ) : null}
 
       {activeSection === "utilities" ? (
-        <form onSubmit={(event) => { event.preventDefault(); saveCurrentReport("Utilities", true); }} className="mt-6 space-y-6 no-print">
+        <form onSubmit={(event) => { event.preventDefault(); saveCurrentReport("Utilities", selectedReportDate === currentOperationalDateKey); }} className="mt-6 space-y-6 no-print">
           <div className="grid gap-6 xl:grid-cols-2">
             <div className="subpanel"><p className="metric-label">Cooking gas levels</p><div className="mt-4 grid gap-4 sm:grid-cols-2">{cookingGasOptions.map((gas) => <label key={gas.value} className="field"><span>{gas.label}</span><select value={gasLevels[gas.value] ?? ""} onChange={(event) => setGasLevels((current) => ({ ...current, [gas.value]: event.target.value }))} disabled={readOnly || savingSection}><option value="">Select level</option>{gasLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}</div></div>
             <div className="subpanel"><p className="metric-label">Water and temperature</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="field"><span>Hot water temperature (°C)</span><input type="number" min="0" max="120" step="0.1" value={hotWaterTemperature} onChange={(event) => setHotWaterTemperature(event.target.value)} disabled={readOnly || savingSection} /></label><label className="field"><span>Number of times water was supplied</span><input type="number" min="0" max="1000" value={waterSupplyCount} onChange={(event) => setWaterSupplyCount(event.target.value)} disabled={readOnly || savingSection} /></label></div></div>
@@ -748,8 +904,8 @@ export default function NightDutyPanel({
         <div className="mt-6 space-y-6">
           <div className="grid gap-4 sm:grid-cols-2"><div className="subpanel"><p className="metric-label">Last 7 days room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(weeklyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div><div className="subpanel"><p className="metric-label">{formatDateKey(`${currentMonth}-01`, { month: "long", year: "numeric" })} room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(monthlyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div></div>
           <div className="subpanel">
-            <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"><label className="field"><span>Stored report date</span><select value={selectedHistoryDate} onChange={(event) => setSelectedHistoryDate(event.target.value)}><option value="">Select report</option>{reportHistory.map((entry) => <option key={entry.operationalDateKey} value={entry.operationalDateKey}>{formatDateKey(entry.operationalDateKey)}</option>)}</select></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button></div>
-            {selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Night Duty reports yet.</p>}
+            <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"><label className="field"><span>Stored report date</span><input type="date" value={selectedHistoryDate} max={getOperationalDateKey()} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button></div>
+            {loadingHistoryReport ? <p className="mt-5 text-sm text-slate-500">Loading the selected date...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Night Duty report exists for the selected date.</p>}
           </div>
         </div>
       ) : null}

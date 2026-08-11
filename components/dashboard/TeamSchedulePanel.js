@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { departmentOptions } from "@/data/departments";
 import { formatFriendlyDate } from "@/lib/format";
 import { isLead, isSuperAdmin } from "@/lib/roles";
 
@@ -21,7 +22,11 @@ export default function TeamSchedulePanel({
   onSaveShift,
   onRemoveShift,
 }) {
-  const canManageShifts = isLead(profile) || isSuperAdmin(profile);
+  const superAdmin = isSuperAdmin(profile);
+  const canManageShifts = isLead(profile) || superAdmin;
+  const [selectedDepartmentKey, setSelectedDepartmentKey] = useState(
+    superAdmin ? departmentOptions[0]?.value ?? "" : profile?.departmentKey ?? "",
+  );
   const [selectedUserId, setSelectedUserId] = useState("");
   const [shiftDate, setShiftDate] = useState("");
   const [saving, setSaving] = useState(false);
@@ -31,19 +36,29 @@ export default function TeamSchedulePanel({
     () => departmentShifts.filter((shift) => shift.userId === profile?.uid),
     [departmentShifts, profile?.uid],
   );
+  const visibleTeamMembers = useMemo(
+    () => teamMembers.filter((member) => member.departmentKey === selectedDepartmentKey),
+    [selectedDepartmentKey, teamMembers],
+  );
+  const visibleDepartmentShifts = useMemo(
+    () => departmentShifts.filter(
+      (shift) => (shift.departmentKey ?? profile?.departmentKey) === selectedDepartmentKey,
+    ),
+    [departmentShifts, profile?.departmentKey, selectedDepartmentKey],
+  );
 
   useEffect(() => {
-    if (!selectedUserId && teamMembers[0]?.uid) {
-      setSelectedUserId(teamMembers[0].uid);
+    if (!selectedUserId && visibleTeamMembers[0]?.uid) {
+      setSelectedUserId(visibleTeamMembers[0].uid);
     }
 
     if (
       selectedUserId &&
-      !teamMembers.some((member) => member.uid === selectedUserId)
+      !visibleTeamMembers.some((member) => member.uid === selectedUserId)
     ) {
-      setSelectedUserId(teamMembers[0]?.uid ?? "");
+      setSelectedUserId(visibleTeamMembers[0]?.uid ?? "");
     }
-  }, [selectedUserId, teamMembers]);
+  }, [selectedUserId, visibleTeamMembers]);
 
   async function handleAssignShift(event) {
     event.preventDefault();
@@ -59,6 +74,7 @@ export default function TeamSchedulePanel({
       await onSaveShift({
         userId: selectedUserId,
         shiftDate,
+        departmentKey: selectedDepartmentKey,
       });
       setFeedback({ type: "success", message: "Shift saved." });
       setShiftDate("");
@@ -69,12 +85,13 @@ export default function TeamSchedulePanel({
     }
   }
 
-  async function handleRemoveShift(shiftId) {
-    setRemovingShiftId(shiftId);
+  async function handleRemoveShift(shift) {
+    const removalKey = `${shift.departmentKey ?? selectedDepartmentKey}:${shift.id}`;
+    setRemovingShiftId(removalKey);
     setFeedback({ type: "", message: "" });
 
     try {
-      await onRemoveShift(shiftId);
+      await onRemoveShift(shift.id, shift.departmentKey ?? selectedDepartmentKey);
       setFeedback({ type: "success", message: "Shift removed." });
     } catch (error) {
       setFeedback({ type: "error", message: error.message });
@@ -87,7 +104,7 @@ export default function TeamSchedulePanel({
     <section className="panel p-6">
       <div className="flex items-center justify-between gap-4">
         <h2 className="section-title">Team</h2>
-        <span className="badge">{teamMembers.length} staff</span>
+        <span className="badge">{visibleTeamMembers.length} staff</span>
       </div>
 
       {canManageShifts ? (
@@ -95,8 +112,8 @@ export default function TeamSchedulePanel({
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
             <p className="metric-label">Team members</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {teamMembers.length > 0 ? (
-                teamMembers.map((member) => (
+              {visibleTeamMembers.length > 0 ? (
+                visibleTeamMembers.map((member) => (
                   <span
                     key={member.uid}
                     className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
@@ -111,16 +128,32 @@ export default function TeamSchedulePanel({
           </div>
 
           <form onSubmit={handleAssignShift} className="mt-5">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className={`grid gap-4 ${superAdmin ? "lg:grid-cols-3" : "sm:grid-cols-2"}`}>
+              {superAdmin ? (
+                <label className="field">
+                  <span>Department</span>
+                  <select
+                    value={selectedDepartmentKey}
+                    onChange={(event) => setSelectedDepartmentKey(event.target.value)}
+                    disabled={saving}
+                  >
+                    {departmentOptions.map((department) => (
+                      <option key={department.value} value={department.value}>
+                        {department.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="field">
                 <span>Staff</span>
                 <select
                   value={selectedUserId}
                   onChange={(event) => setSelectedUserId(event.target.value)}
-                  disabled={saving || teamMembers.length === 0}
+                  disabled={saving || visibleTeamMembers.length === 0}
                 >
                   <option value="">Select staff</option>
-                  {teamMembers.map((member) => (
+                  {visibleTeamMembers.map((member) => (
                     <option key={member.uid} value={member.uid}>
                       {member.fullName}
                     </option>
@@ -161,10 +194,13 @@ export default function TeamSchedulePanel({
           </form>
 
           <div className="mt-5 space-y-3">
-            {departmentShifts.length > 0 ? (
-              departmentShifts.map((shift) => (
+            {visibleDepartmentShifts.length > 0 ? (
+              visibleDepartmentShifts.map((shift) => {
+                const removalKey = `${shift.departmentKey ?? selectedDepartmentKey}:${shift.id}`;
+
+                return (
                 <div
-                  key={shift.id}
+                  key={removalKey}
                   className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4"
                 >
                   <div>
@@ -175,14 +211,15 @@ export default function TeamSchedulePanel({
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleRemoveShift(shift.id)}
-                    disabled={removingShiftId === shift.id}
+                    onClick={() => handleRemoveShift(shift)}
+                    disabled={removingShiftId === removalKey}
                     className="button-secondary"
                   >
-                    {removingShiftId === shift.id ? "Removing..." : "Remove"}
+                    {removingShiftId === removalKey ? "Removing..." : "Remove"}
                   </button>
                 </div>
-              ))
+                );
+              })
             ) : (
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 text-sm text-slate-500">
                 No shifts assigned.

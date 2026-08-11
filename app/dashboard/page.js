@@ -178,6 +178,7 @@ export default function DashboardPage() {
     saveStoreRequisition,
     saveStoreReturn,
     saveStoreAdjustment,
+    loadNightDutyReport,
     saveNightDutyData,
     saveStaffProfile,
     saveShiftAssignment,
@@ -440,6 +441,7 @@ export default function DashboardPage() {
                   propertyStatus={propertyStatus}
                   nightDutyData={nightDutyData}
                   reportHistory={nightDutyReportHistory}
+                  onLoadNightDutyReport={loadNightDutyReport}
                   onSaveNightDuty={saveNightDutyData}
                   onSaveUtilities={saveUtilities}
                 />

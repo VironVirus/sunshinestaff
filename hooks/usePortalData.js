@@ -55,6 +55,7 @@ import {
   getPropertyAccess,
   getRoomPropertyStatusAccess,
   getStoreAccess,
+  isSuperAdmin,
 } from "@/lib/roles";
 
 const defaultPortalState = {
@@ -342,6 +343,7 @@ export function usePortalData(profile) {
   const storeAccess = getStoreAccess(profile);
   const nightDutyAccess = getNightDutyAccess(profile);
   const auditLogAccess = getAuditLogAccess(profile);
+  const profileIsSuperAdmin = isSuperAdmin(profile);
   const canLoadAllStaff = managerWorkspaceAccess.canManageStaff || auditLogAccess.canViewPanel;
   const canLoadTeamDirectory = canLoadAllStaff;
   const notificationAudienceTags = useMemo(
@@ -437,9 +439,11 @@ export function usePortalData(profile) {
               ? buildBirthdaysFromUsers(activeUsers)
               : defaultBirthdays,
             staffDirectory: users,
-            teamMembers: profile?.departmentKey
-              ? activeUsers.filter((user) => user.departmentKey === profile.departmentKey)
-              : [],
+            teamMembers: profileIsSuperAdmin
+              ? activeUsers
+              : profile?.departmentKey
+                ? activeUsers.filter((user) => user.departmentKey === profile.departmentKey)
+                : [],
           }));
           markResolved();
         },
@@ -664,22 +668,45 @@ export function usePortalData(profile) {
         : []),
       ...(profile?.departmentKey
         ? [
-            onSnapshot(
-              doc(db, "departments", profile.departmentKey),
-              (snapshot) => {
-                setPortalState((current) => ({
-                  ...current,
-                  departmentShifts: snapshot.exists()
-                    ? normalizeShifts(snapshot.data().shifts ?? [])
-                    : [],
-                }));
-                markResolved();
-              },
-              (snapshotError) => {
-                setError(snapshotError.message);
-                markResolved();
-              },
-            ),
+            profileIsSuperAdmin
+              ? onSnapshot(
+                  collection(db, "departments"),
+                  (snapshot) => {
+                    setPortalState((current) => ({
+                      ...current,
+                      departmentShifts: snapshot.docs.flatMap((departmentDocument) =>
+                        normalizeShifts(departmentDocument.data().shifts ?? []).map((shift) => ({
+                          ...shift,
+                          departmentKey: departmentDocument.id,
+                        })),
+                      ),
+                    }));
+                    markResolved();
+                  },
+                  (snapshotError) => {
+                    setError(snapshotError.message);
+                    markResolved();
+                  },
+                )
+              : onSnapshot(
+                  doc(db, "departments", profile.departmentKey),
+                  (snapshot) => {
+                    setPortalState((current) => ({
+                      ...current,
+                      departmentShifts: snapshot.exists()
+                        ? normalizeShifts(snapshot.data().shifts ?? []).map((shift) => ({
+                            ...shift,
+                            departmentKey: profile.departmentKey,
+                          }))
+                        : [],
+                    }));
+                    markResolved();
+                  },
+                  (snapshotError) => {
+                    setError(snapshotError.message);
+                    markResolved();
+                  },
+                ),
           ]
         : []),
     ];
@@ -696,6 +723,8 @@ export function usePortalData(profile) {
     auditLogAccess.canViewPanel,
     canLoadTeamDirectory,
     profile?.departmentKey,
+    profile?.isSuperAdmin,
+    profileIsSuperAdmin,
     propertyAccess.canViewPanel,
     storeAccess.canViewPanel,
   ]);
@@ -754,7 +783,7 @@ export function usePortalData(profile) {
 
   const saveRoomPropertyStatus = useCallback(async (values) => {
     if (!roomPropertyStatusAccess.canEditPanel) {
-      throw new Error("Only Housekeeping managers and supervisors can edit this report.");
+      throw new Error("Only Housekeeping leads and the Super Admin can edit this report.");
     }
 
     if (!db) {
@@ -1297,32 +1326,53 @@ export function usePortalData(profile) {
       updatedByName: profile?.fullName ?? "",
       updatedByDepartment: profile?.departmentName ?? "",
     };
+    const reportWrites = [
+      {
+        ref: doc(db, "nightDutyReports", nextNightDutyData.operationalDateKey),
+        data: persistedReport,
+        options: { merge: true },
+      },
+    ];
+    const currentBoardDate = portalState.nightDutyData?.operationalDateKey ?? "";
+
+    if (!currentBoardDate || nextNightDutyData.operationalDateKey >= currentBoardDate) {
+      reportWrites.unshift({
+        ref: doc(db, "portal", "nightDuty"),
+        data: persistedReport,
+        options: { merge: true },
+      });
+    }
 
     await commitTrackedWrite({
-      writes: [
-        {
-          ref: doc(db, "portal", "nightDuty"),
-          data: persistedReport,
-          options: { merge: true },
-        },
-        {
-          ref: doc(db, "nightDutyReports", nextNightDutyData.operationalDateKey),
-          data: persistedReport,
-          options: { merge: true },
-        },
-      ],
+      writes: reportWrites,
       notification: buildNotificationEntry({
         audienceTag: "night-duty",
         title: "Night Duty update",
-        message: `${profile?.fullName ?? "Night Duty"} updated the night duty board.`,
+        message: `${profile?.fullName ?? "Night Duty"} updated the ${nextNightDutyData.operationalDateKey} night duty report.`,
       }),
       activity: buildActivityLogEntry({
         area: "night_duty",
         actionType: "night_duty_update",
-        message: `${profile?.fullName ?? "Night Duty"} updated night duty records.`,
+        message: `${profile?.fullName ?? "Night Duty"} updated Night Duty records for ${nextNightDutyData.operationalDateKey}.`,
       }),
     });
   }
+
+  const loadNightDutyReport = useCallback(async (operationalDateKey) => {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(operationalDateKey ?? "")) {
+      throw new Error("Select a valid report date.");
+    }
+
+    const snapshot = await getDoc(doc(db, "nightDutyReports", operationalDateKey));
+
+    return snapshot.exists()
+      ? normalizeStoredNightDutyReport({ id: snapshot.id, ...snapshot.data() })
+      : null;
+  }, []);
 
   async function saveStaffProfile(userId, values) {
     if (!db) {
@@ -1437,9 +1487,14 @@ export function usePortalData(profile) {
       throw new Error("Shift assignments are not available yet.");
     }
 
-    const staffMember = portalState.teamMembers.find((member) => member.uid === values.userId);
+    const targetDepartmentKey = profileIsSuperAdmin
+      ? values.departmentKey
+      : profile.departmentKey;
+    const staffMember = portalState.teamMembers.find(
+      (member) => member.uid === values.userId && member.departmentKey === targetDepartmentKey,
+    );
 
-    if (!staffMember) {
+    if (!targetDepartmentKey || !staffMember) {
       throw new Error("Select a valid team member before assigning a shift.");
     }
 
@@ -1449,19 +1504,22 @@ export function usePortalData(profile) {
 
     const shiftId = `${values.userId}-${values.shiftDate}`;
     const nextShifts = normalizeShifts([
-      ...portalState.departmentShifts.filter((shift) => shift.id !== shiftId),
+      ...portalState.departmentShifts.filter(
+        (shift) => shift.departmentKey === targetDepartmentKey && shift.id !== shiftId,
+      ),
       {
         id: shiftId,
         userId: values.userId,
         staffName: staffMember.fullName,
         shiftDate: values.shiftDate,
+        departmentKey: targetDepartmentKey,
       },
     ]);
 
     await commitTrackedWrite({
       writes: [
         {
-          ref: doc(db, "departments", profile.departmentKey),
+          ref: doc(db, "departments", targetDepartmentKey),
           data: {
             shifts: nextShifts,
             updatedAt: serverTimestamp(),
@@ -1480,17 +1538,27 @@ export function usePortalData(profile) {
     });
   }
 
-  async function removeShiftAssignment(shiftId) {
+  async function removeShiftAssignment(shiftId, departmentKey = "") {
     if (!db || !profile?.departmentKey) {
       throw new Error("Shift assignments are not available yet.");
     }
 
-    const nextShifts = portalState.departmentShifts.filter((shift) => shift.id !== shiftId);
+    const targetDepartmentKey = profileIsSuperAdmin
+      ? departmentKey
+      : profile.departmentKey;
+
+    if (!targetDepartmentKey) {
+      throw new Error("Select a department before removing a shift.");
+    }
+
+    const nextShifts = portalState.departmentShifts.filter(
+      (shift) => shift.departmentKey === targetDepartmentKey && shift.id !== shiftId,
+    );
 
     await commitTrackedWrite({
       writes: [
         {
-          ref: doc(db, "departments", profile.departmentKey),
+          ref: doc(db, "departments", targetDepartmentKey),
           data: {
             shifts: nextShifts,
             updatedAt: serverTimestamp(),
@@ -1526,6 +1594,7 @@ export function usePortalData(profile) {
     saveStoreRequisition,
     saveStoreReturn,
     saveStoreAdjustment,
+    loadNightDutyReport,
     saveNightDutyData,
     saveStaffProfile,
     saveShiftAssignment,

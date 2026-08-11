@@ -64,22 +64,70 @@ service cloud.firestore {
       return !data.keys().hasAny([key]) || (data[key] is list && data[key].size() <= maximum);
     }
 
+    function validDepartmentSelection(data) {
+      return (data.departmentKey == "food_beverages" && data.departmentName == "Food and Beverages") ||
+        (data.departmentKey == "front_office" && data.departmentName == "Front Office") ||
+        (data.departmentKey == "it" && data.departmentName == "IT") ||
+        (data.departmentKey == "executive_management" && data.departmentName == "Executive Management") ||
+        (data.departmentKey == "maintainance" && data.departmentName == "Maintenance") ||
+        (data.departmentKey == "store" && data.departmentName == "Store") ||
+        (data.departmentKey == "accounts" && data.departmentName == "Accounts") ||
+        (data.departmentKey == "audit" && data.departmentName == "Audit") ||
+        (data.departmentKey == "human_resource" && data.departmentName == "Human Resource") ||
+        (data.departmentKey == "kitchen" && data.departmentName == "Kitchen") ||
+        (data.departmentKey == "security" && data.departmentName == "Security") ||
+        (data.departmentKey == "housekeeping" && data.departmentName == "Housekeeping") ||
+        (data.departmentKey == "night_duty" && data.departmentName == "Night Duty");
+    }
+
     function validSelfRegistration(userId) {
       return signedIn() && request.auth.uid == userId &&
+        request.resource.data.keys().hasOnly([
+          "uid", "fullName", "email", "birthday", "phoneNumber", "homeAddress",
+          "departmentKey", "departmentName", "jobLevel", "staffTitle",
+          "isSuperAdmin", "approvalStatus", "approvedAt", "approvedByName",
+          "employmentStatus", "employmentStartDate", "surcharges", "leaveRecords",
+          "monthlySalary", "payrollMonthKey", "absenceDays", "lateCount",
+          "pensionAmount", "taxAmount", "salaryUpdatedAt", "salaryUpdatedByName",
+          "lastProfileNotification", "lastProfileNotificationAt", "accessLevel",
+          "privileges", "createdAt", "updatedAt"
+        ]) &&
         request.resource.data.uid == userId &&
         request.resource.data.fullName is string && request.resource.data.fullName.size() > 0 &&
         request.resource.data.fullName.size() <= 80 &&
         request.resource.data.email is string && request.resource.data.email.size() <= 254 &&
-        request.resource.data.departmentKey is string && request.resource.data.departmentKey.size() <= 40 &&
-        request.resource.data.departmentName is string && request.resource.data.departmentName.size() <= 80 &&
+        request.resource.data.email == request.auth.token.email &&
+        validDepartmentSelection(request.resource.data) &&
         request.resource.data.jobLevel in ["manager", "supervisor", "line_staff"] &&
         request.resource.data.staffTitle is string && request.resource.data.staffTitle.size() <= 80 &&
+        request.resource.data.birthday is string && request.resource.data.birthday.size() <= 10 &&
+        request.resource.data.phoneNumber is string && request.resource.data.phoneNumber.size() <= 30 &&
+        request.resource.data.homeAddress is string && request.resource.data.homeAddress.size() <= 250 &&
         request.resource.data.isSuperAdmin == false &&
         request.resource.data.approvalStatus == "pending" &&
         request.resource.data.approvedAt == "" &&
         request.resource.data.approvedByName == "" &&
         request.resource.data.employmentStatus == "active" &&
-        request.resource.data.accessLevel in ["department_manager", "department_supervisor", "line_staff"] &&
+        request.resource.data.employmentStartDate is string &&
+        request.resource.data.employmentStartDate.size() == 10 &&
+        request.resource.data.surcharges == "" &&
+        request.resource.data.leaveRecords.size() == 0 &&
+        request.resource.data.monthlySalary == 0 &&
+        request.resource.data.payrollMonthKey is string &&
+        request.resource.data.payrollMonthKey.size() == 7 &&
+        request.resource.data.absenceDays == 0 &&
+        request.resource.data.lateCount == 0 &&
+        request.resource.data.pensionAmount == 0 &&
+        request.resource.data.taxAmount == 0 &&
+        request.resource.data.salaryUpdatedAt == "" &&
+        request.resource.data.salaryUpdatedByName == "" &&
+        request.resource.data.lastProfileNotification == "" &&
+        request.resource.data.lastProfileNotificationAt == "" &&
+        ((request.resource.data.jobLevel == "manager" && request.resource.data.accessLevel == "department_manager") ||
+          (request.resource.data.jobLevel == "supervisor" && request.resource.data.accessLevel == "department_supervisor") ||
+          (request.resource.data.jobLevel == "line_staff" && request.resource.data.accessLevel == "line_staff")) &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp &&
         optionalListWithin(request.resource.data, "privileges", 40) &&
         optionalListWithin(request.resource.data, "leaveRecords", 120);
     }
@@ -136,6 +184,37 @@ service cloud.firestore {
         optionalListWithin(request.resource.data, "roomMoves", 500) &&
         optionalListWithin(request.resource.data, "reportHistory", 120) &&
         optionalListWithin(request.resource.data, "activityEntries", 300);
+    }
+
+    function validFrontOfficeActor() {
+      return request.resource.data.updatedAt is timestamp &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        request.resource.data.updatedByName == userData().fullName &&
+        request.resource.data.updatedByDepartment == userData().departmentName;
+    }
+
+    function frontOfficeCanCreate() {
+      return isFrontOfficeManager() && validFrontOfficeActor() &&
+        request.resource.data.keys().hasOnly([
+          "occupiedRooms", "occupiedRoomNumbers", "roomMoves", "activityEntries",
+          "reportHistory", "inHouse", "availableRooms", "breakfastEntitled",
+          "cleanedRoomNumbers", "cleanedRooms", "notes", "updatedAt",
+          "updatedByUid", "updatedByName", "updatedByDepartment"
+        ]) &&
+        (!request.resource.data.keys().hasAny(["cleanedRoomNumbers"]) ||
+          request.resource.data.cleanedRoomNumbers.size() == 0) &&
+        (!request.resource.data.keys().hasAny(["cleanedRooms"]) ||
+          request.resource.data.cleanedRooms == 0);
+    }
+
+    function frontOfficeCanUpdate() {
+      return isFrontOfficeManager() && validFrontOfficeActor() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "occupiedRooms", "occupiedRoomNumbers", "roomMoves", "activityEntries",
+          "reportHistory", "inHouse", "availableRooms", "breakfastEntitled",
+          "notes", "updatedAt", "updatedByUid", "updatedByName",
+          "updatedByDepartment"
+        ]);
     }
 
     function housekeepingCanUpdateMaintenance() {
@@ -404,8 +483,10 @@ service cloud.firestore {
     match /portal/frontOffice {
       allow read: if isSuperAdmin() || isFrontOfficeManager() || isHousekeepingManager() ||
         (belongsTo("food_beverages") && isLead()) || (belongsTo("night_duty") && isLead());
-      allow create: if validFrontOfficeSize() && (isSuperAdmin() || isFrontOfficeManager() || housekeepingCanCreateFrontOffice());
-      allow update: if validFrontOfficeSize() && (isSuperAdmin() || isFrontOfficeManager() || housekeepingCanUpdateFrontOffice());
+      allow create: if validFrontOfficeSize() &&
+        (isSuperAdmin() || frontOfficeCanCreate() || housekeepingCanCreateFrontOffice());
+      allow update: if validFrontOfficeSize() &&
+        (isSuperAdmin() || frontOfficeCanUpdate() || housekeepingCanUpdateFrontOffice());
     }
 
     match /portal/maintenance {
@@ -428,7 +509,7 @@ service cloud.firestore {
 
     match /roomPropertyStatus/{reportId} {
       allow read: if isSuperAdmin() || isLead();
-      allow create, update: if isHousekeepingManager() &&
+      allow create, update: if (isSuperAdmin() || isHousekeepingManager()) &&
         validRoomPropertyStatusReport();
       allow delete: if false;
     }
