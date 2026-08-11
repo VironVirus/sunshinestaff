@@ -364,11 +364,11 @@ export function normalizeStoredNightDutyReport(payload = {}) {
 }
 
 export function mergeNightDutyData(payload = {}) {
-  const operationalDateKey = getOperationalDateKey();
-  const source = payload.operationalDateKey === operationalDateKey ? payload : {};
+  const operationalDateKey = normalizeShortText(payload.operationalDateKey, 10) ||
+    getOperationalDateKey();
 
   return normalizeStoredNightDutyReport({
-    ...source,
+    ...payload,
     operationalDateKey,
   });
 }

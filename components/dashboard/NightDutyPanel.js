@@ -673,7 +673,11 @@ export default function NightDutyPanel({
       });
       setFeedback({ type: "success", message: `${sectionName} saved and added to the ${formatDateKey(selectedReportDate)} report.` });
     } catch (error) {
-      setFeedback({ type: "error", message: error.message });
+      const permissionMessage = error?.code === "permission-denied" ||
+        error?.code === "firestore/permission-denied"
+        ? "Firestore rejected this save. Publish the latest firestore.rules, then confirm this login still has a matching users document with approved/active status and either Super Admin access or the Night Duty manager/supervisor role."
+        : error.message;
+      setFeedback({ type: "error", message: permissionMessage });
     } finally {
       setSavingSection("");
     }
