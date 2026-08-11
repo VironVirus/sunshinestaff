@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildDefaultNightDutyData,
   cookingGasOptions,
+  getActualRevenueTotal,
   getFrontOfficeRoomRevenue,
   getGasLevelLabel,
   getGrandIncomeTotal,
@@ -36,6 +37,19 @@ function formatAmount(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function formatIncomeFieldValue(field, value) {
+  if (field?.nonFinancial) {
+    return Math.max(Math.trunc(Number(value) || 0), 0).toLocaleString("en-US");
+  }
+
+  return formatAmount(value);
+}
+
+function getRevenueTreatment(field) {
+  if (field?.nonFinancial) return "Attendance count";
+  return field?.excludeFromRevenue ? "Excluded from actual revenue" : "Included";
 }
 
 function formatDuration(hours, minutes) {
@@ -159,8 +173,12 @@ function buildNightDutyReportData(record = {}) {
   const groupedStaff = groupOnDutyStaff(record.onDutyStaff, record.departmentNotes);
   const incomeSections = nightDutyOutletConfig.map((outlet) => ({
     ...outlet,
-    revenueTotal: getOutletTotal(record.income, outlet.key),
-    recordedTotal: getOutletTotal(record.income, outlet.key, { includeNonRevenue: true }),
+    actualRevenueTotal: getOutletTotal(record.income, outlet.key),
+    grandRevenueTotal: getOutletTotal(
+      record.income,
+      outlet.key,
+      { includeNonRevenue: true },
+    ),
   }));
 
   return {
@@ -170,6 +188,7 @@ function buildNightDutyReportData(record = {}) {
     groupedStaff,
     incomeSections,
     grandIncomeTotal: getGrandIncomeTotal(record.income),
+    actualRevenueTotal: getActualRevenueTotal(record.income),
   };
 }
 
@@ -227,10 +246,15 @@ function buildNightDutyReportLines(reportData) {
   reportData.incomeSections.forEach((outlet) => {
     lines.push(subsectionHeading(outlet.label));
     outlet.fields.forEach((field) => {
-      const suffix = field.excludeFromRevenue ? " (not included in revenue total)" : "";
-      lines.push(`- ${field.label}: ${formatAmount(reportData.income?.[outlet.key]?.[field.key])}${suffix}`);
+      const suffix = field.nonFinancial
+        ? " (attendance count; not revenue)"
+        : field.excludeFromRevenue
+          ? " (included in Grand Revenue; excluded from Actual Revenue)"
+          : "";
+      lines.push(`- ${field.label}: ${formatIncomeFieldValue(field, reportData.income?.[outlet.key]?.[field.key])}${suffix}`);
     });
-    lines.push(`- Revenue total: ${formatAmount(outlet.revenueTotal)}`);
+    lines.push(`- Grand Revenue: ${formatAmount(outlet.grandRevenueTotal)}`);
+    lines.push(`- Actual Revenue: ${formatAmount(outlet.actualRevenueTotal)}`);
   });
   lines.push({
     text: `GRAND REVENUE TOTAL: ${formatAmount(reportData.grandIncomeTotal)}`,
@@ -239,6 +263,13 @@ function buildNightDutyReportLines(reportData) {
     dividerBefore: true,
     dividerAfter: true,
     spaceBefore: 7,
+    spaceAfter: 5,
+  });
+  lines.push({
+    text: `ACTUAL REVENUE TOTAL: ${formatAmount(reportData.actualRevenueTotal)}`,
+    bold: true,
+    fontSize: 14,
+    dividerAfter: true,
     spaceAfter: 5,
   });
 
@@ -315,6 +346,10 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     (total, report) => total + Number(report.grandIncomeTotal || 0),
     0,
   );
+  const actualRevenue = reports.reduce(
+    (total, report) => total + Number(report.actualRevenueTotal || 0),
+    0,
+  );
   const lines = [
     {
       text: `FULL NIGHT DUTY REPORT: ${formatDateKey(rangeStart)} TO ${formatDateKey(rangeEnd)}`,
@@ -324,7 +359,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
       spaceAfter: 6,
     },
     { text: `Stored daily reports found: ${reports.length}`, bold: true },
-    { text: `Combined revenue total: ${formatAmount(grandRevenue)}`, bold: true },
+    { text: `Combined Grand Revenue: ${formatAmount(grandRevenue)}`, bold: true },
+    { text: `Combined Actual Revenue: ${formatAmount(actualRevenue)}`, bold: true },
   ];
 
   if (reports.length === 0) {
@@ -359,6 +395,10 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
     (total, report) => total + Number(report.grandIncomeTotal || 0),
     0,
   );
+  const combinedActualRevenue = reports.reduce(
+    (total, report) => total + Number(report.actualRevenueTotal || 0),
+    0,
+  );
   const dailyReports = reports.map((report) => {
     const lineMarkup = buildNightDutyReportLines(report).map((line) => {
       const entry = typeof line === "string" ? { text: line } : line;
@@ -367,6 +407,7 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
         entry.dividerBefore ? "divider-before" : "",
         entry.dividerAfter ? "divider-after" : "",
         String(entry.text ?? "").startsWith("GRAND REVENUE TOTAL") ? "grand-total" : "",
+        String(entry.text ?? "").startsWith("ACTUAL REVENUE TOTAL") ? "actual-total" : "",
       ].filter(Boolean).join(" ");
       return `<div class="${classes}">${escapeHtml(entry.text || " ")}</div>`;
     }).join("");
@@ -390,10 +431,11 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
         .divider-before { border-top: 1px solid #94a3b8; margin-top: 9px; padding-top: 6px; }
         .divider-after { border-bottom: 1px solid #94a3b8; margin-bottom: 6px; padding-bottom: 6px; }
         .grand-total { border-bottom: 3px double #8a6923; border-top: 3px double #8a6923; color: #162338; font-size: 14px; font-weight: 900; margin: 10px 0; padding: 8px 0; }
+        .actual-total { color: #162338; font-size: 13px; font-weight: 800; margin-bottom: 10px; padding: 4px 0 8px; }
       </style>
     </head><body>
       <h1>Sunshine Hotel Full Night Duty Report</h1>
-      <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Stored daily reports:</strong> ${reports.length}<br><strong>Combined revenue:</strong> ${escapeHtml(formatAmount(combinedRevenue))}</div>
+      <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Stored daily reports:</strong> ${reports.length}<br><strong>Combined Grand Revenue:</strong> ${escapeHtml(formatAmount(combinedRevenue))}<br><strong>Combined Actual Revenue:</strong> ${escapeHtml(formatAmount(combinedActualRevenue))}</div>
       ${dailyReports || "<p>No stored Night Duty reports were found in this date range.</p>"}
     </body></html>
   `);
@@ -439,8 +481,9 @@ function printNightDutyReport(reportData) {
       <h3>${escapeHtml(outlet.label)}</h3>
       <table><thead><tr><th>Source</th><th>Amount</th><th>Revenue treatment</th></tr></thead>
         <tbody>
-          ${outlet.fields.map((field) => `<tr><td>${escapeHtml(field.label)}</td><td>${escapeHtml(formatAmount(reportData.income?.[outlet.key]?.[field.key]))}</td><td>${field.excludeFromRevenue ? "Excluded" : "Included"}</td></tr>`).join("")}
-          <tr><th>Revenue total</th><th>${escapeHtml(formatAmount(outlet.revenueTotal))}</th><th></th></tr>
+          ${outlet.fields.map((field) => `<tr><td>${escapeHtml(field.label)}</td><td>${escapeHtml(formatIncomeFieldValue(field, reportData.income?.[outlet.key]?.[field.key]))}</td><td>${escapeHtml(getRevenueTreatment(field))}</td></tr>`).join("")}
+          <tr><th>Grand Revenue</th><th>${escapeHtml(formatAmount(outlet.grandRevenueTotal))}</th><th>All monetary entries</th></tr>
+          <tr><th>Actual Revenue</th><th>${escapeHtml(formatAmount(outlet.actualRevenueTotal))}</th><th>Included revenue only</th></tr>
         </tbody>
       </table>
     </section>
@@ -486,6 +529,7 @@ function printNightDutyReport(reportData) {
         section { break-inside: avoid; }
         .meta { color: #64748b; }
         .grand-total { border-bottom: 3px double #8a6923; border-top: 3px double #8a6923; color: #162338; font-size: 16px; font-weight: 900; margin-top: 16px; padding: 10px 0; }
+        .actual-total { border-bottom: 1px solid #94a3b8; color: #162338; font-size: 14px; font-weight: 800; margin: 0 0 16px; padding: 8px 0; }
         .signature { border-top: 1px solid #475569; margin-top: 38px; padding-top: 7px; width: 48%; }
       </style>
     </head><body>
@@ -498,6 +542,7 @@ function printNightDutyReport(reportData) {
 
       <h2>Income dashboard</h2>${incomeHtml}
       <p class="grand-total">GRAND REVENUE TOTAL: ${escapeHtml(formatAmount(reportData.grandIncomeTotal))}</p>
+      <p class="actual-total">ACTUAL REVENUE TOTAL: ${escapeHtml(formatAmount(reportData.actualRevenueTotal))}</p>
 
       <h2>Staff on duty and departmental notes</h2>
       <table><thead><tr><th>Department</th><th>Staff</th><th>Night Duty note</th></tr></thead><tbody>${staffHtml}</tbody></table>
@@ -1049,6 +1094,7 @@ export default function NightDutyPanel({
       ),
     },
     { label: "Grand revenue", value: formatAmount(reportData.grandIncomeTotal) },
+    { label: "Actual revenue", value: formatAmount(reportData.actualRevenueTotal) },
     { label: "Archived reports", value: reportHistory.length },
   ];
 
@@ -1106,7 +1152,7 @@ export default function NightDutyPanel({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {summaryCards.map((card) => (
           <div key={card.label} className="subpanel"><span className="metric-label">{card.label}</span><span className="metric-value">{card.value}</span></div>
         ))}
@@ -1163,17 +1209,30 @@ export default function NightDutyPanel({
           <div className="grid gap-4 xl:grid-cols-2">
             {nightDutyOutletConfig.map((outlet) => (
               <div key={outlet.key} className="subpanel">
-                <div className="flex flex-wrap items-center justify-between gap-3"><p className="metric-label">{outlet.label}</p><span className="badge">Revenue {formatAmount(getOutletTotal(incomeForm, outlet.key))}</span></div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="metric-label">{outlet.label}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="badge">Grand {formatAmount(getOutletTotal(incomeForm, outlet.key, { includeNonRevenue: true }))}</span>
+                    <span className="badge">Actual {formatAmount(getOutletTotal(incomeForm, outlet.key))}</span>
+                  </div>
+                </div>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   {outlet.fields.map((field) => (
-                    <label key={field.key} className="field"><span>{field.label}{field.excludeFromRevenue ? " — excluded from revenue" : ""}</span><input type="number" min="0" step="0.01" value={incomeForm?.[outlet.key]?.[field.key] ?? 0} onChange={(event) => updateIncome(outlet.key, field.key, event.target.value)} disabled={readOnly || savingSection} /></label>
+                    <label key={field.key} className="field">
+                      <span>{field.label}{field.nonFinancial ? " — attendance count" : field.excludeFromRevenue ? " — Grand Revenue only" : ""}</span>
+                      <input type="number" min="0" max={field.nonFinancial ? "1000000" : undefined} step={field.nonFinancial ? "1" : "0.01"} value={incomeForm?.[outlet.key]?.[field.key] ?? 0} onChange={(event) => updateIncome(outlet.key, field.key, event.target.value)} disabled={readOnly || savingSection} />
+                    </label>
                   ))}
                 </div>
-                {outlet.key === "frontOffice" ? <p className="mt-3 text-xs leading-5 text-slate-500">Advance payments and deposits are stored but excluded from revenue totals. Weekly and monthly room-revenue analysis uses Room revenue only.</p> : null}
+                {outlet.key === "restaurant" ? <p className="mt-3 text-xs leading-5 text-slate-500">Brunch revenue is included in both totals. Brunch attendees is a head count and is never added as money.</p> : null}
+                {outlet.key === "frontOffice" ? <p className="mt-3 text-xs leading-5 text-slate-500">Advance payments and deposits are included in Grand Revenue but excluded from Actual Revenue. Weekly and monthly room-revenue analysis still uses Room revenue only.</p> : null}
               </div>
             ))}
           </div>
-          <div className="subpanel"><p className="metric-label">Grand revenue total</p><p className="mt-4 text-3xl font-semibold text-[#162338]">{formatAmount(getGrandIncomeTotal(incomeForm))}</p></div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="subpanel"><p className="metric-label">Grand Revenue — all monetary entries</p><p className="mt-4 text-3xl font-semibold text-[#162338]">{formatAmount(getGrandIncomeTotal(incomeForm))}</p></div>
+            <div className="subpanel"><p className="metric-label">Actual Revenue — included revenue only</p><p className="mt-4 text-3xl font-semibold text-[#162338]">{formatAmount(getActualRevenueTotal(incomeForm))}</p></div>
+          </div>
           <button type="submit" className="button-primary w-full" disabled={readOnly || savingSection}>{savingSection === "Income dashboard" ? "Saving..." : "Save income dashboard"}</button>
         </form>
       ) : null}
@@ -1280,7 +1339,7 @@ export default function NightDutyPanel({
           <div className="grid gap-4 sm:grid-cols-2"><div className="subpanel"><p className="metric-label">Last 7 days room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(weeklyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div><div className="subpanel"><p className="metric-label">{formatDateKey(`${currentMonth}-01`, { month: "long", year: "numeric" })} room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(monthlyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div></div>
           <div className="subpanel">
             <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"><label className="field"><span>Stored activity date</span><input type="date" value={selectedHistoryDate} max={latestNightDutyReportDateKey} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button></div>
-            {loadingHistoryReport ? <p className="mt-5 text-sm text-slate-500">Loading the selected date...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Night Duty report exists for the selected date.</p>}
+            {loadingHistoryReport ? <p className="mt-5 text-sm text-slate-500">Loading the selected date...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Grand Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.grandIncomeTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Actual Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.actualRevenueTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Night Duty report exists for the selected date.</p>}
           </div>
           <div className="subpanel">
             <div>
@@ -1296,10 +1355,11 @@ export default function NightDutyPanel({
             </div>
             {rangeReportLoaded ? (
               <div className="mt-5">
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-xl bg-slate-50 p-4 text-sm">Reports found<br /><strong className="text-xl text-[#162338]">{rangeReportData.length}</strong></div>
                   <div className="rounded-xl bg-slate-50 p-4 text-sm">Combined occupancy<br /><strong className="text-xl text-[#162338]">{rangeReportData.reduce((total, report) => total + report.occupancyTotal, 0)}</strong></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Combined revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeReportData.reduce((total, report) => total + report.grandIncomeTotal, 0))}</strong></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Combined Grand Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeReportData.reduce((total, report) => total + report.grandIncomeTotal, 0))}</strong></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Combined Actual Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeReportData.reduce((total, report) => total + report.actualRevenueTotal, 0))}</strong></div>
                 </div>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <button type="button" className="button-secondary flex-1" disabled={rangeReportData.length === 0} onClick={() => {
@@ -1310,7 +1370,7 @@ export default function NightDutyPanel({
                 </div>
                 {rangeReportData.length > 0 ? (
                   <div className="mt-4 overflow-x-auto">
-                    <table className="min-w-full text-sm"><thead><tr className="text-left text-slate-500"><th className="px-3 py-2">Activity date</th><th className="px-3 py-2">Occupancy</th><th className="px-3 py-2">Revenue</th><th className="px-3 py-2">Signed by</th></tr></thead><tbody>{rangeReportData.map((report) => <tr key={report.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(report.operationalDateKey)}</td><td className="px-3 py-2">{report.occupancyTotal}</td><td className="px-3 py-2">{formatAmount(report.grandIncomeTotal)}</td><td className="px-3 py-2">{report.nightDutySupervisorSignature || "Not signed"}</td></tr>)}</tbody></table>
+                    <table className="min-w-full text-sm"><thead><tr className="text-left text-slate-500"><th className="px-3 py-2">Activity date</th><th className="px-3 py-2">Occupancy</th><th className="px-3 py-2">Grand Revenue</th><th className="px-3 py-2">Actual Revenue</th><th className="px-3 py-2">Signed by</th></tr></thead><tbody>{rangeReportData.map((report) => <tr key={report.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(report.operationalDateKey)}</td><td className="px-3 py-2">{report.occupancyTotal}</td><td className="px-3 py-2">{formatAmount(report.grandIncomeTotal)}</td><td className="px-3 py-2">{formatAmount(report.actualRevenueTotal)}</td><td className="px-3 py-2">{report.nightDutySupervisorSignature || "Not signed"}</td></tr>)}</tbody></table>
                   </div>
                 ) : <p className="mt-4 text-sm text-slate-500">No stored Night Duty reports were found in the selected range.</p>}
               </div>

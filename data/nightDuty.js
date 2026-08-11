@@ -30,6 +30,12 @@ export const nightDutyOutletConfig = [
       { key: "food", label: "Food" },
       { key: "beverage", label: "Beverage" },
       { key: "trayCharge", label: "Tray charge" },
+      { key: "brunchRevenue", label: "Brunch revenue" },
+      {
+        key: "brunchAttendees",
+        label: "Brunch attendees",
+        nonFinancial: true,
+      },
     ],
   },
   {
@@ -155,7 +161,10 @@ function normalizeIncome(income = {}) {
             ? income?.frontOffice?.inHouse
             : undefined;
 
-          return [field.key, normalizeAmount(income?.[outlet.key]?.[field.key] ?? legacyValue)];
+          const value = income?.[outlet.key]?.[field.key] ?? legacyValue;
+          return [field.key, field.nonFinancial
+            ? normalizeCount(value, 1000000)
+            : normalizeAmount(value)];
         }),
       ),
     ]),
@@ -327,16 +336,30 @@ export function getOutletTotal(income = {}, outletKey, { includeNonRevenue = fal
   if (!outlet) return 0;
 
   return outlet.fields.reduce(
-    (total, field) => includeNonRevenue || !field.excludeFromRevenue
-      ? total + normalizeAmount(income?.[outlet.key]?.[field.key])
-      : total,
+    (total, field) => {
+      if (field.nonFinancial) return total;
+      return includeNonRevenue || !field.excludeFromRevenue
+        ? total + normalizeAmount(income?.[outlet.key]?.[field.key])
+        : total;
+    },
+    0,
+  );
+}
+
+export function getActualRevenueTotal(income = {}) {
+  return nightDutyOutletConfig.reduce(
+    (total, outlet) => total + getOutletTotal(income, outlet.key),
     0,
   );
 }
 
 export function getGrandIncomeTotal(income = {}) {
   return nightDutyOutletConfig.reduce(
-    (total, outlet) => total + getOutletTotal(income, outlet.key),
+    (total, outlet) => total + getOutletTotal(
+      income,
+      outlet.key,
+      { includeNonRevenue: true },
+    ),
     0,
   );
 }
