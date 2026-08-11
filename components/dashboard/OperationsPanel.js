@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   configuredHotelRoomCount,
   getRoomOptionsForFloor,
+  normalizeOccupiedRooms,
   roomFloorOptions,
   roomGroups,
   statedHotelRoomCount,
   unlistedRoomCount,
 } from "@/data/hotelRooms";
+import { getNightDutyReportDateKey } from "@/data/nightDuty";
 import { getRoomComplaintLabel } from "@/data/propertyStatus";
 import { formatFriendlyDate } from "@/lib/format";
 import {
@@ -235,7 +237,7 @@ function InHouseRoomList({ rooms, canEdit, saving, onSave, onDelete }) {
   );
 
   if (rooms.length === 0) {
-    return <div className="subpanel mt-6 text-sm text-slate-500">No rooms are currently in-house.</div>;
+    return <div className="subpanel mt-6 text-sm text-slate-500">No rooms have been saved for this In-house activity date.</div>;
   }
 
   return (
@@ -885,6 +887,8 @@ export default function OperationsPanel({
   eventsBookings,
   onSaveFrontOffice,
   onSaveHousekeeping,
+  onLoadInHouseReport,
+  onSaveInHouseReport,
 }) {
   const access = getOperationsAccess(profile);
   const operationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
@@ -922,6 +926,16 @@ export default function OperationsPanel({
   const [reportStartDate, setReportStartDate] = useState(operationalDateKey);
   const [reportEndDate, setReportEndDate] = useState(operationalDateKey);
   const [activeRoomNav, setActiveRoomNav] = useState("in_house");
+  const [selectedInHouseDate, setSelectedInHouseDate] = useState(getNightDutyReportDateKey());
+  const [datedInHouseRooms, setDatedInHouseRooms] = useState([]);
+  const [datedInHouseLoading, setDatedInHouseLoading] = useState(false);
+  const [datedInHouseSaving, setDatedInHouseSaving] = useState(false);
+  const [datedInHouseMeta, setDatedInHouseMeta] = useState(null);
+  const [datedRoomFloor, setDatedRoomFloor] = useState("");
+  const [datedRoomNumber, setDatedRoomNumber] = useState("");
+  const [datedGuestType, setDatedGuestType] = useState("walk_in");
+  const [datedBreakfastIncluded, setDatedBreakfastIncluded] = useState(false);
+  const [datedBreakfastCount, setDatedBreakfastCount] = useState("1");
   const [feedback, setFeedback] = useState({
     frontOffice: { type: "", message: "" },
     housekeeping: { type: "", message: "" },
@@ -1034,6 +1048,18 @@ export default function OperationsPanel({
       ]),
     [cleanedRoomNumbers, occupiedRoomNumbers, outOfOrderRoomNumbers, selectedCleanedFloor],
   );
+  const datedOccupiedRoomNumbers = useMemo(
+    () => datedInHouseRooms.map((room) => room.roomNumber),
+    [datedInHouseRooms],
+  );
+  const datedAvailableFloors = useMemo(
+    () => getFloorsWithAvailableRooms(datedOccupiedRoomNumbers),
+    [datedOccupiedRoomNumbers],
+  );
+  const datedAvailableRooms = useMemo(
+    () => getRoomOptionsForFloor(datedRoomFloor, datedOccupiedRoomNumbers),
+    [datedOccupiedRoomNumbers, datedRoomFloor],
+  );
   const dailyReportLines = useMemo(
     () => buildDailyReportLines({ operations, eventsBookings, propertyStatus }),
     [eventsBookings, operations, propertyStatus],
@@ -1059,9 +1085,18 @@ export default function OperationsPanel({
       ? `Sunshine Hotel Daily Operations Report - ${formatDateKey(rangeStart)}`
       : `Sunshine Hotel Daily Operations Range Report - ${formatDateKey(rangeStart)} to ${formatDateKey(rangeEnd)}`;
   }, [operationalDateKey, reportEndDate, reportStartDate]);
+  const datedInHouseSnapshot = useMemo(() => ({
+    operationalDateKey: selectedInHouseDate,
+    occupiedRooms: datedInHouseRooms,
+    inHouse: datedInHouseRooms.length,
+    breakfastEntitled: datedInHouseRooms.reduce(
+      (total, room) => total + (room.breakfastIncluded ? Number(room.breakfastCount) || 0 : 0),
+      0,
+    ),
+  }), [datedInHouseRooms, selectedInHouseDate]);
   const inHouseReportLines = useMemo(
-    () => buildInHouseReportLines(operations),
-    [operations],
+    () => buildInHouseReportLines(datedInHouseSnapshot),
+    [datedInHouseSnapshot],
   );
   const cleanedReportLines = useMemo(
     () => buildCleanedRoomsReportLines(operations),
@@ -1172,6 +1207,73 @@ export default function OperationsPanel({
     }
   }, [operationalDateKey, reportEndDate, reportStartDate]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSelectedInHouseDate() {
+      setDatedInHouseLoading(true);
+      setDatedInHouseMeta(null);
+      setFeedback((current) => ({
+        ...current,
+        frontOffice: { type: "", message: "" },
+      }));
+
+      try {
+        const storedReport = onLoadInHouseReport
+          ? await onLoadInHouseReport(selectedInHouseDate)
+          : null;
+        if (cancelled) return;
+
+        if (storedReport) {
+          setDatedInHouseRooms(storedReport.occupiedRooms ?? []);
+          setDatedInHouseMeta(storedReport);
+          return;
+        }
+
+        const legacySnapshot = (operations?.reportHistory ?? []).find(
+          (entry) => entry?.dateKey === selectedInHouseDate,
+        );
+        setDatedInHouseRooms(normalizeOccupiedRooms(
+          legacySnapshot?.occupiedRooms ?? legacySnapshot?.occupiedRoomNumbers ?? [],
+          selectedInHouseDate,
+        ));
+      } catch (error) {
+        if (cancelled) return;
+        setDatedInHouseRooms([]);
+        setFeedback((current) => ({
+          ...current,
+          frontOffice: { type: "error", message: error.message },
+        }));
+      } finally {
+        if (!cancelled) setDatedInHouseLoading(false);
+      }
+    }
+
+    loadSelectedInHouseDate();
+    return () => {
+      cancelled = true;
+    };
+  }, [onLoadInHouseReport, operations?.reportHistory, selectedInHouseDate]);
+
+  useEffect(() => {
+    if (
+      datedRoomFloor &&
+      !datedAvailableFloors.some((floor) => floor.value === datedRoomFloor)
+    ) {
+      setDatedRoomFloor("");
+      setDatedRoomNumber("");
+    }
+  }, [datedAvailableFloors, datedRoomFloor]);
+
+  useEffect(() => {
+    if (
+      datedRoomNumber &&
+      !datedAvailableRooms.some((room) => room.value === datedRoomNumber)
+    ) {
+      setDatedRoomNumber("");
+    }
+  }, [datedAvailableRooms, datedRoomNumber]);
+
   if (!access.canViewPanel) {
     return null;
   }
@@ -1232,6 +1334,88 @@ export default function OperationsPanel({
     } finally {
       setHousekeepingSaving(false);
     }
+  }
+
+  async function persistDatedInHouseRooms(nextRooms, message) {
+    if (!onSaveInHouseReport) return;
+
+    setDatedInHouseSaving(true);
+    setFeedback((current) => ({
+      ...current,
+      frontOffice: { type: "", message: "" },
+    }));
+
+    try {
+      const storedReport = await onSaveInHouseReport({
+        operationalDateKey: selectedInHouseDate,
+        occupiedRooms: nextRooms,
+      });
+      setDatedInHouseRooms(storedReport?.occupiedRooms ?? nextRooms);
+      setDatedInHouseMeta(storedReport ?? null);
+      setFeedback((current) => ({
+        ...current,
+        frontOffice: { type: "success", message },
+      }));
+    } catch (error) {
+      setFeedback((current) => ({
+        ...current,
+        frontOffice: { type: "error", message: error.message },
+      }));
+    } finally {
+      setDatedInHouseSaving(false);
+    }
+  }
+
+  async function handleAddDatedInHouseRoom(event) {
+    event.preventDefault();
+    if (!datedRoomFloor || !datedRoomNumber) return;
+
+    const nextRooms = normalizeOccupiedRooms([
+      ...datedInHouseRooms,
+      {
+        roomNumber: datedRoomNumber,
+        breakfastIncluded: datedBreakfastIncluded,
+        breakfastCount: datedBreakfastIncluded
+          ? Math.min(Math.max(Number(datedBreakfastCount) || 1, 1), 20)
+          : 0,
+        bookedDays: 1,
+        bookedOnDateKey: selectedInHouseDate,
+        guestType: datedGuestType,
+        checkInCategory: "normal_check_in",
+      },
+    ], selectedInHouseDate);
+
+    await persistDatedInHouseRooms(
+      nextRooms,
+      `${datedRoomNumber} added to the ${formatDateKey(selectedInHouseDate)} In-house report.`,
+    );
+    setDatedRoomNumber("");
+    setDatedGuestType("walk_in");
+    setDatedBreakfastIncluded(false);
+    setDatedBreakfastCount("1");
+  }
+
+  async function handleUpdateDatedInHouseRoom(roomNumber, values) {
+    await persistDatedInHouseRooms(
+      datedInHouseRooms.map((room) => room.roomNumber === roomNumber
+        ? { ...room, ...values }
+        : room),
+      `${roomNumber} updated for ${formatDateKey(selectedInHouseDate)}.`,
+    );
+  }
+
+  async function handleDeleteDatedInHouseRoom(roomNumber) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`Remove ${roomNumber} from the ${formatDateKey(selectedInHouseDate)} In-house report?`)
+    ) {
+      return;
+    }
+
+    await persistDatedInHouseRooms(
+      datedInHouseRooms.filter((room) => room.roomNumber !== roomNumber),
+      `${roomNumber} removed from ${formatDateKey(selectedInHouseDate)}.`,
+    );
   }
 
   async function handleAssignRoom(event) {
@@ -1349,71 +1533,6 @@ export default function OperationsPanel({
       },
       `${selectedCheckoutRoom} checked out.`,
     );
-  }
-
-  async function handleUpdateInHouseRoom(roomNumber, values) {
-    const targetRoom = occupiedRooms.find((room) => room.roomNumber === roomNumber);
-    if (!targetRoom) return;
-
-    const createdAt = new Date().toISOString();
-    await saveFrontOffice({
-      occupiedRooms: occupiedRooms.map((room) => room.roomNumber === roomNumber
-        ? { ...room, ...values }
-        : room),
-      activityEntries: [{
-        id: `activity-${Date.now()}`,
-        actionType: "in_house_update",
-        operationalDateKey,
-        createdAt,
-        roomNumber,
-        actorName: profile?.fullName ?? "",
-        actorDepartment: profile?.departmentName ?? "",
-      }, ...(operations?.activityEntries ?? [])],
-      activityEntry: {
-        area: "front_office",
-        actionType: "in_house_update",
-        message: `${roomNumber} in-house details were updated.`,
-        targetRoomNumber: roomNumber,
-      },
-      notificationEntry: {
-        audienceTag: "operations",
-        title: "In-house update",
-        message: `${roomNumber} in-house details were updated.`,
-        relatedRoomNumber: roomNumber,
-      },
-    }, `${roomNumber} updated.`);
-  }
-
-  async function handleDeleteInHouseRoom(roomNumber) {
-    if (typeof window !== "undefined" && !window.confirm(`Delete ${roomNumber} from the in-house list?`)) {
-      return;
-    }
-
-    const createdAt = new Date().toISOString();
-    await saveFrontOffice({
-      occupiedRooms: occupiedRooms.filter((room) => room.roomNumber !== roomNumber),
-      activityEntries: [{
-        id: `activity-${Date.now()}`,
-        actionType: "in_house_delete",
-        operationalDateKey,
-        createdAt,
-        roomNumber,
-        actorName: profile?.fullName ?? "",
-        actorDepartment: profile?.departmentName ?? "",
-      }, ...(operations?.activityEntries ?? [])],
-      activityEntry: {
-        area: "front_office",
-        actionType: "in_house_delete",
-        message: `${roomNumber} was deleted from the in-house list.`,
-        targetRoomNumber: roomNumber,
-      },
-      notificationEntry: {
-        audienceTag: "operations",
-        title: "In-house update",
-        message: `${roomNumber} was removed from the in-house list.`,
-        relatedRoomNumber: roomNumber,
-      },
-    }, `${roomNumber} removed from in-house.`);
   }
 
   async function handleMoveRoom(event) {
@@ -1578,7 +1697,7 @@ export default function OperationsPanel({
       <nav className="no-print mt-6 flex gap-2 overflow-x-auto rounded-2xl bg-slate-100 p-1" aria-label="Room sections">
         <button type="button" onClick={() => setActiveRoomNav("in_house")}
           className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold ${activeRoomNav === "in_house" ? "bg-white text-[#162338] shadow" : "text-slate-500"}`}>
-          In-house ({occupiedRooms.length})
+          In-house ({datedInHouseRooms.length})
         </button>
         <button type="button" onClick={() => setActiveRoomNav("controls")}
           className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold ${activeRoomNav === "controls" ? "bg-white text-[#162338] shadow" : "text-slate-500"}`}>
@@ -1587,8 +1706,85 @@ export default function OperationsPanel({
       </nav>
 
       {activeRoomNav === "in_house" ? (
-        <InHouseRoomList rooms={occupiedRooms} canEdit={access.canEditFrontOffice}
-          saving={frontOfficeSaving} onSave={handleUpdateInHouseRoom} onDelete={handleDeleteInHouseRoom} />
+        <div className="mt-6 space-y-5">
+          <div className="subpanel">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-end">
+              <div>
+                <p className="metric-label">Dated In-house report</p>
+                <h3 className="mt-2 text-xl font-bold text-[#162338]">
+                  {formatDateKey(selectedInHouseDate)}
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Select yesterday or any earlier activity date. This dated room list becomes the Front Office reference in the Night Duty report for the same date.
+                </p>
+                {datedInHouseMeta?.updatedByName ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Last saved by {datedInHouseMeta.updatedByName}
+                    {datedInHouseMeta.updatedByDepartment ? ` · ${datedInHouseMeta.updatedByDepartment}` : ""}
+                  </p>
+                ) : null}
+              </div>
+              <label className="field">
+                <span>Activity date</span>
+                <input
+                  type="date"
+                  value={selectedInHouseDate}
+                  max={getNightDutyReportDateKey()}
+                  onChange={(event) => setSelectedInHouseDate(event.target.value)}
+                  disabled={datedInHouseLoading || datedInHouseSaving}
+                />
+              </label>
+            </div>
+          </div>
+
+          {access.canEditFrontOffice ? (
+            <form onSubmit={handleAddDatedInHouseRoom} className="subpanel">
+              <p className="metric-label">Add room for this date</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <FloorSelect
+                  label="Floor"
+                  value={datedRoomFloor}
+                  onChange={(event) => {
+                    setDatedRoomFloor(event.target.value);
+                    setDatedRoomNumber("");
+                  }}
+                  floors={datedAvailableFloors}
+                  disabled={datedInHouseLoading || datedInHouseSaving}
+                />
+                <RoomSelect
+                  label="Room"
+                  value={datedRoomNumber}
+                  onChange={(event) => setDatedRoomNumber(event.target.value)}
+                  rooms={datedAvailableRooms}
+                  disabled={!datedRoomFloor || datedInHouseLoading || datedInHouseSaving}
+                />
+                <label className="field"><span>Guest type</span><select value={datedGuestType} onChange={(event) => setDatedGuestType(event.target.value)} disabled={datedInHouseLoading || datedInHouseSaving}><option value="walk_in">Walk in</option><option value="corporate">Corporate</option></select></label>
+                <label className="field"><span>Breakfast</span><select value={datedBreakfastIncluded ? "yes" : "no"} onChange={(event) => setDatedBreakfastIncluded(event.target.value === "yes")} disabled={datedInHouseLoading || datedInHouseSaving}><option value="no">No</option><option value="yes">Yes</option></select></label>
+                <label className="field"><span>Breakfast count</span><input type="number" min="1" max="20" value={datedBreakfastIncluded ? datedBreakfastCount : "0"} onChange={(event) => setDatedBreakfastCount(event.target.value)} disabled={!datedBreakfastIncluded || datedInHouseLoading || datedInHouseSaving} /></label>
+              </div>
+              <button type="submit" className="button-primary mt-4 w-full" disabled={!datedRoomNumber || datedInHouseLoading || datedInHouseSaving}>
+                {datedInHouseSaving ? "Saving..." : "Add room to dated In-house report"}
+              </button>
+            </form>
+          ) : null}
+
+          {feedback.frontOffice.message ? (
+            <div className={`rounded-2xl px-4 py-3 text-sm ${
+              feedback.frontOffice.type === "success"
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-rose-50 text-rose-700"
+            }`}>
+              {feedback.frontOffice.message}
+            </div>
+          ) : null}
+
+          {datedInHouseLoading ? (
+            <div className="subpanel text-sm text-slate-500">Loading the selected In-house date...</div>
+          ) : (
+            <InHouseRoomList rooms={datedInHouseRooms} canEdit={access.canEditFrontOffice}
+              saving={datedInHouseSaving} onSave={handleUpdateDatedInHouseRoom} onDelete={handleDeleteDatedInHouseRoom} />
+          )}
+        </div>
       ) : (
         <>
 

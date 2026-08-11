@@ -38,6 +38,10 @@ import {
   buildDefaultHousekeepingReports,
   mergeHousekeepingReports,
 } from "@/data/housekeepingReports";
+import {
+  buildInHouseReport,
+  normalizeStoredInHouseReport,
+} from "@/data/inHouseReports";
 import { defaultStoreInventory, mergeStoreInventory } from "@/data/storeInventory";
 import {
   defaultNightDutyData,
@@ -78,6 +82,7 @@ const defaultPortalState = {
 };
 
 const MAX_REPORT_HISTORY_DAYS = 120;
+const MAX_VISIBLE_NIGHT_DUTY_REPORTS = 31;
 const MAX_OPERATIONS_ACTIVITY = 300;
 const MAX_VISIBLE_NOTIFICATIONS = 80;
 const MAX_VISIBLE_ACTIVITY_LOGS = 200;
@@ -623,7 +628,7 @@ export function usePortalData(profile) {
               query(
                 collection(db, "nightDutyReports"),
                 orderBy("operationalDateKey", "desc"),
-                limit(MAX_REPORT_HISTORY_DAYS),
+                limit(MAX_VISIBLE_NIGHT_DUTY_REPORTS),
               ),
               (snapshot) => {
                 setPortalState((current) => ({
@@ -1442,6 +1447,80 @@ export function usePortalData(profile) {
       : null;
   }, []);
 
+  const loadNightDutyReportsInRange = useCallback(async (startDateKey, endDateKey) => {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(startDateKey ?? "") ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(endDateKey ?? "")
+    ) {
+      throw new Error("Select a valid report date range.");
+    }
+
+    const rangeStart = startDateKey <= endDateKey ? startDateKey : endDateKey;
+    const rangeEnd = startDateKey <= endDateKey ? endDateKey : startDateKey;
+    const snapshot = await getDocs(query(
+      collection(db, "nightDutyReports"),
+      where("operationalDateKey", ">=", rangeStart),
+      where("operationalDateKey", "<=", rangeEnd),
+      orderBy("operationalDateKey", "asc"),
+      limit(MAX_REPORT_HISTORY_DAYS),
+    ));
+
+    return snapshot.docs.map((reportDocument) => normalizeStoredNightDutyReport({
+      id: reportDocument.id,
+      ...reportDocument.data(),
+    }));
+  }, []);
+
+  const loadInHouseReport = useCallback(async (operationalDateKey) => {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(operationalDateKey ?? "")) {
+      throw new Error("Select a valid In-house activity date.");
+    }
+
+    const snapshot = await getDoc(doc(db, "inHouseReports", operationalDateKey));
+    return snapshot.exists()
+      ? normalizeStoredInHouseReport(snapshot.data(), operationalDateKey)
+      : null;
+  }, []);
+
+  async function saveInHouseReport(values) {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    const dateKey = values?.operationalDateKey ?? "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      throw new Error("Select a valid In-house activity date.");
+    }
+
+    if (dateKey > getNightDutyReportDateKey()) {
+      throw new Error("Dated In-house reports can only be saved for yesterday or an earlier date.");
+    }
+
+    const normalized = buildInHouseReport(values?.occupiedRooms ?? [], dateKey);
+    const persistedReport = {
+      ...normalized,
+      updatedAt: serverTimestamp(),
+      updatedAtIso: new Date().toISOString(),
+      updatedByUid: profile?.uid ?? null,
+      updatedByName: profile?.fullName ?? "",
+      updatedByDepartment: profile?.departmentName ?? "",
+    };
+
+    await setDoc(doc(db, "inHouseReports", dateKey), persistedReport, { merge: false });
+    return normalizeStoredInHouseReport({
+      ...persistedReport,
+      updatedAt: null,
+    }, dateKey);
+  }
+
   async function saveStaffProfile(userId, values) {
     if (!db) {
       throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
@@ -1663,7 +1742,10 @@ export function usePortalData(profile) {
     saveStoreReturn,
     saveStoreAdjustment,
     loadNightDutyReport,
+    loadNightDutyReportsInRange,
     saveNightDutyData,
+    loadInHouseReport,
+    saveInHouseReport,
     saveStaffProfile,
     saveShiftAssignment,
     removeShiftAssignment,

@@ -21,7 +21,13 @@ import {
   propertyUtilityFields,
 } from "@/data/propertyStatus";
 import { formatFriendlyDate } from "@/lib/format";
-import { formatDateKey, getOperationalDateKey, isWithinOperationalDate } from "@/lib/hotelTime";
+import {
+  addDaysToDateKey,
+  formatDateKey,
+  getOperationalDateKey,
+  isWithinOperationalDate,
+  listDateKeysInRange,
+} from "@/lib/hotelTime";
 import { downloadTextPdf } from "@/lib/pdf";
 import { getNightDutyAccess } from "@/lib/roles";
 
@@ -304,6 +310,98 @@ function buildNightDutyReportLines(reportData) {
   return lines;
 }
 
+function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
+  const grandRevenue = reports.reduce(
+    (total, report) => total + Number(report.grandIncomeTotal || 0),
+    0,
+  );
+  const lines = [
+    {
+      text: `FULL NIGHT DUTY REPORT: ${formatDateKey(rangeStart)} TO ${formatDateKey(rangeEnd)}`,
+      bold: true,
+      fontSize: 15,
+      dividerAfter: true,
+      spaceAfter: 6,
+    },
+    { text: `Stored daily reports found: ${reports.length}`, bold: true },
+    { text: `Combined revenue total: ${formatAmount(grandRevenue)}`, bold: true },
+  ];
+
+  if (reports.length === 0) {
+    lines.push("No stored Night Duty reports were found in this date range.");
+    return lines;
+  }
+
+  reports.forEach((report, index) => {
+    lines.push({
+      text: `DAILY REPORT ${index + 1}: ${formatDateKey(report.operationalDateKey)}`,
+      bold: true,
+      fontSize: 15,
+      dividerBefore: true,
+      dividerAfter: true,
+      spaceBefore: 14,
+      spaceAfter: 6,
+      keepWithNext: true,
+      pageBreakBefore: true,
+    });
+    lines.push(...buildNightDutyReportLines(report));
+  });
+
+  return lines;
+}
+
+function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
+  if (typeof window === "undefined") return;
+  const reportWindow = window.open("", "_blank", "width=1080,height=860");
+  if (!reportWindow) return;
+
+  const combinedRevenue = reports.reduce(
+    (total, report) => total + Number(report.grandIncomeTotal || 0),
+    0,
+  );
+  const dailyReports = reports.map((report) => {
+    const lineMarkup = buildNightDutyReportLines(report).map((line) => {
+      const entry = typeof line === "string" ? { text: line } : line;
+      const classes = [
+        entry.bold ? "bold" : "",
+        entry.dividerBefore ? "divider-before" : "",
+        entry.dividerAfter ? "divider-after" : "",
+        String(entry.text ?? "").startsWith("GRAND REVENUE TOTAL") ? "grand-total" : "",
+      ].filter(Boolean).join(" ");
+      return `<div class="${classes}">${escapeHtml(entry.text || " ")}</div>`;
+    }).join("");
+
+    return `<article><h2>${escapeHtml(formatDateKey(report.operationalDateKey))}</h2>${lineMarkup}</article>`;
+  }).join("");
+
+  reportWindow.document.open();
+  reportWindow.document.write(`
+    <!doctype html><html><head><title>Sunshine Hotel Full Night Duty Report</title>
+      <style>
+        @page { size: A4; margin: 12mm; }
+        body { color: #1f2937; font-family: Arial, sans-serif; margin: 0; }
+        h1 { color: #8a6923; font-size: 22px; margin: 0 0 8px; }
+        h2 { border-bottom: 2px solid #cbd5e1; color: #162338; font-size: 18px; margin: 24px 0 10px; padding-bottom: 7px; }
+        .summary { border: 1px solid #cbd5e1; margin: 12px 0 20px; padding: 10px; }
+        article { break-before: page; }
+        article:first-of-type { break-before: auto; }
+        article div { font-size: 10.5px; line-height: 1.55; white-space: pre-wrap; }
+        .bold { font-weight: 800; }
+        .divider-before { border-top: 1px solid #94a3b8; margin-top: 9px; padding-top: 6px; }
+        .divider-after { border-bottom: 1px solid #94a3b8; margin-bottom: 6px; padding-bottom: 6px; }
+        .grand-total { border-bottom: 3px double #8a6923; border-top: 3px double #8a6923; color: #162338; font-size: 14px; font-weight: 900; margin: 10px 0; padding: 8px 0; }
+      </style>
+    </head><body>
+      <h1>Sunshine Hotel Full Night Duty Report</h1>
+      <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Stored daily reports:</strong> ${reports.length}<br><strong>Combined revenue:</strong> ${escapeHtml(formatAmount(combinedRevenue))}</div>
+      ${dailyReports || "<p>No stored Night Duty reports were found in this date range.</p>"}
+    </body></html>
+  `);
+  reportWindow.document.close();
+  reportWindow.focus();
+  reportWindow.print();
+}
+
 function incidentHtml(label, incident) {
   if (!incident?.hasIncident) {
     return `<section><h3>${escapeHtml(label)}</h3><p>Nil</p></section>`;
@@ -469,6 +567,8 @@ export default function NightDutyPanel({
   nightDutyData,
   reportHistory = [],
   onLoadNightDutyReport,
+  onLoadNightDutyReportsInRange,
+  onLoadInHouseReport,
   onSaveNightDuty,
   onSaveUtilities,
 }) {
@@ -505,19 +605,32 @@ export default function NightDutyPanel({
   const [selectedReportDate, setSelectedReportDate] = useState(getNightDutyReportDateKey());
   const [loadedSelectedReport, setLoadedSelectedReport] = useState(null);
   const [loadingSelectedReport, setLoadingSelectedReport] = useState(false);
+  const [loadedInHouseReport, setLoadedInHouseReport] = useState(null);
+  const [loadingInHouseReport, setLoadingInHouseReport] = useState(false);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState("");
   const [loadedHistoryReport, setLoadedHistoryReport] = useState(null);
   const [loadingHistoryReport, setLoadingHistoryReport] = useState(false);
+  const [rangeStartDate, setRangeStartDate] = useState(
+    addDaysToDateKey(getNightDutyReportDateKey(), -6),
+  );
+  const [rangeEndDate, setRangeEndDate] = useState(getNightDutyReportDateKey());
+  const [rangeReports, setRangeReports] = useState([]);
+  const [loadingRangeReports, setLoadingRangeReports] = useState(false);
+  const [rangeReportLoaded, setRangeReportLoaded] = useState(false);
   const [savingSection, setSavingSection] = useState("");
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const selectedLoadRequest = useRef(0);
+  const inHouseLoadRequest = useRef(0);
   const historyLoadRequest = useRef(0);
   const currentOperationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
   const latestNightDutyReportDateKey = getNightDutyReportDateKey();
-  const selectedOperationsSnapshot = useMemo(
-    () => getOperationsSnapshotForDate(operations, selectedReportDate),
-    [operations, selectedReportDate],
-  );
+  const selectedOperationsSnapshot = useMemo(() => {
+    if (loadedInHouseReport?.operationalDateKey === selectedReportDate) {
+      return loadedInHouseReport;
+    }
+
+    return getOperationsSnapshotForDate(operations, selectedReportDate);
+  }, [loadedInHouseReport, operations, selectedReportDate]);
   const selectedFrontOfficeOccupancyByFloor = useMemo(
     () => buildOccupancyByFloor(selectedOperationsSnapshot ?? {}),
     [selectedOperationsSnapshot],
@@ -534,6 +647,10 @@ export default function NightDutyPanel({
     editableReport?.updatedAt || editableReport?.updatedAtIso,
   );
   const frontOfficeOccupancyByFloor = useMemo(() => {
+    if (selectedOperationsSnapshot) {
+      return selectedFrontOfficeOccupancyByFloor;
+    }
+
     if (hasSavedSelectedReport) {
       return editableReport.frontOfficeOccupancyByFloor;
     }
@@ -546,6 +663,7 @@ export default function NightDutyPanel({
     editableReport,
     hasSavedSelectedReport,
     operations,
+    selectedOperationsSnapshot,
     selectedFrontOfficeOccupancyByFloor,
     selectedReportDate,
   ]);
@@ -561,6 +679,35 @@ export default function NightDutyPanel({
       : buildComplaintSnapshots(propertyStatus, selectedReportDate),
     [editableReport, hasSavedSelectedReport, propertyStatus, selectedReportDate],
   );
+
+  useEffect(() => {
+    const requestId = inHouseLoadRequest.current + 1;
+    inHouseLoadRequest.current = requestId;
+    setLoadedInHouseReport(null);
+
+    if (!onLoadInHouseReport) {
+      setLoadingInHouseReport(false);
+      return;
+    }
+
+    setLoadingInHouseReport(true);
+    onLoadInHouseReport(selectedReportDate)
+      .then((storedReport) => {
+        if (inHouseLoadRequest.current === requestId) {
+          setLoadedInHouseReport(storedReport);
+        }
+      })
+      .catch((error) => {
+        if (inHouseLoadRequest.current === requestId) {
+          setFeedback({ type: "error", message: error.message });
+        }
+      })
+      .finally(() => {
+        if (inHouseLoadRequest.current === requestId) {
+          setLoadingInHouseReport(false);
+        }
+      });
+  }, [onLoadInHouseReport, selectedReportDate]);
 
   useEffect(() => {
     const defaultReport = buildDefaultNightDutyData(selectedReportDate);
@@ -654,6 +801,10 @@ export default function NightDutyPanel({
   const selectedHistoryReportData = selectedHistoryReport
     ? buildNightDutyReportData(selectedHistoryReport)
     : null;
+  const rangeReportData = useMemo(
+    () => rangeReports.map((report) => buildNightDutyReportData(report)),
+    [rangeReports],
+  );
   const currentMonth = selectedReportDate.slice(0, 7);
   const currentDate = new Date(`${selectedReportDate}T12:00:00Z`);
   const weekStart = new Date(currentDate);
@@ -732,6 +883,45 @@ export default function NightDutyPanel({
       if (historyLoadRequest.current === requestId) {
         setLoadingHistoryReport(false);
       }
+    }
+  }
+
+  async function loadReportRange() {
+    const dateKeys = listDateKeysInRange(rangeStartDate, rangeEndDate);
+    if (dateKeys.length === 0) {
+      setFeedback({ type: "error", message: "Select a valid start and end date." });
+      return;
+    }
+    if (dateKeys.length > 120) {
+      setFeedback({
+        type: "error",
+        message: "Choose a range of 120 days or fewer to keep the report fast and economical.",
+      });
+      return;
+    }
+
+    const rangeStart = dateKeys[0];
+    const rangeEnd = dateKeys[dateKeys.length - 1];
+    setLoadingRangeReports(true);
+    setRangeReportLoaded(false);
+    setFeedback({ type: "", message: "" });
+
+    try {
+      const reports = onLoadNightDutyReportsInRange
+        ? await onLoadNightDutyReportsInRange(rangeStart, rangeEnd)
+        : reportHistory.filter((entry) =>
+            entry.operationalDateKey >= rangeStart &&
+            entry.operationalDateKey <= rangeEnd,
+          );
+      setRangeReports([...reports].sort((left, right) =>
+        left.operationalDateKey.localeCompare(right.operationalDateKey),
+      ));
+      setRangeReportLoaded(true);
+    } catch (error) {
+      setRangeReports([]);
+      setFeedback({ type: "error", message: error.message });
+    } finally {
+      setLoadingRangeReports(false);
     }
   }
 
@@ -832,6 +1022,19 @@ export default function NightDutyPanel({
     });
   }
 
+  function handleRangeDownload() {
+    const dateKeys = listDateKeysInRange(rangeStartDate, rangeEndDate);
+    if (dateKeys.length === 0) return;
+    const rangeStart = dateKeys[0];
+    const rangeEnd = dateKeys[dateKeys.length - 1];
+
+    downloadTextPdf({
+      filename: `sunshine-night-duty-full-report-${rangeStart}-to-${rangeEnd}.pdf`,
+      title: "Sunshine Hotel Full Night Duty Report",
+      lines: buildNightDutyRangeReportLines(rangeReportData, rangeStart, rangeEnd),
+    });
+  }
+
   const summaryCards = [
     { label: "Night Duty occupancy", value: reportData.occupancyTotal },
     {
@@ -851,7 +1054,7 @@ export default function NightDutyPanel({
         <div>
           <h2 className="section-title">Night Duty</h2>
           <p className="section-copy max-w-3xl">
-            Each report covers the previous calendar day. Yesterday&apos;s Front Office occupancy, events and dated complaints are used as its starting reference.
+            Select any past activity date. The dated Front Office In-house report for that same date is loaded automatically, keeping both reports synchronized.
           </p>
         </div>
         <div className="flex flex-wrap gap-3 no-print">
@@ -882,12 +1085,12 @@ export default function NightDutyPanel({
           </button>
         </div>
         <p className="mt-3 text-sm text-slate-600">
-          {loadingSelectedReport
-            ? "Loading the report for this date..."
+          {loadingSelectedReport || loadingInHouseReport
+            ? "Loading the Night Duty report and dated In-house reference..."
             : hasSavedSelectedReport
-              ? `Saved report loaded for ${formatDateKey(selectedReportDate)}. You can continue editing it.`
+              ? `Saved Night Duty report loaded for ${formatDateKey(selectedReportDate)}. ${loadedInHouseReport ? "Its Front Office reference is synchronized with the dated In-house report." : "You can continue editing it."}`
               : selectedOperationsSnapshot
-                ? `No saved report exists for ${formatDateKey(selectedReportDate)}. The archived Front Office occupancy for that activity date has been loaded.`
+                ? `No saved Night Duty report exists for ${formatDateKey(selectedReportDate)}. The matching dated Front Office In-house occupancy has been loaded.`
                 : `No saved report exists for ${formatDateKey(selectedReportDate)}, and no Front Office archive was found for that date. Occupancy starts at zero and can be entered manually.`}
         </p>
       </div>
@@ -1067,6 +1270,40 @@ export default function NightDutyPanel({
           <div className="subpanel">
             <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"><label className="field"><span>Stored activity date</span><input type="date" value={selectedHistoryDate} max={latestNightDutyReportDateKey} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button></div>
             {loadingHistoryReport ? <p className="mt-5 text-sm text-slate-500">Loading the selected date...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Night Duty report exists for the selected date.</p>}
+          </div>
+          <div className="subpanel">
+            <div>
+              <p className="metric-label">Full report by date range</p>
+              <p className="mt-2 text-sm text-slate-500">
+                Choose up to 120 activity dates. The app retrieves every stored Night Duty report in the range and combines all daily details into one printable or downloadable report.
+              </p>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto] xl:items-end">
+              <label className="field"><span>Start date</span><input type="date" value={rangeStartDate} max={latestNightDutyReportDateKey} onChange={(event) => { setRangeStartDate(event.target.value); setRangeReportLoaded(false); }} /></label>
+              <label className="field"><span>End date</span><input type="date" value={rangeEndDate} max={latestNightDutyReportDateKey} onChange={(event) => { setRangeEndDate(event.target.value); setRangeReportLoaded(false); }} /></label>
+              <button type="button" className="button-primary" onClick={loadReportRange} disabled={loadingRangeReports}>{loadingRangeReports ? "Loading full report..." : "Pull full report"}</button>
+            </div>
+            {rangeReportLoaded ? (
+              <div className="mt-5">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Reports found<br /><strong className="text-xl text-[#162338]">{rangeReportData.length}</strong></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Combined occupancy<br /><strong className="text-xl text-[#162338]">{rangeReportData.reduce((total, report) => total + report.occupancyTotal, 0)}</strong></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Combined revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeReportData.reduce((total, report) => total + report.grandIncomeTotal, 0))}</strong></div>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <button type="button" className="button-secondary flex-1" disabled={rangeReportData.length === 0} onClick={() => {
+                    const dates = listDateKeysInRange(rangeStartDate, rangeEndDate);
+                    if (dates.length > 0) printNightDutyRangeReport(rangeReportData, dates[0], dates[dates.length - 1]);
+                  }}>Print full date-range report</button>
+                  <button type="button" className="button-secondary flex-1" disabled={rangeReportData.length === 0} onClick={handleRangeDownload}>Download full date-range PDF</button>
+                </div>
+                {rangeReportData.length > 0 ? (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-full text-sm"><thead><tr className="text-left text-slate-500"><th className="px-3 py-2">Activity date</th><th className="px-3 py-2">Occupancy</th><th className="px-3 py-2">Revenue</th><th className="px-3 py-2">Signed by</th></tr></thead><tbody>{rangeReportData.map((report) => <tr key={report.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(report.operationalDateKey)}</td><td className="px-3 py-2">{report.occupancyTotal}</td><td className="px-3 py-2">{formatAmount(report.grandIncomeTotal)}</td><td className="px-3 py-2">{report.nightDutySupervisorSignature || "Not signed"}</td></tr>)}</tbody></table>
+                  </div>
+                ) : <p className="mt-4 text-sm text-slate-500">No stored Night Duty reports were found in the selected range.</p>}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

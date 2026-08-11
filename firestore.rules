@@ -338,6 +338,38 @@ service cloud.firestore {
         request.resource.data.updatedByDepartment.size() <= 80;
     }
 
+    function validInHouseReport() {
+      return request.resource.data.keys().hasOnly([
+          "operationalDateKey", "occupiedRooms", "occupiedRoomNumbers",
+          "occupancyByFloor", "inHouse", "availableRooms", "breakfastEntitled",
+          "updatedAt", "updatedAtIso", "updatedByUid", "updatedByName",
+          "updatedByDepartment"
+        ]) &&
+        request.resource.data.operationalDateKey is string &&
+        request.resource.data.operationalDateKey.size() == 10 &&
+        request.resource.data.occupiedRooms is list &&
+        request.resource.data.occupiedRooms.size() <= 88 &&
+        request.resource.data.occupiedRoomNumbers is list &&
+        request.resource.data.occupiedRoomNumbers.size() <= 88 &&
+        request.resource.data.occupancyByFloor is list &&
+        request.resource.data.occupancyByFloor.size() <= 8 &&
+        request.resource.data.inHouse is int &&
+        request.resource.data.inHouse >= 0 &&
+        request.resource.data.inHouse <= 88 &&
+        request.resource.data.availableRooms is int &&
+        request.resource.data.availableRooms >= 0 &&
+        request.resource.data.availableRooms <= 88 &&
+        request.resource.data.breakfastEntitled is int &&
+        request.resource.data.breakfastEntitled >= 0 &&
+        request.resource.data.breakfastEntitled <= 1760 &&
+        request.resource.data.updatedAt is timestamp &&
+        request.resource.data.updatedAtIso is string &&
+        request.resource.data.updatedAtIso.size() <= 40 &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        matchesActorName(request.resource.data.updatedByName) &&
+        matchesActorDepartment(request.resource.data.updatedByDepartment);
+    }
+
     function validRoomPropertyStatusReport() {
       return request.resource.data.keys().hasOnly([
           "roomNumber", "floorKey", "floorLabel", "inspectionDate",
@@ -473,15 +505,23 @@ service cloud.firestore {
     }
 
     match /portal/nightDuty {
-      allow read: if isSuperAdmin() || isNightDutyManager();
+      allow read: if isSuperAdmin() || isLead();
       allow write: if validNightDutyReport() && (isSuperAdmin() || isNightDutyManager());
     }
 
     match /nightDutyReports/{reportDate} {
-      allow read: if isSuperAdmin() || isNightDutyManager();
+      allow read: if isSuperAdmin() || isLead();
       allow create, update: if validNightDutyReport() &&
         request.resource.data.operationalDateKey == reportDate &&
         (isSuperAdmin() || isNightDutyManager());
+      allow delete: if false;
+    }
+
+    match /inHouseReports/{reportDate} {
+      allow read: if isSuperAdmin() || isLead();
+      allow create, update: if validInHouseReport() &&
+        request.resource.data.operationalDateKey == reportDate &&
+        (isSuperAdmin() || isFrontOfficeManager());
       allow delete: if false;
     }
 

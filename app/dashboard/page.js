@@ -179,7 +179,10 @@ export default function DashboardPage() {
     saveStoreReturn,
     saveStoreAdjustment,
     loadNightDutyReport,
+    loadNightDutyReportsInRange,
     saveNightDutyData,
+    loadInHouseReport,
+    saveInHouseReport,
     saveStaffProfile,
     saveShiftAssignment,
     removeShiftAssignment,
@@ -442,6 +445,8 @@ export default function DashboardPage() {
                   nightDutyData={nightDutyData}
                   reportHistory={nightDutyReportHistory}
                   onLoadNightDutyReport={loadNightDutyReport}
+                  onLoadNightDutyReportsInRange={loadNightDutyReportsInRange}
+                  onLoadInHouseReport={loadInHouseReport}
                   onSaveNightDuty={saveNightDutyData}
                   onSaveUtilities={saveUtilities}
                 />
@@ -496,6 +501,8 @@ export default function DashboardPage() {
                   eventsBookings={eventsBookings}
                   onSaveFrontOffice={saveOperations}
                   onSaveHousekeeping={saveHousekeepingProgress}
+                  onLoadInHouseReport={loadInHouseReport}
+                  onSaveInHouseReport={saveInHouseReport}
                 />
               ),
             },
