@@ -30,7 +30,18 @@ async function loadProjectId() {
   try {
     const envContent = await fs.readFile(envPath, "utf8");
     const envValues = parseEnv(envContent);
-    return envValues.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "";
+    if (envValues.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
+      return envValues.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    }
+  } catch {
+    // Fall through to the repository's Firebase project alias.
+  }
+
+  try {
+    const firebaseRc = JSON.parse(
+      await fs.readFile(path.join(root, ".firebaserc"), "utf8"),
+    );
+    return firebaseRc?.projects?.default || "";
   } catch {
     return "";
   }
@@ -51,8 +62,8 @@ if (projectId && !loginLikeCommand) {
 }
 
 if (!projectId && !loginLikeCommand) {
-  console.error("NEXT_PUBLIC_FIREBASE_PROJECT_ID is missing in .env.local.");
-  console.error("Add your Firebase project ID before running Firebase CLI helper commands.");
+  console.error("Firebase project ID is missing.");
+  console.error("Set NEXT_PUBLIC_FIREBASE_PROJECT_ID in .env.local or projects.default in .firebaserc.");
   process.exit(1);
 }
 

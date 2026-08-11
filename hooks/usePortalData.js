@@ -1326,32 +1326,24 @@ export function usePortalData(profile) {
       updatedByName: profile?.fullName ?? "",
       updatedByDepartment: profile?.departmentName ?? "",
     };
-    const reportWrites = [
-      {
-        ref: doc(db, "nightDutyReports", nextNightDutyData.operationalDateKey),
-        data: persistedReport,
-        options: { merge: true },
-      },
-    ];
+    const datedReportWrite = {
+      ref: doc(db, "nightDutyReports", nextNightDutyData.operationalDateKey),
+      data: persistedReport,
+      options: { merge: false },
+    };
     const currentBoardDate = portalState.nightDutyData?.operationalDateKey ?? "";
-
-    if (!currentBoardDate || nextNightDutyData.operationalDateKey >= currentBoardDate) {
-      reportWrites.unshift({
-        ref: doc(db, "portal", "nightDuty"),
-        data: persistedReport,
-        options: { merge: true },
-      });
-    }
+    const shouldUpdateCurrentBoard = !currentBoardDate ||
+      nextNightDutyData.operationalDateKey >= currentBoardDate;
 
     try {
-      await commitTrackedWrite({ writes: reportWrites });
+      await commitTrackedWrite({ writes: [datedReportWrite] });
     } catch (error) {
       const permissionDenied = error?.code === "permission-denied" ||
         error?.code === "firestore/permission-denied";
 
       if (!permissionDenied || !profile?.uid) throw error;
 
-      let message = "Firestore rejected the Night Duty report document.";
+      let message = `Firestore rejected nightDutyReports/${nextNightDutyData.operationalDateKey}.`;
 
       try {
         const profileSnapshot = await getDoc(doc(db, "users", profile.uid));
@@ -1377,7 +1369,7 @@ export function usePortalData(profile) {
           ) {
             message += " The browser has an older staff profile. Sign out completely and sign in again before saving.";
           } else {
-            message += " The staff profile is valid, so the deployed rules do not match this application. Republish the entire firestore.rules file and confirm Hostinger uses the same Firebase project ID.";
+            message += ` The staff profile is valid. Publish the complete firestore.rules file to Firebase project ${db.app.options.projectId}. Hostinger deployment does not publish Firestore rules.`;
           }
         }
       } catch {
@@ -1390,6 +1382,21 @@ export function usePortalData(profile) {
     }
 
     let warning = "";
+
+    if (shouldUpdateCurrentBoard) {
+      try {
+        await commitTrackedWrite({
+          writes: [{
+            ref: doc(db, "portal", "nightDuty"),
+            data: persistedReport,
+            options: { merge: false },
+          }],
+        });
+      } catch (error) {
+        warning = "The dated report was saved, but Firestore rejected the current Night Duty dashboard copy.";
+        console.error("Night Duty dated report saved without current dashboard copy", error);
+      }
+    }
 
     try {
       await commitTrackedWrite({
@@ -1406,7 +1413,7 @@ export function usePortalData(profile) {
         }),
       });
     } catch (error) {
-      warning = "The report was saved, but Firestore rejected its notification/audit entry. Publish the latest rules to restore audit tracking.";
+      warning = `${warning} The report was saved, but Firestore rejected its notification/audit entry.`.trim();
       console.error("Night Duty report saved without its tracking entries", error);
     }
 
