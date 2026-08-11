@@ -41,6 +41,7 @@ import {
 import { defaultStoreInventory, mergeStoreInventory } from "@/data/storeInventory";
 import {
   defaultNightDutyData,
+  getNightDutyReportDateKey,
   mergeNightDutyData,
   normalizeStoredNightDutyReport,
 } from "@/data/nightDuty";
@@ -1312,8 +1313,7 @@ export function usePortalData(profile) {
       departmentNotes: nextNightDutyData.departmentNotes,
       gasLevels: nextNightDutyData.gasLevels,
       hotWaterTemperature: nextNightDutyData.hotWaterTemperature,
-      generatorServiceHours: nextNightDutyData.generatorServiceHours,
-      generatorServiceMinutes: nextNightDutyData.generatorServiceMinutes,
+      generatorServices: nextNightDutyData.generatorServices,
       powerSupplies: nextNightDutyData.powerSupplies,
       waterSupplyCount: nextNightDutyData.waterSupplyCount,
       guestIncident: nextNightDutyData.guestIncident,
@@ -1336,7 +1336,9 @@ export function usePortalData(profile) {
       options: { merge: false },
     };
     const currentBoardDate = portalState.nightDutyData?.operationalDateKey ?? "";
-    const shouldUpdateCurrentBoard = !currentBoardDate ||
+    const shouldUpdateCurrentBoard =
+      nextNightDutyData.operationalDateKey === getNightDutyReportDateKey() ||
+      !currentBoardDate ||
       nextNightDutyData.operationalDateKey >= currentBoardDate;
 
     try {

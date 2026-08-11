@@ -1,6 +1,10 @@
 import { departmentsByKey } from "@/data/departments";
 import { roomGroups } from "@/data/hotelRooms";
-import { getOperationalDateKey } from "@/lib/hotelTime";
+import { addDaysToDateKey, getHotelDateKey } from "@/lib/hotelTime";
+
+export function getNightDutyReportDateKey(value = new Date()) {
+  return addDaysToDateKey(getHotelDateKey(value), -1);
+}
 
 export const nightDutyOutletConfig = [
   {
@@ -99,7 +103,7 @@ function buildDefaultIncident() {
   };
 }
 
-export function buildDefaultNightDutyData(operationalDateKey = getOperationalDateKey()) {
+export function buildDefaultNightDutyData(operationalDateKey = getNightDutyReportDateKey()) {
   return {
     operationalDateKey,
     occupancyByFloor: buildDefaultOccupancyByFloor(),
@@ -110,8 +114,7 @@ export function buildDefaultNightDutyData(operationalDateKey = getOperationalDat
     departmentNotes: buildDefaultDepartmentNotes(),
     gasLevels: buildDefaultGasLevels(),
     hotWaterTemperature: null,
-    generatorServiceHours: 0,
-    generatorServiceMinutes: 0,
+    generatorServices: [],
     powerSupplies: [],
     waterSupplyCount: 0,
     guestIncident: buildDefaultIncident(),
@@ -272,6 +275,33 @@ function normalizePowerSupplies(entries = []) {
     .filter(Boolean);
 }
 
+function normalizeGeneratorServices(entries = [], legacyHours, legacyMinutes) {
+  const sourceEntries = Array.isArray(entries) && entries.length > 0
+    ? entries
+    : Number(legacyHours) > 0 || Number(legacyMinutes) > 0
+      ? [{ name: "Generator", serviceHours: legacyHours, serviceMinutes: legacyMinutes }]
+      : [];
+
+  return sourceEntries.slice(0, 20)
+    .map((entry, index) => {
+      const name = normalizeShortText(entry?.name, 100);
+      if (!name) return null;
+
+      const duration = normalizeDuration(
+        entry?.serviceHours,
+        entry?.serviceMinutes,
+      );
+
+      return {
+        id: normalizeShortText(entry?.id, 100) || `generator-service-${index + 1}`,
+        name,
+        serviceHours: duration.hours,
+        serviceMinutes: duration.minutes,
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeIncident(incident = {}) {
   const hasIncident = incident?.hasIncident === true || incident?.hasIncident === "yes";
 
@@ -339,12 +369,8 @@ export function groupOnDutyStaff(entries = [], departmentNotes = {}) {
 
 export function normalizeStoredNightDutyReport(payload = {}) {
   const operationalDateKey = normalizeShortText(payload.operationalDateKey, 10) ||
-    getOperationalDateKey();
+    getNightDutyReportDateKey();
   const base = buildDefaultNightDutyData(operationalDateKey);
-  const generatorServiceDuration = normalizeDuration(
-    payload.generatorServiceHours,
-    payload.generatorServiceMinutes,
-  );
 
   return {
     ...base,
@@ -367,8 +393,11 @@ export function normalizeStoredNightDutyReport(payload = {}) {
       payload.hotWaterTemperature === undefined
       ? null
       : Math.min(Math.max(Number(payload.hotWaterTemperature) || 0, 0), 120),
-    generatorServiceHours: generatorServiceDuration.hours,
-    generatorServiceMinutes: generatorServiceDuration.minutes,
+    generatorServices: normalizeGeneratorServices(
+      payload.generatorServices,
+      payload.generatorServiceHours,
+      payload.generatorServiceMinutes,
+    ),
     powerSupplies: normalizePowerSupplies(payload.powerSupplies),
     waterSupplyCount: normalizeCount(payload.waterSupplyCount, 1000),
     guestIncident: normalizeIncident(payload.guestIncident),
@@ -387,7 +416,7 @@ export function normalizeStoredNightDutyReport(payload = {}) {
 
 export function mergeNightDutyData(payload = {}) {
   const operationalDateKey = normalizeShortText(payload.operationalDateKey, 10) ||
-    getOperationalDateKey();
+    getNightDutyReportDateKey();
 
   return normalizeStoredNightDutyReport({
     ...payload,

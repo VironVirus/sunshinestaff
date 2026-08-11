@@ -7,6 +7,7 @@ import {
   getFrontOfficeRoomRevenue,
   getGasLevelLabel,
   getGrandIncomeTotal,
+  getNightDutyReportDateKey,
   getOutletTotal,
   groupOnDutyStaff,
   nightDutyDepartmentOptions,
@@ -91,6 +92,23 @@ function buildOccupancyByFloor(operations = {}) {
   }));
 }
 
+function getOperationsSnapshotForDate(operations = {}, dateKey) {
+  if (operations?.operationalDateKey === dateKey) return operations;
+
+  const historyEntry = (operations?.reportHistory ?? []).find(
+    (entry) => entry?.dateKey === dateKey,
+  );
+
+  if (!historyEntry) return null;
+
+  return {
+    ...operations,
+    ...historyEntry,
+    operationalDateKey: dateKey,
+    occupiedRoomNumbers: historyEntry.occupiedRoomNumbers ?? [],
+  };
+}
+
 function buildIncidentSnapshot(incident = {}) {
   return {
     hasIncident: Boolean(incident.hasIncident),
@@ -162,13 +180,28 @@ function buildIncidentLines(label, incident) {
 }
 
 function buildNightDutyReportLines(reportData) {
+  const sectionHeading = (text) => ({
+    text,
+    bold: true,
+    fontSize: 13,
+    dividerBefore: true,
+    dividerAfter: true,
+    spaceBefore: 7,
+    spaceAfter: 4,
+    keepWithNext: true,
+  });
+  const subsectionHeading = (text) => ({
+    text,
+    bold: true,
+    fontSize: 11,
+    spaceBefore: 4,
+    keepWithNext: true,
+  });
   const lines = [
-    "Sunshine Hotel Night Duty Report",
-    `Operational day: ${formatDateKey(reportData.operationalDateKey)}`,
+    { text: `Activity date: ${formatDateKey(reportData.operationalDateKey)}`, bold: true },
     `Generated: ${formatFriendlyDate(reportData.generatedAt)}`,
-    "",
-    "Occupancy totals by floor",
-    "Floor | Night Duty total | Front Office reference",
+    sectionHeading("Occupancy totals by floor"),
+    { text: "Floor | Night Duty total | Front Office reference", bold: true },
   ];
 
   reportData.occupancyByFloor.forEach((floor) => {
@@ -179,26 +212,31 @@ function buildNightDutyReportLines(reportData) {
       `${floor.floorLabel} | ${floor.occupiedRooms} | ${frontOfficeFloor?.occupiedRooms ?? 0}`,
     );
   });
-  lines.push(`Total occupancy: ${reportData.occupancyTotal}`);
+  lines.push({ text: `Total occupancy: ${reportData.occupancyTotal}`, bold: true });
   lines.push(
     `Discrepancy query: ${reportData.occupancyQuery?.hasDiscrepancy ? "Yes" : "No"}`,
   );
   lines.push(reportData.occupancyQuery?.note || "Nil");
-  lines.push("");
-
-  lines.push("Income dashboard");
+  lines.push(sectionHeading("Income dashboard"));
   reportData.incomeSections.forEach((outlet) => {
-    lines.push(outlet.label);
+    lines.push(subsectionHeading(outlet.label));
     outlet.fields.forEach((field) => {
       const suffix = field.excludeFromRevenue ? " (not included in revenue total)" : "";
       lines.push(`- ${field.label}: ${formatAmount(reportData.income?.[outlet.key]?.[field.key])}${suffix}`);
     });
     lines.push(`- Revenue total: ${formatAmount(outlet.revenueTotal)}`);
   });
-  lines.push(`Grand revenue total: ${formatAmount(reportData.grandIncomeTotal)}`);
-  lines.push("");
+  lines.push({
+    text: `GRAND REVENUE TOTAL: ${formatAmount(reportData.grandIncomeTotal)}`,
+    bold: true,
+    fontSize: 15,
+    dividerBefore: true,
+    dividerAfter: true,
+    spaceBefore: 7,
+    spaceAfter: 5,
+  });
 
-  lines.push("Staff on duty and departmental notes");
+  lines.push(sectionHeading("Staff on duty and departmental notes"));
   if (reportData.groupedStaff.length === 0) {
     lines.push("Nil");
   } else {
@@ -207,14 +245,19 @@ function buildNightDutyReportLines(reportData) {
       lines.push(`Note: ${department.note || "Nil"}`);
     });
   }
-  lines.push("");
-
-  lines.push("Utilities");
+  lines.push(sectionHeading("Utilities"));
   cookingGasOptions.forEach((gas) => {
     lines.push(`${gas.label}: ${getGasLevelLabel(reportData.gasLevels?.[gas.value])}`);
   });
   lines.push(`Hot water temperature: ${reportData.hotWaterTemperature ?? "Not set"}°C`);
-  lines.push(`Generator service hours: ${formatDuration(reportData.generatorServiceHours, reportData.generatorServiceMinutes)}`);
+  lines.push(subsectionHeading("Generator service hours"));
+  if ((reportData.generatorServices ?? []).length === 0) {
+    lines.push("Nil");
+  } else {
+    reportData.generatorServices.forEach((entry) => {
+      lines.push(`${entry.name}: ${formatDuration(entry.serviceHours, entry.serviceMinutes)}`);
+    });
+  }
   lines.push(`Water supplied: ${reportData.waterSupplyCount ?? 0} time(s)`);
   if ((reportData.powerSupplies ?? []).length === 0) {
     lines.push("Power supplies: Nil");
@@ -226,13 +269,12 @@ function buildNightDutyReportLines(reportData) {
   propertyUtilityFields.forEach((field) => {
     lines.push(`${field.label}: ${getUtilityLabel(field.key, reportData.utilitiesSnapshot?.[field.key])}`);
   });
-  lines.push("");
-
+  lines.push(sectionHeading("Incidents"));
+  lines.push(subsectionHeading("Guest incident"));
   lines.push(...buildIncidentLines("Guest incident", reportData.guestIncident));
-  lines.push("");
+  lines.push(subsectionHeading("Employee incident"));
   lines.push(...buildIncidentLines("Employee incident", reportData.employeeIncident));
-  lines.push("");
-  lines.push("Events");
+  lines.push(sectionHeading("Events"));
   if ((reportData.eventsSnapshot ?? []).length === 0) {
     lines.push("Nil");
   } else {
@@ -242,8 +284,7 @@ function buildNightDutyReportLines(reportData) {
       );
     });
   }
-  lines.push("");
-  lines.push("Guest complaints");
+  lines.push(sectionHeading("Guest complaints"));
   if ((reportData.complaintsSnapshot ?? []).length === 0) {
     lines.push("Nil");
   } else {
@@ -253,10 +294,12 @@ function buildNightDutyReportLines(reportData) {
       );
     });
   }
-  lines.push("");
-  lines.push(
-    `Night Duty Supervisor signature: ${reportData.nightDutySupervisorSignature || "Not signed"}`,
-  );
+  lines.push({
+    text: `Night Duty Supervisor signature: ${reportData.nightDutySupervisorSignature || "Not signed"}`,
+    bold: true,
+    dividerBefore: true,
+    spaceBefore: 12,
+  });
 
   return lines;
 }
@@ -318,6 +361,9 @@ function printNightDutyReport(reportData) {
   const powerRows = (reportData.powerSupplies ?? []).length > 0
     ? reportData.powerSupplies.map((entry) => `<tr><td>${escapeHtml(entry.name)}</td><td>${escapeHtml(formatDuration(entry.durationHours, entry.durationMinutes))}</td></tr>`).join("")
     : "<tr><td colspan='2'>Nil</td></tr>";
+  const generatorServiceRows = (reportData.generatorServices ?? []).length > 0
+    ? reportData.generatorServices.map((entry) => `<tr><td>${escapeHtml(entry.name)}</td><td>${escapeHtml(formatDuration(entry.serviceHours, entry.serviceMinutes))}</td></tr>`).join("")
+    : "<tr><td colspan='2'>Nil</td></tr>";
   const eventRows = (reportData.eventsSnapshot ?? []).length > 0
     ? reportData.eventsSnapshot.map((entry) => `<tr><td>${escapeHtml(entry.eventType || "Event")}</td><td>${escapeHtml(entry.venue || "Not stated")}</td><td>${Number(entry.expectedGuests) || 0}</td></tr>`).join("")
     : "<tr><td colspan='3'>Nil</td></tr>";
@@ -333,32 +379,34 @@ function printNightDutyReport(reportData) {
         * { box-sizing: border-box; }
         body { color: #1f2937; font-family: Arial, sans-serif; margin: 0; }
         h1 { color: #8a6923; font-size: 22px; margin: 0 0 8px; }
-        h2 { color: #162338; font-size: 17px; margin: 24px 0 8px; }
-        h3 { color: #334155; font-size: 14px; margin: 16px 0 7px; }
+        h2 { border-bottom: 2px solid #cbd5e1; border-top: 1px solid #cbd5e1; color: #162338; font-size: 17px; font-weight: 800; margin: 24px 0 8px; padding: 7px 0; }
+        h3 { color: #334155; font-size: 14px; font-weight: 700; margin: 16px 0 7px; }
         p { font-size: 11px; line-height: 1.5; }
         table { border-collapse: collapse; font-size: 10px; width: 100%; }
         th, td { border: 1px solid #cbd5e1; padding: 6px; text-align: left; vertical-align: top; }
         th { background: #f8f3e6; }
         section { break-inside: avoid; }
         .meta { color: #64748b; }
+        .grand-total { border-bottom: 3px double #8a6923; border-top: 3px double #8a6923; color: #162338; font-size: 16px; font-weight: 900; margin-top: 16px; padding: 10px 0; }
         .signature { border-top: 1px solid #475569; margin-top: 38px; padding-top: 7px; width: 48%; }
       </style>
     </head><body>
       <h1>Sunshine Hotel Night Duty Report</h1>
-      <p class="meta">Operational day: ${escapeHtml(formatDateKey(reportData.operationalDateKey))}<br>Generated: ${escapeHtml(formatFriendlyDate(reportData.generatedAt))}</p>
+      <p class="meta"><strong>Activity date:</strong> ${escapeHtml(formatDateKey(reportData.operationalDateKey))}<br>Generated: ${escapeHtml(formatFriendlyDate(reportData.generatedAt))}</p>
 
       <h2>Occupancy totals by floor</h2>
       <table><thead><tr><th>Floor</th><th>Night Duty total</th><th>Front Office reference</th></tr></thead><tbody>${occupancyRows}<tr><th>Total</th><th>${reportData.occupancyTotal}</th><th></th></tr></tbody></table>
       <p><strong>Discrepancy query:</strong> ${reportData.occupancyQuery?.hasDiscrepancy ? "Yes" : "No"}<br>${escapeHtml(reportData.occupancyQuery?.note || "Nil")}</p>
 
       <h2>Income dashboard</h2>${incomeHtml}
-      <p><strong>Grand revenue total:</strong> ${escapeHtml(formatAmount(reportData.grandIncomeTotal))}</p>
+      <p class="grand-total">GRAND REVENUE TOTAL: ${escapeHtml(formatAmount(reportData.grandIncomeTotal))}</p>
 
       <h2>Staff on duty and departmental notes</h2>
       <table><thead><tr><th>Department</th><th>Staff</th><th>Night Duty note</th></tr></thead><tbody>${staffHtml}</tbody></table>
 
       <h2>Utilities</h2>
-      <table><tbody>${gasRows}<tr><td>Hot water temperature</td><td>${reportData.hotWaterTemperature ?? "Not set"}°C</td></tr><tr><td>Generator service hours</td><td>${escapeHtml(formatDuration(reportData.generatorServiceHours, reportData.generatorServiceMinutes))}</td></tr><tr><td>Water supplied</td><td>${reportData.waterSupplyCount ?? 0} time(s)</td></tr>${utilityRows}</tbody></table>
+      <table><tbody>${gasRows}<tr><td>Hot water temperature</td><td>${reportData.hotWaterTemperature ?? "Not set"}°C</td></tr><tr><td>Water supplied</td><td>${reportData.waterSupplyCount ?? 0} time(s)</td></tr>${utilityRows}</tbody></table>
+      <h3>Generator service hours</h3><table><thead><tr><th>Generator</th><th>Service time</th></tr></thead><tbody>${generatorServiceRows}</tbody></table>
       <h3>Power supply usage</h3><table><thead><tr><th>Power supply</th><th>Duration</th></tr></thead><tbody>${powerRows}</tbody></table>
 
       <h2>Incidents</h2>
@@ -437,8 +485,12 @@ export default function NightDutyPanel({
   });
   const [gasLevels, setGasLevels] = useState(buildDefaultNightDutyData().gasLevels);
   const [hotWaterTemperature, setHotWaterTemperature] = useState("");
-  const [generatorServiceHours, setGeneratorServiceHours] = useState(0);
-  const [generatorServiceMinutes, setGeneratorServiceMinutes] = useState(0);
+  const [generatorServices, setGeneratorServices] = useState([]);
+  const [generatorServiceDraft, setGeneratorServiceDraft] = useState({
+    name: "",
+    serviceHours: "",
+    serviceMinutes: "",
+  });
   const [waterSupplyCount, setWaterSupplyCount] = useState(0);
   const [powerSupplies, setPowerSupplies] = useState([]);
   const [powerDraft, setPowerDraft] = useState({
@@ -450,7 +502,7 @@ export default function NightDutyPanel({
   const [guestIncident, setGuestIncident] = useState(buildDefaultNightDutyData().guestIncident);
   const [employeeIncident, setEmployeeIncident] = useState(buildDefaultNightDutyData().employeeIncident);
   const [nightDutySupervisorSignature, setNightDutySupervisorSignature] = useState("");
-  const [selectedReportDate, setSelectedReportDate] = useState(getOperationalDateKey());
+  const [selectedReportDate, setSelectedReportDate] = useState(getNightDutyReportDateKey());
   const [loadedSelectedReport, setLoadedSelectedReport] = useState(null);
   const [loadingSelectedReport, setLoadingSelectedReport] = useState(false);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState("");
@@ -461,9 +513,14 @@ export default function NightDutyPanel({
   const selectedLoadRequest = useRef(0);
   const historyLoadRequest = useRef(0);
   const currentOperationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
-  const currentFrontOfficeOccupancyByFloor = useMemo(
-    () => buildOccupancyByFloor(operations),
-    [operations],
+  const latestNightDutyReportDateKey = getNightDutyReportDateKey();
+  const selectedOperationsSnapshot = useMemo(
+    () => getOperationsSnapshotForDate(operations, selectedReportDate),
+    [operations, selectedReportDate],
+  );
+  const selectedFrontOfficeOccupancyByFloor = useMemo(
+    () => buildOccupancyByFloor(selectedOperationsSnapshot ?? {}),
+    [selectedOperationsSnapshot],
   );
   const cachedSelectedReport = useMemo(
     () => reportHistory.find((entry) => entry.operationalDateKey === selectedReportDate) ?? null,
@@ -482,13 +539,14 @@ export default function NightDutyPanel({
     }
 
     return selectedReportDate === currentOperationalDateKey
-      ? currentFrontOfficeOccupancyByFloor
-      : buildDefaultNightDutyData(selectedReportDate).frontOfficeOccupancyByFloor;
+      ? buildOccupancyByFloor(operations)
+      : selectedFrontOfficeOccupancyByFloor;
   }, [
-    currentFrontOfficeOccupancyByFloor,
     currentOperationalDateKey,
     editableReport,
     hasSavedSelectedReport,
+    operations,
+    selectedFrontOfficeOccupancyByFloor,
     selectedReportDate,
   ]);
   const eventsSnapshot = useMemo(
@@ -516,8 +574,7 @@ export default function NightDutyPanel({
     setDepartmentNotes(report.departmentNotes);
     setGasLevels(report.gasLevels);
     setHotWaterTemperature(report.hotWaterTemperature ?? "");
-    setGeneratorServiceHours(report.generatorServiceHours ?? 0);
-    setGeneratorServiceMinutes(report.generatorServiceMinutes ?? 0);
+    setGeneratorServices(report.generatorServices ?? []);
     setWaterSupplyCount(report.waterSupplyCount);
     setPowerSupplies(report.powerSupplies);
     setGuestIncident(report.guestIncident);
@@ -555,8 +612,7 @@ export default function NightDutyPanel({
     departmentNotes,
     gasLevels,
     hotWaterTemperature: hotWaterTemperature === "" ? null : hotWaterTemperature,
-    generatorServiceHours,
-    generatorServiceMinutes,
+    generatorServices,
     powerSupplies,
     waterSupplyCount,
     guestIncident,
@@ -572,9 +628,8 @@ export default function NightDutyPanel({
     eventsSnapshot,
     frontOfficeOccupancyByFloor,
     gasLevels,
+    generatorServices,
     guestIncident,
-    generatorServiceHours,
-    generatorServiceMinutes,
     hotWaterTemperature,
     incomeForm,
     occupancyByFloor,
@@ -753,6 +808,22 @@ export default function NightDutyPanel({
     setPowerDraft({ name: "", durationHours: "", durationMinutes: "" });
   }
 
+  function addGeneratorService() {
+    if (
+      !generatorServiceDraft.name.trim() ||
+      (generatorServiceDraft.serviceHours === "" &&
+        generatorServiceDraft.serviceMinutes === "")
+    ) return;
+
+    setGeneratorServices((current) => [...current, {
+      id: `generator-service-${Date.now()}`,
+      name: generatorServiceDraft.name.trim(),
+      serviceHours: generatorServiceDraft.serviceHours || 0,
+      serviceMinutes: generatorServiceDraft.serviceMinutes || 0,
+    }]);
+    setGeneratorServiceDraft({ name: "", serviceHours: "", serviceMinutes: "" });
+  }
+
   function handleDownload(report = reportData) {
     downloadTextPdf({
       filename: `sunshine-night-duty-report-${report.operationalDateKey}.pdf`,
@@ -780,7 +851,7 @@ export default function NightDutyPanel({
         <div>
           <h2 className="section-title">Night Duty</h2>
           <p className="section-copy max-w-3xl">
-            Record Night Duty observations independently, query occupancy differences and keep one editable report for every operational day.
+            Each report covers the previous calendar day. Yesterday&apos;s Front Office occupancy, events and dated complaints are used as its starting reference.
           </p>
         </div>
         <div className="flex flex-wrap gap-3 no-print">
@@ -792,11 +863,11 @@ export default function NightDutyPanel({
       <div className="subpanel mt-6 no-print">
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <label className="field">
-            <span>Report date</span>
+            <span>Activity date covered by this report</span>
             <input
               type="date"
               value={selectedReportDate}
-              max={getOperationalDateKey()}
+              max={latestNightDutyReportDateKey}
               onChange={(event) => selectReportDate(event.target.value)}
               disabled={Boolean(savingSection)}
             />
@@ -804,10 +875,10 @@ export default function NightDutyPanel({
           <button
             type="button"
             className="button-secondary"
-            onClick={() => selectReportDate(currentOperationalDateKey)}
-            disabled={Boolean(savingSection) || selectedReportDate === currentOperationalDateKey}
+            onClick={() => selectReportDate(latestNightDutyReportDateKey)}
+            disabled={Boolean(savingSection) || selectedReportDate === latestNightDutyReportDateKey}
           >
-            Use current operational date
+            Use yesterday
           </button>
         </div>
         <p className="mt-3 text-sm text-slate-600">
@@ -815,7 +886,9 @@ export default function NightDutyPanel({
             ? "Loading the report for this date..."
             : hasSavedSelectedReport
               ? `Saved report loaded for ${formatDateKey(selectedReportDate)}. You can continue editing it.`
-              : `No saved report exists for ${formatDateKey(selectedReportDate)}. Saving any section will create it.`}
+              : selectedOperationsSnapshot
+                ? `No saved report exists for ${formatDateKey(selectedReportDate)}. The archived Front Office occupancy for that activity date has been loaded.`
+                : `No saved report exists for ${formatDateKey(selectedReportDate)}, and no Front Office archive was found for that date. Occupancy starts at zero and can be entered manually.`}
         </p>
       </div>
 
@@ -939,9 +1012,21 @@ export default function NightDutyPanel({
           </div>
           <div className="subpanel">
             <p className="metric-label">Generator service hours</p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="field"><span>Hours</span><input type="number" min="0" max="100000" step="1" value={generatorServiceHours} onChange={(event) => setGeneratorServiceHours(event.target.value)} disabled={readOnly || savingSection} /></label>
-              <label className="field"><span>Minutes</span><input type="number" min="0" max="59" step="1" value={generatorServiceMinutes} onChange={(event) => setGeneratorServiceMinutes(event.target.value)} disabled={readOnly || savingSection} /></label>
+            <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]">
+              <label className="field"><span>Generator name</span><input value={generatorServiceDraft.name} onChange={(event) => setGeneratorServiceDraft((current) => ({ ...current, name: event.target.value }))} disabled={readOnly || savingSection} placeholder="Generator 1" maxLength={100} /></label>
+              <label className="field"><span>Hours</span><input type="number" min="0" max="100000" step="1" value={generatorServiceDraft.serviceHours} onChange={(event) => setGeneratorServiceDraft((current) => ({ ...current, serviceHours: event.target.value }))} disabled={readOnly || savingSection} /></label>
+              <label className="field"><span>Minutes</span><input type="number" min="0" max="59" step="1" value={generatorServiceDraft.serviceMinutes} onChange={(event) => setGeneratorServiceDraft((current) => ({ ...current, serviceMinutes: event.target.value }))} disabled={readOnly || savingSection} /></label>
+              <button type="button" onClick={addGeneratorService} className="button-secondary self-end" disabled={readOnly || savingSection || !generatorServiceDraft.name.trim() || (generatorServiceDraft.serviceHours === "" && generatorServiceDraft.serviceMinutes === "")}>Add generator service hour</button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {generatorServices.length > 0 ? generatorServices.map((entry) => (
+                <div key={entry.id} className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]">
+                  <input aria-label="Generator name" value={entry.name} onChange={(event) => setGeneratorServices((current) => current.map((item) => item.id === entry.id ? { ...item, name: event.target.value } : item))} disabled={readOnly || savingSection} maxLength={100} />
+                  <input aria-label={`${entry.name} service hours`} type="number" min="0" max="100000" step="1" value={entry.serviceHours} onChange={(event) => setGeneratorServices((current) => current.map((item) => item.id === entry.id ? { ...item, serviceHours: event.target.value } : item))} disabled={readOnly || savingSection} />
+                  <input aria-label={`${entry.name} service minutes`} type="number" min="0" max="59" step="1" value={entry.serviceMinutes} onChange={(event) => setGeneratorServices((current) => current.map((item) => item.id === entry.id ? { ...item, serviceMinutes: event.target.value } : item))} disabled={readOnly || savingSection} />
+                  <ActionButton label="Remove" tone="danger" onClick={() => setGeneratorServices((current) => current.filter((item) => item.id !== entry.id))} />
+                </div>
+              )) : <p className="text-sm text-slate-500">No generator service hour added.</p>}
             </div>
           </div>
           <div className="subpanel">
@@ -980,7 +1065,7 @@ export default function NightDutyPanel({
         <div className="mt-6 space-y-6">
           <div className="grid gap-4 sm:grid-cols-2"><div className="subpanel"><p className="metric-label">Last 7 days room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(weeklyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div><div className="subpanel"><p className="metric-label">{formatDateKey(`${currentMonth}-01`, { month: "long", year: "numeric" })} room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(monthlyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div></div>
           <div className="subpanel">
-            <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"><label className="field"><span>Stored report date</span><input type="date" value={selectedHistoryDate} max={getOperationalDateKey()} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button></div>
+            <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"><label className="field"><span>Stored activity date</span><input type="date" value={selectedHistoryDate} max={latestNightDutyReportDateKey} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button></div>
             {loadingHistoryReport ? <p className="mt-5 text-sm text-slate-500">Loading the selected date...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Night Duty report exists for the selected date.</p>}
           </div>
         </div>

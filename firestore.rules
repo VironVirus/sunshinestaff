@@ -290,8 +290,8 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
           "operationalDateKey", "occupancyByFloor", "frontOfficeOccupancyByFloor",
           "occupancyQuery", "income", "onDutyStaff", "departmentNotes",
-          "gasLevels", "hotWaterTemperature", "generatorServiceHours",
-          "generatorServiceMinutes", "powerSupplies", "waterSupplyCount",
+          "gasLevels", "hotWaterTemperature", "generatorServices",
+          "powerSupplies", "waterSupplyCount",
           "guestIncident", "employeeIncident", "nightDutySupervisorSignature",
           "utilitiesSnapshot", "eventsSnapshot", "complaintsSnapshot", "updatedAt",
           "updatedAtIso", "updatedByUid", "updatedByName", "updatedByDepartment"
@@ -312,12 +312,8 @@ service cloud.firestore {
           (request.resource.data.hotWaterTemperature is number &&
             request.resource.data.hotWaterTemperature >= 0 &&
             request.resource.data.hotWaterTemperature <= 120)) &&
-        request.resource.data.generatorServiceHours is int &&
-        request.resource.data.generatorServiceHours >= 0 &&
-        request.resource.data.generatorServiceHours <= 100000 &&
-        request.resource.data.generatorServiceMinutes is int &&
-        request.resource.data.generatorServiceMinutes >= 0 &&
-        request.resource.data.generatorServiceMinutes <= 59 &&
+        request.resource.data.generatorServices is list &&
+        optionalListWithin(request.resource.data, "generatorServices", 20) &&
         request.resource.data.powerSupplies is list &&
         optionalListWithin(request.resource.data, "powerSupplies", 20) &&
         request.resource.data.waterSupplyCount is int &&
