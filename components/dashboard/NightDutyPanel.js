@@ -666,12 +666,18 @@ export default function NightDutyPanel({
     try {
       const saves = [onSaveNightDuty(currentRecord)];
       if (saveSharedUtilities) saves.push(onSaveUtilities({ utilities: utilitiesForm }));
-      await Promise.all(saves);
+      const [nightDutySaveResult] = await Promise.all(saves);
       setLoadedSelectedReport({
         ...currentRecord,
         updatedAtIso: new Date().toISOString(),
       });
-      setFeedback({ type: "success", message: `${sectionName} saved and added to the ${formatDateKey(selectedReportDate)} report.` });
+      const savedMessage = `${sectionName} saved and added to the ${formatDateKey(selectedReportDate)} report.`;
+      setFeedback({
+        type: nightDutySaveResult?.warning ? "warning" : "success",
+        message: nightDutySaveResult?.warning
+          ? `${savedMessage} ${nightDutySaveResult.warning}`
+          : savedMessage,
+      });
     } catch (error) {
       const permissionMessage = error?.code === "permission-denied" ||
         error?.code === "firestore/permission-denied"
@@ -808,7 +814,7 @@ export default function NightDutyPanel({
       </div>
 
       {feedback.message ? (
-        <div className={`mt-5 rounded-2xl px-4 py-3 text-sm ${feedback.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{feedback.message}</div>
+        <div className={`mt-5 rounded-2xl px-4 py-3 text-sm ${feedback.type === "success" ? "bg-emerald-50 text-emerald-700" : feedback.type === "warning" ? "bg-amber-50 text-amber-800" : "bg-rose-50 text-rose-700"}`}>{feedback.message}</div>
       ) : null}
 
       {activeSection === "report" ? (

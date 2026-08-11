@@ -74,6 +74,11 @@ service cloud.firestore {
         (!userData().keys().hasAny(["departmentName"]) && value == "");
     }
 
+    function matchesActorDepartmentKey(value) {
+      return (userData().keys().hasAny(["departmentKey"]) && value == userData().departmentKey) ||
+        (!userData().keys().hasAny(["departmentKey"]) && value == "");
+    }
+
     function validDepartmentSelection(data) {
       return (data.departmentKey == "food_beverages" && data.departmentName == "Food and Beverages") ||
         (data.departmentKey == "front_office" && data.departmentName == "Front Office") ||
@@ -448,7 +453,7 @@ service cloud.firestore {
       return request.resource.data.actorUid == request.auth.uid &&
         matchesActorName(request.resource.data.actorName) &&
         matchesActorDepartment(request.resource.data.actorDepartment) &&
-        request.resource.data.actorDepartmentKey == userData().departmentKey &&
+        matchesActorDepartmentKey(request.resource.data.actorDepartmentKey) &&
         request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 40 &&
         request.resource.data.message is string && request.resource.data.message.size() <= 500;
     }

@@ -1344,26 +1344,14 @@ export function usePortalData(profile) {
     }
 
     try {
-      await commitTrackedWrite({
-        writes: reportWrites,
-        notification: buildNotificationEntry({
-          audienceTag: "night-duty",
-          title: "Night Duty update",
-          message: `${profile?.fullName ?? "Night Duty"} updated the ${nextNightDutyData.operationalDateKey} night duty report.`,
-        }),
-        activity: buildActivityLogEntry({
-          area: "night_duty",
-          actionType: "night_duty_update",
-          message: `${profile?.fullName ?? "Night Duty"} updated Night Duty records for ${nextNightDutyData.operationalDateKey}.`,
-        }),
-      });
+      await commitTrackedWrite({ writes: reportWrites });
     } catch (error) {
       const permissionDenied = error?.code === "permission-denied" ||
         error?.code === "firestore/permission-denied";
 
       if (!permissionDenied || !profile?.uid) throw error;
 
-      let message = "Firestore rejected the Night Duty save.";
+      let message = "Firestore rejected the Night Duty report document.";
 
       try {
         const profileSnapshot = await getDoc(doc(db, "users", profile.uid));
@@ -1400,6 +1388,29 @@ export function usePortalData(profile) {
       diagnosedError.code = error.code;
       throw diagnosedError;
     }
+
+    let warning = "";
+
+    try {
+      await commitTrackedWrite({
+        writes: [],
+        notification: buildNotificationEntry({
+          audienceTag: "night-duty",
+          title: "Night Duty update",
+          message: `${profile?.fullName ?? "Night Duty"} updated the ${nextNightDutyData.operationalDateKey} night duty report.`,
+        }),
+        activity: buildActivityLogEntry({
+          area: "night_duty",
+          actionType: "night_duty_update",
+          message: `${profile?.fullName ?? "Night Duty"} updated Night Duty records for ${nextNightDutyData.operationalDateKey}.`,
+        }),
+      });
+    } catch (error) {
+      warning = "The report was saved, but Firestore rejected its notification/audit entry. Publish the latest rules to restore audit tracking.";
+      console.error("Night Duty report saved without its tracking entries", error);
+    }
+
+    return { warning };
   }
 
   const loadNightDutyReport = useCallback(async (operationalDateKey) => {
