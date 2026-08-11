@@ -789,6 +789,10 @@ export default function NightDutyPanel({
     waterSupplyCount,
   ]);
   const reportData = useMemo(() => buildNightDutyReportData(currentRecord), [currentRecord]);
+  const latestNightDutyReportData = useMemo(
+    () => buildNightDutyReportData(nightDutyData ?? buildDefaultNightDutyData()),
+    [nightDutyData],
+  );
   const groupedStaff = useMemo(
     () => groupOnDutyStaff(onDutyStaff, departmentNotes),
     [departmentNotes, onDutyStaff],
@@ -1058,8 +1062,8 @@ export default function NightDutyPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-3 no-print">
-          <button type="button" onClick={() => printNightDutyReport(reportData)} className="button-secondary" disabled={loadingSelectedReport}>Print selected date</button>
-          <button type="button" onClick={() => handleDownload(reportData)} className="button-secondary" disabled={loadingSelectedReport}>Download selected PDF</button>
+          <button type="button" onClick={() => printNightDutyReport(latestNightDutyReportData)} className="button-secondary">Print latest report ({formatDateKey(latestNightDutyReportData.operationalDateKey)})</button>
+          <button type="button" onClick={() => handleDownload(latestNightDutyReportData)} className="button-secondary">Download latest PDF</button>
         </div>
       </div>
 
@@ -1093,6 +1097,13 @@ export default function NightDutyPanel({
                 ? `No saved Night Duty report exists for ${formatDateKey(selectedReportDate)}. The matching dated Front Office In-house occupancy has been loaded.`
                 : `No saved report exists for ${formatDateKey(selectedReportDate)}, and no Front Office archive was found for that date. Occupancy starts at zero and can be entered manually.`}
         </p>
+        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Every input and save button below applies only to {formatDateKey(selectedReportDate)}.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <button type="button" onClick={() => printNightDutyReport(reportData)} className="button-secondary" disabled={loadingSelectedReport || loadingInHouseReport}>Print Night Duty for {formatDateKey(selectedReportDate)}</button>
+          <button type="button" onClick={() => handleDownload(reportData)} className="button-secondary" disabled={loadingSelectedReport || loadingInHouseReport}>Download Night Duty PDF for selected date</button>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -1108,7 +1119,7 @@ export default function NightDutyPanel({
           ["duty", "On Duty"],
           ["utilities", "Utilities"],
           ["incidents", "Incidents & Sign-off"],
-          ["archive", "Report Archive"],
+          ["archive", "Reports by Date / Range"],
         ].map(([key, label]) => (
           <SectionButton key={key} label={label} active={activeSection === key} onClick={() => setActiveSection(key)} />
         ))}

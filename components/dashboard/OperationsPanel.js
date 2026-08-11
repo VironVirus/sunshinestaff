@@ -635,7 +635,6 @@ function buildInHouseReportLines(operations) {
   const sections = buildOccupiedRoomSections(operations?.occupiedRooms ?? [], operationalDateKey);
   const occupiedSections = sections.filter((section) => section.rooms.length > 0);
   const lines = [
-    "Sunshine Hotel In-house Report",
     `Operational day: ${formatDateKey(operationalDateKey)}`,
     `Generated: ${formatFriendlyDate(new Date(), {
       dateStyle: "full",
@@ -1094,9 +1093,13 @@ export default function OperationsPanel({
       0,
     ),
   }), [datedInHouseRooms, selectedInHouseDate]);
-  const inHouseReportLines = useMemo(
+  const selectedInHouseReportLines = useMemo(
     () => buildInHouseReportLines(datedInHouseSnapshot),
     [datedInHouseSnapshot],
+  );
+  const currentInHouseReportLines = useMemo(
+    () => buildInHouseReportLines(operations),
+    [operations],
   );
   const cleanedReportLines = useMemo(
     () => buildCleanedRoomsReportLines(operations),
@@ -1735,6 +1738,31 @@ export default function OperationsPanel({
                 />
               </label>
             </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={datedInHouseLoading}
+                onClick={() => printTextReport(
+                  `Sunshine Hotel In-house Report - ${formatDateKey(selectedInHouseDate)}`,
+                  selectedInHouseReportLines,
+                )}
+              >
+                Print In-house for {formatDateKey(selectedInHouseDate)}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={datedInHouseLoading}
+                onClick={() => downloadPdf(
+                  `sunshine-in-house-report-${selectedInHouseDate}.pdf`,
+                  "Sunshine Hotel In-house Report",
+                  selectedInHouseReportLines,
+                )}
+              >
+                Download In-house PDF for selected date
+              </button>
+            </div>
           </div>
 
           {access.canEditFrontOffice ? (
@@ -1791,19 +1819,22 @@ export default function OperationsPanel({
       {access.canPrint ? (
         <div className="mt-6 grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
           <ReportActionGroup
-            title="In-house Report"
+            title="Current Live In-house Report"
             actions={[
               {
-                label: "Print in-house report",
-                onClick: () => printTextReport("Sunshine Hotel In-house Report", inHouseReportLines),
+                label: "Print current In-house report",
+                onClick: () => printTextReport(
+                  `Sunshine Hotel Current In-house Report - ${formatDateKey(operationalDateKey)}`,
+                  currentInHouseReportLines,
+                ),
               },
               {
-                label: "Download PDF",
+                label: "Download current PDF",
                 onClick: () =>
                   downloadPdf(
-                    "sunshine-in-house-report.pdf",
-                    "Sunshine Hotel In-house Report",
-                    inHouseReportLines,
+                    `sunshine-current-in-house-report-${operationalDateKey}.pdf`,
+                    "Sunshine Hotel Current In-house Report",
+                    currentInHouseReportLines,
                   ),
               },
             ]}
