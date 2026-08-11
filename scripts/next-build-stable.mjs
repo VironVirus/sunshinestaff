@@ -21,7 +21,7 @@ try {
   process.exit(1);
 }
 
-const child = spawn(nodePath, [nextEntrypoint, "build"], {
+const child = spawn(nodePath, [nextEntrypoint, "build", "--webpack"], {
   cwd: root,
   stdio: "inherit",
   env: {
