@@ -132,7 +132,7 @@ function getEedcTone(value) {
 }
 
 function getUtilityTone(fieldKey, value) {
-  if (fieldKey === "eedcLevel") {
+  if (fieldKey === "eedcLevel" || fieldKey === "dieselLevel") {
     return getEedcTone(value);
   }
 
@@ -243,6 +243,7 @@ export default function PropertyPanel({
                   <input
                     type="number"
                     min="0"
+                    step="0.01"
                     value={utilityForm[field.key] ?? ""}
                     onChange={(event) =>
                       setUtilityForm((current) => ({

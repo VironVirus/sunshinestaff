@@ -11,8 +11,9 @@ const tankLevelOptions = [
 export const propertyUtilityFields = [
   {
     key: "dieselLevel",
-    label: "Diesel level",
-    options: tankLevelOptions,
+    label: "Diesel quantity",
+    inputType: "number",
+    unit: "litres",
   },
   {
     key: "undergroundTankLevel",
@@ -33,6 +34,7 @@ export const propertyUtilityFields = [
     key: "eedcLevel",
     label: "EEDC units",
     inputType: "number",
+    unit: "units",
   },
 ];
 
@@ -74,14 +76,18 @@ export function getUtilityField(fieldKey) {
 }
 
 export function getUtilityLabel(fieldKey, value) {
-  if (!value) {
+  if (value === "" || value === null || value === undefined) {
     return "Not set";
   }
 
   const field = getUtilityField(fieldKey);
 
   if (field?.inputType === "number") {
-    return `${value} units`;
+    const amount = Number(value);
+    const displayValue = Number.isFinite(amount)
+      ? amount.toLocaleString("en-US", { maximumFractionDigits: 2 })
+      : value;
+    return `${displayValue}${field.unit ? ` ${field.unit}` : ""}`;
   }
 
   return field?.options.find((option) => option.value === value)?.label ?? value;
@@ -212,6 +218,9 @@ export function mergePropertyStatus(payload = {}) {
     utilities: Object.fromEntries(propertyUtilityFields.map((field) => {
       const value = payload?.utilities?.[field.key];
       if (field.inputType === "number") {
+        if (value === "" || value === null || value === undefined) {
+          return [field.key, ""];
+        }
         const amount = Number(value);
         return [field.key, Number.isFinite(amount) ? Math.min(Math.max(amount, 0), 1000000) : ""];
       }

@@ -290,8 +290,9 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
           "operationalDateKey", "occupancyByFloor", "frontOfficeOccupancyByFloor",
           "occupancyQuery", "income", "onDutyStaff", "departmentNotes",
-          "gasLevels", "hotWaterTemperature", "powerSupplies", "waterSupplyCount",
-          "guestIncident", "employeeIncident", "housekeepingSupervisorSignature",
+          "gasLevels", "hotWaterTemperature", "generatorServiceHours",
+          "generatorServiceMinutes", "powerSupplies", "waterSupplyCount",
+          "guestIncident", "employeeIncident", "nightDutySupervisorSignature",
           "utilitiesSnapshot", "eventsSnapshot", "complaintsSnapshot", "updatedAt",
           "updatedAtIso", "updatedByUid", "updatedByName", "updatedByDepartment"
         ]) &&
@@ -311,6 +312,12 @@ service cloud.firestore {
           (request.resource.data.hotWaterTemperature is number &&
             request.resource.data.hotWaterTemperature >= 0 &&
             request.resource.data.hotWaterTemperature <= 120)) &&
+        request.resource.data.generatorServiceHours is int &&
+        request.resource.data.generatorServiceHours >= 0 &&
+        request.resource.data.generatorServiceHours <= 100000 &&
+        request.resource.data.generatorServiceMinutes is int &&
+        request.resource.data.generatorServiceMinutes >= 0 &&
+        request.resource.data.generatorServiceMinutes <= 59 &&
         request.resource.data.powerSupplies is list &&
         optionalListWithin(request.resource.data, "powerSupplies", 20) &&
         request.resource.data.waterSupplyCount is int &&
@@ -318,8 +325,8 @@ service cloud.firestore {
         request.resource.data.waterSupplyCount <= 1000 &&
         request.resource.data.guestIncident is map &&
         request.resource.data.employeeIncident is map &&
-        request.resource.data.housekeepingSupervisorSignature is string &&
-        request.resource.data.housekeepingSupervisorSignature.size() <= 120 &&
+        request.resource.data.nightDutySupervisorSignature is string &&
+        request.resource.data.nightDutySupervisorSignature.size() <= 120 &&
         request.resource.data.utilitiesSnapshot is map &&
         request.resource.data.eventsSnapshot is list &&
         optionalListWithin(request.resource.data, "eventsSnapshot", 100) &&

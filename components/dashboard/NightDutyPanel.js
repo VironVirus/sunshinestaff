@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildDefaultNightDutyData,
   cookingGasOptions,
-  gasLevelOptions,
   getFrontOfficeRoomRevenue,
   getGasLevelLabel,
   getGrandIncomeTotal,
@@ -30,6 +29,15 @@ function formatAmount(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function formatDuration(hours, minutes) {
+  const safeHours = Math.max(Math.trunc(Number(hours) || 0), 0);
+  const safeMinutes = Math.min(Math.max(Math.trunc(Number(minutes) || 0), 0), 59);
+  const parts = [];
+  if (safeHours > 0) parts.push(`${safeHours} hour${safeHours === 1 ? "" : "s"}`);
+  if (safeMinutes > 0) parts.push(`${safeMinutes} minute${safeMinutes === 1 ? "" : "s"}`);
+  return parts.join(" ") || "0 minutes";
 }
 
 function escapeHtml(value = "") {
@@ -206,12 +214,13 @@ function buildNightDutyReportLines(reportData) {
     lines.push(`${gas.label}: ${getGasLevelLabel(reportData.gasLevels?.[gas.value])}`);
   });
   lines.push(`Hot water temperature: ${reportData.hotWaterTemperature ?? "Not set"}°C`);
+  lines.push(`Generator service hours: ${formatDuration(reportData.generatorServiceHours, reportData.generatorServiceMinutes)}`);
   lines.push(`Water supplied: ${reportData.waterSupplyCount ?? 0} time(s)`);
   if ((reportData.powerSupplies ?? []).length === 0) {
     lines.push("Power supplies: Nil");
   } else {
     reportData.powerSupplies.forEach((entry) => {
-      lines.push(`${entry.name}: ${entry.durationHours} hour(s)`);
+      lines.push(`${entry.name}: ${formatDuration(entry.durationHours, entry.durationMinutes)}`);
     });
   }
   propertyUtilityFields.forEach((field) => {
@@ -246,7 +255,7 @@ function buildNightDutyReportLines(reportData) {
   }
   lines.push("");
   lines.push(
-    `Housekeeping supervisor signature: ${reportData.housekeepingSupervisorSignature || "Not signed"}`,
+    `Night Duty Supervisor signature: ${reportData.nightDutySupervisorSignature || "Not signed"}`,
   );
 
   return lines;
@@ -307,7 +316,7 @@ function printNightDutyReport(reportData) {
     <tr><td>${escapeHtml(field.label)}</td><td>${escapeHtml(getUtilityLabel(field.key, reportData.utilitiesSnapshot?.[field.key]))}</td></tr>
   `).join("");
   const powerRows = (reportData.powerSupplies ?? []).length > 0
-    ? reportData.powerSupplies.map((entry) => `<tr><td>${escapeHtml(entry.name)}</td><td>${entry.durationHours} hour(s)</td></tr>`).join("")
+    ? reportData.powerSupplies.map((entry) => `<tr><td>${escapeHtml(entry.name)}</td><td>${escapeHtml(formatDuration(entry.durationHours, entry.durationMinutes))}</td></tr>`).join("")
     : "<tr><td colspan='2'>Nil</td></tr>";
   const eventRows = (reportData.eventsSnapshot ?? []).length > 0
     ? reportData.eventsSnapshot.map((entry) => `<tr><td>${escapeHtml(entry.eventType || "Event")}</td><td>${escapeHtml(entry.venue || "Not stated")}</td><td>${Number(entry.expectedGuests) || 0}</td></tr>`).join("")
@@ -349,7 +358,7 @@ function printNightDutyReport(reportData) {
       <table><thead><tr><th>Department</th><th>Staff</th><th>Night Duty note</th></tr></thead><tbody>${staffHtml}</tbody></table>
 
       <h2>Utilities</h2>
-      <table><tbody>${gasRows}<tr><td>Hot water temperature</td><td>${reportData.hotWaterTemperature ?? "Not set"}°C</td></tr><tr><td>Water supplied</td><td>${reportData.waterSupplyCount ?? 0} time(s)</td></tr>${utilityRows}</tbody></table>
+      <table><tbody>${gasRows}<tr><td>Hot water temperature</td><td>${reportData.hotWaterTemperature ?? "Not set"}°C</td></tr><tr><td>Generator service hours</td><td>${escapeHtml(formatDuration(reportData.generatorServiceHours, reportData.generatorServiceMinutes))}</td></tr><tr><td>Water supplied</td><td>${reportData.waterSupplyCount ?? 0} time(s)</td></tr>${utilityRows}</tbody></table>
       <h3>Power supply usage</h3><table><thead><tr><th>Power supply</th><th>Duration</th></tr></thead><tbody>${powerRows}</tbody></table>
 
       <h2>Incidents</h2>
@@ -361,7 +370,7 @@ function printNightDutyReport(reportData) {
 
       <h2>Guest complaints</h2>
       <table><thead><tr><th>Room</th><th>Type</th><th>Note</th></tr></thead><tbody>${complaintRows}</tbody></table>
-      <div class="signature">Housekeeping supervisor: ${escapeHtml(reportData.housekeepingSupervisorSignature || "Not signed")}</div>
+      <div class="signature">Night Duty Supervisor: ${escapeHtml(reportData.nightDutySupervisorSignature || "Not signed")}</div>
     </body></html>
   `);
   reportWindow.document.close();
@@ -428,13 +437,19 @@ export default function NightDutyPanel({
   });
   const [gasLevels, setGasLevels] = useState(buildDefaultNightDutyData().gasLevels);
   const [hotWaterTemperature, setHotWaterTemperature] = useState("");
+  const [generatorServiceHours, setGeneratorServiceHours] = useState(0);
+  const [generatorServiceMinutes, setGeneratorServiceMinutes] = useState(0);
   const [waterSupplyCount, setWaterSupplyCount] = useState(0);
   const [powerSupplies, setPowerSupplies] = useState([]);
-  const [powerDraft, setPowerDraft] = useState({ name: "", durationHours: "" });
+  const [powerDraft, setPowerDraft] = useState({
+    name: "",
+    durationHours: "",
+    durationMinutes: "",
+  });
   const [utilitiesForm, setUtilitiesForm] = useState(defaultUtilities);
   const [guestIncident, setGuestIncident] = useState(buildDefaultNightDutyData().guestIncident);
   const [employeeIncident, setEmployeeIncident] = useState(buildDefaultNightDutyData().employeeIncident);
-  const [housekeepingSupervisorSignature, setHousekeepingSupervisorSignature] = useState("");
+  const [nightDutySupervisorSignature, setNightDutySupervisorSignature] = useState("");
   const [selectedReportDate, setSelectedReportDate] = useState(getOperationalDateKey());
   const [loadedSelectedReport, setLoadedSelectedReport] = useState(null);
   const [loadingSelectedReport, setLoadingSelectedReport] = useState(false);
@@ -501,11 +516,13 @@ export default function NightDutyPanel({
     setDepartmentNotes(report.departmentNotes);
     setGasLevels(report.gasLevels);
     setHotWaterTemperature(report.hotWaterTemperature ?? "");
+    setGeneratorServiceHours(report.generatorServiceHours ?? 0);
+    setGeneratorServiceMinutes(report.generatorServiceMinutes ?? 0);
     setWaterSupplyCount(report.waterSupplyCount);
     setPowerSupplies(report.powerSupplies);
     setGuestIncident(report.guestIncident);
     setEmployeeIncident(report.employeeIncident);
-    setHousekeepingSupervisorSignature(report.housekeepingSupervisorSignature);
+    setNightDutySupervisorSignature(report.nightDutySupervisorSignature);
     setUtilitiesForm(
       hasSavedSelectedReport && Object.keys(report.utilitiesSnapshot ?? {}).length > 0
         ? report.utilitiesSnapshot
@@ -538,11 +555,13 @@ export default function NightDutyPanel({
     departmentNotes,
     gasLevels,
     hotWaterTemperature: hotWaterTemperature === "" ? null : hotWaterTemperature,
+    generatorServiceHours,
+    generatorServiceMinutes,
     powerSupplies,
     waterSupplyCount,
     guestIncident,
     employeeIncident,
-    housekeepingSupervisorSignature,
+    nightDutySupervisorSignature,
     utilitiesSnapshot: utilitiesForm,
     eventsSnapshot,
     complaintsSnapshot,
@@ -554,12 +573,14 @@ export default function NightDutyPanel({
     frontOfficeOccupancyByFloor,
     gasLevels,
     guestIncident,
-    housekeepingSupervisorSignature,
+    generatorServiceHours,
+    generatorServiceMinutes,
     hotWaterTemperature,
     incomeForm,
     occupancyByFloor,
     occupancyQuery,
     onDutyStaff,
+    nightDutySupervisorSignature,
     selectedReportDate,
     powerSupplies,
     utilitiesForm,
@@ -719,13 +740,17 @@ export default function NightDutyPanel({
   }
 
   function addPowerSupply() {
-    if (!powerDraft.name.trim() || powerDraft.durationHours === "") return;
+    if (
+      !powerDraft.name.trim() ||
+      (powerDraft.durationHours === "" && powerDraft.durationMinutes === "")
+    ) return;
     setPowerSupplies((current) => [...current, {
       id: `power-${Date.now()}`,
       name: powerDraft.name.trim(),
-      durationHours: powerDraft.durationHours,
+      durationHours: powerDraft.durationHours || 0,
+      durationMinutes: powerDraft.durationMinutes || 0,
     }]);
-    setPowerDraft({ name: "", durationHours: "" });
+    setPowerDraft({ name: "", durationHours: "", durationMinutes: "" });
   }
 
   function handleDownload(report = reportData) {
@@ -893,11 +918,52 @@ export default function NightDutyPanel({
       {activeSection === "utilities" ? (
         <form onSubmit={(event) => { event.preventDefault(); saveCurrentReport("Utilities", selectedReportDate === currentOperationalDateKey); }} className="mt-6 space-y-6 no-print">
           <div className="grid gap-6 xl:grid-cols-2">
-            <div className="subpanel"><p className="metric-label">Cooking gas levels</p><div className="mt-4 grid gap-4 sm:grid-cols-2">{cookingGasOptions.map((gas) => <label key={gas.value} className="field"><span>{gas.label}</span><select value={gasLevels[gas.value] ?? ""} onChange={(event) => setGasLevels((current) => ({ ...current, [gas.value]: event.target.value }))} disabled={readOnly || savingSection}><option value="">Select level</option>{gasLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}</div></div>
-            <div className="subpanel"><p className="metric-label">Water and temperature</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="field"><span>Hot water temperature (°C)</span><input type="number" min="0" max="120" step="0.1" value={hotWaterTemperature} onChange={(event) => setHotWaterTemperature(event.target.value)} disabled={readOnly || savingSection} /></label><label className="field"><span>Number of times water was supplied</span><input type="number" min="0" max="1000" value={waterSupplyCount} onChange={(event) => setWaterSupplyCount(event.target.value)} disabled={readOnly || savingSection} /></label></div></div>
+            <div className="subpanel">
+              <p className="metric-label">Cooking gas quantities</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {cookingGasOptions.map((gas) => (
+                  <label key={gas.value} className="field">
+                    <span>{gas.label}</span>
+                    <input type="number" min="0" max="1000000" step="0.01" value={gasLevels[gas.value] ?? ""} onChange={(event) => setGasLevels((current) => ({ ...current, [gas.value]: event.target.value }))} disabled={readOnly || savingSection} placeholder="Enter quantity" />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="subpanel">
+              <p className="metric-label">Water and temperature</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="field"><span>Hot water temperature (°C)</span><input type="number" min="0" max="120" step="0.01" value={hotWaterTemperature} onChange={(event) => setHotWaterTemperature(event.target.value)} disabled={readOnly || savingSection} /></label>
+                <label className="field"><span>Number of times water was supplied</span><input type="number" min="0" max="1000" step="1" value={waterSupplyCount} onChange={(event) => setWaterSupplyCount(event.target.value)} disabled={readOnly || savingSection} /></label>
+              </div>
+            </div>
           </div>
-          <div className="subpanel"><p className="metric-label">Power supply usage</p><div className="mt-4 grid gap-4 sm:grid-cols-[1fr_12rem_auto]"><label className="field"><span>Power supply name</span><input value={powerDraft.name} onChange={(event) => setPowerDraft((current) => ({ ...current, name: event.target.value }))} disabled={readOnly || savingSection} placeholder="Generator 1, EEDC, inverter..." /></label><label className="field"><span>Hours used</span><input type="number" min="0" max="72" step="0.1" value={powerDraft.durationHours} onChange={(event) => setPowerDraft((current) => ({ ...current, durationHours: event.target.value }))} disabled={readOnly || savingSection} /></label><button type="button" onClick={addPowerSupply} className="button-secondary self-end" disabled={readOnly || savingSection || !powerDraft.name.trim() || powerDraft.durationHours === ""}>Add power supply</button></div><div className="mt-4 space-y-3">{powerSupplies.length > 0 ? powerSupplies.map((entry) => <div key={entry.id} className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_12rem_auto]"><input aria-label="Power supply name" value={entry.name} onChange={(event) => setPowerSupplies((current) => current.map((item) => item.id === entry.id ? { ...item, name: event.target.value } : item))} disabled={readOnly || savingSection} /><input aria-label={`${entry.name} hours used`} type="number" min="0" max="72" step="0.1" value={entry.durationHours} onChange={(event) => setPowerSupplies((current) => current.map((item) => item.id === entry.id ? { ...item, durationHours: event.target.value } : item))} disabled={readOnly || savingSection} /><ActionButton label="Remove" tone="danger" onClick={() => setPowerSupplies((current) => current.filter((item) => item.id !== entry.id))} /></div>) : <p className="text-sm text-slate-500">No power supply added.</p>}</div></div>
-          <div className="subpanel"><p className="metric-label">Other utility readings</p><div className="mt-4 grid gap-4 sm:grid-cols-2">{propertyUtilityFields.map((field) => <label key={field.key} className="field"><span>{field.label}</span>{field.inputType === "number" ? <input type="number" min="0" value={utilitiesForm[field.key] ?? ""} onChange={(event) => setUtilitiesForm((current) => ({ ...current, [field.key]: event.target.value }))} disabled={readOnly || savingSection} /> : <select value={utilitiesForm[field.key] ?? ""} onChange={(event) => setUtilitiesForm((current) => ({ ...current, [field.key]: event.target.value }))} disabled={readOnly || savingSection}><option value="">Select level</option>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}</label>)}</div></div>
+          <div className="subpanel">
+            <p className="metric-label">Generator service hours</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="field"><span>Hours</span><input type="number" min="0" max="100000" step="1" value={generatorServiceHours} onChange={(event) => setGeneratorServiceHours(event.target.value)} disabled={readOnly || savingSection} /></label>
+              <label className="field"><span>Minutes</span><input type="number" min="0" max="59" step="1" value={generatorServiceMinutes} onChange={(event) => setGeneratorServiceMinutes(event.target.value)} disabled={readOnly || savingSection} /></label>
+            </div>
+          </div>
+          <div className="subpanel">
+            <p className="metric-label">Power supply usage</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]">
+              <label className="field"><span>Power supply name</span><input value={powerDraft.name} onChange={(event) => setPowerDraft((current) => ({ ...current, name: event.target.value }))} disabled={readOnly || savingSection} placeholder="Generator 1, EEDC, inverter..." /></label>
+              <label className="field"><span>Hours</span><input type="number" min="0" max="72" step="1" value={powerDraft.durationHours} onChange={(event) => setPowerDraft((current) => ({ ...current, durationHours: event.target.value }))} disabled={readOnly || savingSection} /></label>
+              <label className="field"><span>Minutes</span><input type="number" min="0" max="59" step="1" value={powerDraft.durationMinutes} onChange={(event) => setPowerDraft((current) => ({ ...current, durationMinutes: event.target.value }))} disabled={readOnly || savingSection} /></label>
+              <button type="button" onClick={addPowerSupply} className="button-secondary self-end" disabled={readOnly || savingSection || !powerDraft.name.trim() || (powerDraft.durationHours === "" && powerDraft.durationMinutes === "")}>Add power supply</button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {powerSupplies.length > 0 ? powerSupplies.map((entry) => (
+                <div key={entry.id} className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]">
+                  <input aria-label="Power supply name" value={entry.name} onChange={(event) => setPowerSupplies((current) => current.map((item) => item.id === entry.id ? { ...item, name: event.target.value } : item))} disabled={readOnly || savingSection} />
+                  <input aria-label={`${entry.name} hours used`} type="number" min="0" max="72" step="1" value={entry.durationHours} onChange={(event) => setPowerSupplies((current) => current.map((item) => item.id === entry.id ? { ...item, durationHours: event.target.value } : item))} disabled={readOnly || savingSection} />
+                  <input aria-label={`${entry.name} minutes used`} type="number" min="0" max="59" step="1" value={entry.durationMinutes ?? 0} onChange={(event) => setPowerSupplies((current) => current.map((item) => item.id === entry.id ? { ...item, durationMinutes: event.target.value } : item))} disabled={readOnly || savingSection} />
+                  <ActionButton label="Remove" tone="danger" onClick={() => setPowerSupplies((current) => current.filter((item) => item.id !== entry.id))} />
+                </div>
+              )) : <p className="text-sm text-slate-500">No power supply added.</p>}
+            </div>
+          </div>
+          <div className="subpanel"><p className="metric-label">Other utility readings</p><div className="mt-4 grid gap-4 sm:grid-cols-2">{propertyUtilityFields.map((field) => <label key={field.key} className="field"><span>{field.label}</span>{field.inputType === "number" ? <input type="number" min="0" step="0.01" value={utilitiesForm[field.key] ?? ""} onChange={(event) => setUtilitiesForm((current) => ({ ...current, [field.key]: event.target.value }))} disabled={readOnly || savingSection} /> : <select value={utilitiesForm[field.key] ?? ""} onChange={(event) => setUtilitiesForm((current) => ({ ...current, [field.key]: event.target.value }))} disabled={readOnly || savingSection}><option value="">Select level</option>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}</label>)}</div></div>
           <button type="submit" className="button-primary w-full" disabled={readOnly || savingSection}>{savingSection === "Utilities" ? "Saving..." : "Save utilities"}</button>
         </form>
       ) : null}
@@ -905,7 +971,7 @@ export default function NightDutyPanel({
       {activeSection === "incidents" ? (
         <form onSubmit={(event) => { event.preventDefault(); saveCurrentReport("Incidents and sign-off"); }} className="mt-6 space-y-6 no-print">
           <div className="grid gap-6 xl:grid-cols-2"><IncidentEditor label="Guest incident" value={guestIncident} onChange={setGuestIncident} disabled={readOnly || Boolean(savingSection)} /><IncidentEditor label="Employee incident" value={employeeIncident} onChange={setEmployeeIncident} disabled={readOnly || Boolean(savingSection)} /></div>
-          <label className="field subpanel"><span>Housekeeping supervisor signature name</span><input value={housekeepingSupervisorSignature} onChange={(event) => setHousekeepingSupervisorSignature(event.target.value)} disabled={readOnly || savingSection} maxLength={120} placeholder="Enter the housekeeping supervisor's full name" /></label>
+          <label className="field subpanel"><span>Night Duty Supervisor signature name</span><input value={nightDutySupervisorSignature} onChange={(event) => setNightDutySupervisorSignature(event.target.value)} disabled={readOnly || savingSection} maxLength={120} placeholder="Enter the Night Duty Supervisor's full name" /></label>
           <button type="submit" className="button-primary w-full" disabled={readOnly || savingSection}>{savingSection === "Incidents and sign-off" ? "Saving..." : "Save incidents and sign-off"}</button>
         </form>
       ) : null}

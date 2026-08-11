@@ -62,14 +62,6 @@ export const cookingGasOptions = [
   { value: "gas_d", label: "Gas D" },
 ];
 
-export const gasLevelOptions = [
-  { value: "empty", label: "Empty" },
-  { value: "low", label: "Low" },
-  { value: "half", label: "Half" },
-  { value: "three_quarter", label: "Three quarter" },
-  { value: "full", label: "Full" },
-];
-
 function buildDefaultIncome() {
   return Object.fromEntries(
     nightDutyOutletConfig.map((outlet) => [
@@ -118,11 +110,13 @@ export function buildDefaultNightDutyData(operationalDateKey = getOperationalDat
     departmentNotes: buildDefaultDepartmentNotes(),
     gasLevels: buildDefaultGasLevels(),
     hotWaterTemperature: null,
+    generatorServiceHours: 0,
+    generatorServiceMinutes: 0,
     powerSupplies: [],
     waterSupplyCount: 0,
     guestIncident: buildDefaultIncident(),
     employeeIncident: buildDefaultIncident(),
-    housekeepingSupervisorSignature: "",
+    nightDutySupervisorSignature: "",
     utilitiesSnapshot: {},
     eventsSnapshot: [],
     complaintsSnapshot: [],
@@ -235,13 +229,20 @@ function normalizeDepartmentNotes(notes = {}) {
 function normalizeGasLevels(levels = {}) {
   return Object.fromEntries(
     cookingGasOptions.map((gas) => {
-      const value = levels?.[gas.value];
-      return [
-        gas.value,
-        gasLevelOptions.some((option) => option.value === value) ? value : "",
-      ];
+      const rawValue = levels?.[gas.value];
+      const value = Number(rawValue);
+      return [gas.value, rawValue !== "" && rawValue !== null &&
+        rawValue !== undefined && Number.isFinite(value)
+        ? Math.min(Math.max(value, 0), 1000000)
+        : ""];
     }),
   );
+}
+
+function normalizeDuration(hours, minutes, maximumHours = 100000) {
+  const safeHours = Math.min(normalizeCount(hours, maximumHours), maximumHours);
+  const safeMinutes = Math.min(normalizeCount(minutes, 59), 59);
+  return { hours: safeHours, minutes: safeMinutes };
 }
 
 function normalizePowerSupplies(entries = []) {
@@ -251,10 +252,21 @@ function normalizePowerSupplies(entries = []) {
 
       if (!name) return null;
 
+      const hasMinutes = entry?.durationMinutes !== undefined;
+      const legacyDuration = Math.min(normalizeAmount(entry?.durationHours), 72);
+      const duration = hasMinutes
+        ? normalizeDuration(entry?.durationHours, entry?.durationMinutes, 72)
+        : normalizeDuration(
+            Math.floor(legacyDuration),
+            Math.round((legacyDuration - Math.floor(legacyDuration)) * 60),
+            72,
+          );
+
       return {
         id: normalizeShortText(entry?.id, 100) || `power-${index + 1}`,
         name,
-        durationHours: Math.min(normalizeAmount(entry?.durationHours), 72),
+        durationHours: duration.hours,
+        durationMinutes: duration.minutes,
       };
     })
     .filter(Boolean);
@@ -304,7 +316,11 @@ export function getFrontOfficeRoomRevenue(income = {}) {
 }
 
 export function getGasLevelLabel(value) {
-  return gasLevelOptions.find((option) => option.value === value)?.label ?? "Not set";
+  if (value === "" || value === null || value === undefined) return "Not set";
+  const amount = Number(value);
+  return Number.isFinite(amount)
+    ? amount.toLocaleString("en-US", { maximumFractionDigits: 2 })
+    : "Not set";
 }
 
 export function getCookingGasLabel(value) {
@@ -325,6 +341,10 @@ export function normalizeStoredNightDutyReport(payload = {}) {
   const operationalDateKey = normalizeShortText(payload.operationalDateKey, 10) ||
     getOperationalDateKey();
   const base = buildDefaultNightDutyData(operationalDateKey);
+  const generatorServiceDuration = normalizeDuration(
+    payload.generatorServiceHours,
+    payload.generatorServiceMinutes,
+  );
 
   return {
     ...base,
@@ -347,12 +367,14 @@ export function normalizeStoredNightDutyReport(payload = {}) {
       payload.hotWaterTemperature === undefined
       ? null
       : Math.min(Math.max(Number(payload.hotWaterTemperature) || 0, 0), 120),
+    generatorServiceHours: generatorServiceDuration.hours,
+    generatorServiceMinutes: generatorServiceDuration.minutes,
     powerSupplies: normalizePowerSupplies(payload.powerSupplies),
     waterSupplyCount: normalizeCount(payload.waterSupplyCount, 1000),
     guestIncident: normalizeIncident(payload.guestIncident),
     employeeIncident: normalizeIncident(payload.employeeIncident),
-    housekeepingSupervisorSignature: normalizeShortText(
-      payload.housekeepingSupervisorSignature,
+    nightDutySupervisorSignature: normalizeShortText(
+      payload.nightDutySupervisorSignature ?? payload.housekeepingSupervisorSignature,
       120,
     ),
     utilitiesSnapshot: payload.utilitiesSnapshot && typeof payload.utilitiesSnapshot === "object"
