@@ -46,6 +46,7 @@ NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
 NEXT_PUBLIC_USE_FIREBASE_EMULATORS=false
+NEXT_PUBLIC_CLOUDFLARE_ARCHIVE_URL=
 ```
 
 4. Run the built-in config check:
@@ -78,7 +79,7 @@ npm run firebase:indexes
 npm run firebase:emulators
 ```
 
-The Firebase CLI is a development dependency. You may also install it globally if preferred:
+The Firebase CLI is intentionally installed separately, rather than as a website dependency. This keeps deployment-only packages out of Hostinger production builds:
 
 ```bash
 npm install -g firebase-tools
@@ -96,6 +97,12 @@ firebase login
   - Sample Firebase project alias file.
 - `.env.local`
   - Your local Firebase web app credentials.
+
+## Cloudflare D1 hybrid archive
+
+The portal can use Cloudflare D1 alongside Firebase. Firebase remains responsible for authentication, live operational data and staff permissions. D1 keeps long-term archive copies and revision history for Night Duty, dated In-house and Room Property Status reports. Fully backed-up Night Duty ranges are read from D1 to reduce repeated Firestore reads.
+
+Follow the complete setup and backfill instructions in [docs/CLOUDFLARE_D1_SETUP.md](docs/CLOUDFLARE_D1_SETUP.md).
 
 ## Firestore shape
 

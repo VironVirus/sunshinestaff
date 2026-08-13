@@ -1301,7 +1301,12 @@ export default function OperationsPanel({
       setMoveDestinationCondition("clean");
       setFeedback((current) => ({
         ...current,
-        frontOffice: { type: "success", message },
+        frontOffice: {
+          type: storedReport?.archiveWarning ? "warning" : "success",
+          message: storedReport?.archiveWarning
+            ? `${message} ${storedReport.archiveWarning}`
+            : message,
+        },
       }));
       setSelectedMoveFromFloor("");
       setSelectedMoveToFloor("");
@@ -1800,6 +1805,8 @@ export default function OperationsPanel({
             <div className={`rounded-2xl px-4 py-3 text-sm ${
               feedback.frontOffice.type === "success"
                 ? "bg-emerald-50 text-emerald-700"
+                : feedback.frontOffice.type === "warning"
+                  ? "bg-amber-50 text-amber-800"
                 : "bg-rose-50 text-rose-700"
             }`}>
               {feedback.frontOffice.message}
@@ -1989,6 +1996,8 @@ export default function OperationsPanel({
                   className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
                     feedback.frontOffice.type === "success"
                       ? "bg-emerald-50 text-emerald-700"
+                      : feedback.frontOffice.type === "warning"
+                        ? "bg-amber-50 text-amber-800"
                       : "bg-rose-50 text-rose-700"
                   }`}
                 >

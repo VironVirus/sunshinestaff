@@ -15,5 +15,7 @@ export default defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "workers/archive/worker-configuration.d.ts",
+    "workers/archive/.wrangler/**",
   ]),
 ]);

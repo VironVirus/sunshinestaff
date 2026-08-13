@@ -49,8 +49,16 @@ import {
   mergeNightDutyData,
   normalizeStoredNightDutyReport,
 } from "@/data/nightDuty";
+import {
+  archiveRecord,
+  archiveRecordBatch,
+  hasCloudflareArchiveConfig,
+  loadArchivedRange,
+  loadArchivedRecord,
+  loadArchivedRevisions,
+} from "@/lib/cloudflareArchive";
 import { db, hasFirebaseConfig } from "@/lib/firebase";
-import { getOperationalDateKey } from "@/lib/hotelTime";
+import { getOperationalDateKey, listDateKeysInRange } from "@/lib/hotelTime";
 import {
   getAuditLogAccess,
   getHousekeepingReportAccess,
@@ -86,6 +94,34 @@ const MAX_VISIBLE_NIGHT_DUTY_REPORTS = 31;
 const MAX_OPERATIONS_ACTIVITY = 300;
 const MAX_VISIBLE_NOTIFICATIONS = 80;
 const MAX_VISIBLE_ACTIVITY_LOGS = 200;
+
+function buildArchivePayload(record = {}) {
+  const payload = { ...record };
+  [
+    "id",
+    "updatedAt",
+    "generatedAt",
+    "groupedStaff",
+    "incomeSections",
+    "grandIncomeTotal",
+    "actualRevenueTotal",
+    "occupancyTotal",
+  ].forEach((fieldName) => delete payload[fieldName]);
+
+  return payload;
+}
+
+function buildArchiveRecord(recordType, recordKey, operationalDate, report) {
+  const payload = buildArchivePayload(report);
+
+  return {
+    recordType,
+    recordKey,
+    operationalDate,
+    sourceUpdatedAt: payload.updatedAtIso ?? "",
+    payload,
+  };
+}
 
 function normalizeOperationsRoomMoves(roomMoves = []) {
   return (Array.isArray(roomMoves) ? roomMoves : [])
@@ -763,7 +799,22 @@ export function usePortalData(profile) {
       doc(db, "roomPropertyStatus", getRoomPropertyStatusDocumentId(roomNumber)),
     );
 
-    return buildRoomPropertyStatusRecord(snapshot.exists() ? snapshot.data() : {}, room);
+    if (snapshot.exists()) {
+      return buildRoomPropertyStatusRecord(snapshot.data(), room);
+    }
+
+    if (hasCloudflareArchiveConfig) {
+      try {
+        const archived = await loadArchivedRecord("room-property-status", roomNumber);
+        if (archived?.payload) {
+          return buildRoomPropertyStatusRecord(archived.payload, room);
+        }
+      } catch (archiveError) {
+        console.error("Unable to load the D1 room property archive", archiveError);
+      }
+    }
+
+    return buildRoomPropertyStatusRecord({}, room);
   }, [roomPropertyStatusAccess.canViewPanel]);
 
   const loadAllRoomPropertyStatuses = useCallback(async () => {
@@ -822,6 +873,20 @@ export function usePortalData(profile) {
         updatedByUid: profile?.uid ?? "",
       },
     );
+
+    if (hasCloudflareArchiveConfig) {
+      try {
+        await archiveRecord(buildArchiveRecord(
+          "room-property-status",
+          room.label,
+          getOperationalDateKey(updatedAtIso),
+          savedReport,
+        ));
+      } catch (archiveError) {
+        console.error("Room property report saved without its D1 archive copy", archiveError);
+        savedReport.archiveWarning = "The Firebase report was saved, but its Cloudflare D1 backup is pending.";
+      }
+    }
 
     return savedReport;
   }, [
@@ -1428,8 +1493,69 @@ export function usePortalData(profile) {
       console.error("Night Duty report saved without its tracking entries", error);
     }
 
+    if (hasCloudflareArchiveConfig) {
+      try {
+        await archiveRecord(buildArchiveRecord(
+          "night-duty",
+          nextNightDutyData.operationalDateKey,
+          nextNightDutyData.operationalDateKey,
+          persistedReport,
+        ));
+      } catch (archiveError) {
+        warning = `${warning} The Firebase report was saved, but its Cloudflare D1 backup is pending.`.trim();
+        console.error("Night Duty report saved without its D1 archive copy", archiveError);
+      }
+    }
+
     return { warning };
   }
+
+  const fetchFirestoreNightDutyRange = useCallback(async (rangeStart, rangeEnd) => {
+    const snapshot = await getDocs(query(
+      collection(db, "nightDutyReports"),
+      where("operationalDateKey", ">=", rangeStart),
+      where("operationalDateKey", "<=", rangeEnd),
+      orderBy("operationalDateKey", "asc"),
+      limit(MAX_REPORT_HISTORY_DAYS),
+    ));
+
+    return snapshot.docs.map((reportDocument) => normalizeStoredNightDutyReport({
+      id: reportDocument.id,
+      ...reportDocument.data(),
+    }));
+  }, []);
+
+  const archiveNightDutyRange = useCallback(async (reports, coveredDateKeys) => {
+    if (!hasCloudflareArchiveConfig) {
+      throw new Error("Cloudflare D1 archive is not configured.");
+    }
+
+    const archiveRecords = reports.map((report) => buildArchiveRecord(
+      "night-duty",
+      report.operationalDateKey,
+      report.operationalDateKey,
+      report,
+    ));
+    const chunkSize = 20;
+
+    if (archiveRecords.length === 0) {
+      await archiveRecordBatch({
+        records: [],
+        coverageType: "night-duty",
+        coveredDateKeys,
+      });
+      return;
+    }
+
+    for (let index = 0; index < archiveRecords.length; index += chunkSize) {
+      const isFinalChunk = index + chunkSize >= archiveRecords.length;
+      await archiveRecordBatch({
+        records: archiveRecords.slice(index, index + chunkSize),
+        coverageType: isFinalChunk ? "night-duty" : "",
+        coveredDateKeys: isFinalChunk ? coveredDateKeys : [],
+      });
+    }
+  }, []);
 
   const loadNightDutyReport = useCallback(async (operationalDateKey) => {
     if (!db) {
@@ -1442,9 +1568,25 @@ export function usePortalData(profile) {
 
     const snapshot = await getDoc(doc(db, "nightDutyReports", operationalDateKey));
 
-    return snapshot.exists()
-      ? normalizeStoredNightDutyReport({ id: snapshot.id, ...snapshot.data() })
-      : null;
+    if (snapshot.exists()) {
+      return normalizeStoredNightDutyReport({ id: snapshot.id, ...snapshot.data() });
+    }
+
+    if (hasCloudflareArchiveConfig) {
+      try {
+        const archived = await loadArchivedRecord("night-duty", operationalDateKey);
+        if (archived?.payload) {
+          return normalizeStoredNightDutyReport({
+            id: operationalDateKey,
+            ...archived.payload,
+          });
+        }
+      } catch (archiveError) {
+        console.error("Unable to load the D1 Night Duty archive", archiveError);
+      }
+    }
+
+    return null;
   }, []);
 
   const loadNightDutyReportsInRange = useCallback(async (startDateKey, endDateKey) => {
@@ -1461,18 +1603,91 @@ export function usePortalData(profile) {
 
     const rangeStart = startDateKey <= endDateKey ? startDateKey : endDateKey;
     const rangeEnd = startDateKey <= endDateKey ? endDateKey : startDateKey;
-    const snapshot = await getDocs(query(
-      collection(db, "nightDutyReports"),
-      where("operationalDateKey", ">=", rangeStart),
-      where("operationalDateKey", "<=", rangeEnd),
-      orderBy("operationalDateKey", "asc"),
-      limit(MAX_REPORT_HISTORY_DAYS),
-    ));
+    const dateKeys = listDateKeysInRange(rangeStart, rangeEnd);
+    let archivedReports = [];
 
-    return snapshot.docs.map((reportDocument) => normalizeStoredNightDutyReport({
-      id: reportDocument.id,
-      ...reportDocument.data(),
-    }));
+    if (hasCloudflareArchiveConfig) {
+      try {
+        const archivedRange = await loadArchivedRange("night-duty", rangeStart, rangeEnd);
+        archivedReports = archivedRange.records
+          .filter((entry) => entry?.payload)
+          .map((entry) => normalizeStoredNightDutyReport({
+            id: entry.recordKey,
+            ...entry.payload,
+          }));
+        const coveredDateSet = new Set(archivedRange.coveredDateKeys);
+        if (dateKeys.every((dateKey) => coveredDateSet.has(dateKey))) {
+          return archivedReports;
+        }
+      } catch (archiveError) {
+        console.error("Unable to use the D1 Night Duty range archive", archiveError);
+      }
+    }
+
+    try {
+      const firestoreReports = await fetchFirestoreNightDutyRange(rangeStart, rangeEnd);
+
+      if (hasCloudflareArchiveConfig && nightDutyAccess.canEditPanel) {
+        try {
+          await archiveNightDutyRange(firestoreReports, dateKeys);
+        } catch (archiveError) {
+          console.error("Unable to backfill the D1 Night Duty archive", archiveError);
+        }
+      }
+
+      return firestoreReports;
+    } catch (firestoreError) {
+      if (archivedReports.length > 0) return archivedReports;
+      throw firestoreError;
+    }
+  }, [
+    archiveNightDutyRange,
+    fetchFirestoreNightDutyRange,
+    nightDutyAccess.canEditPanel,
+  ]);
+
+  const backupNightDutyReportsInRange = useCallback(async (startDateKey, endDateKey) => {
+    if (!nightDutyAccess.canEditPanel) {
+      throw new Error("Only the Night Duty manager, supervisor or Super Admin can back up reports.");
+    }
+    if (!hasCloudflareArchiveConfig) {
+      throw new Error("Add NEXT_PUBLIC_CLOUDFLARE_ARCHIVE_URL before using D1 backup.");
+    }
+
+    const dateKeys = listDateKeysInRange(startDateKey, endDateKey);
+    if (dateKeys.length === 0 || dateKeys.length > MAX_REPORT_HISTORY_DAYS) {
+      throw new Error("Choose a valid range of 120 days or fewer.");
+    }
+    const reports = await fetchFirestoreNightDutyRange(
+      dateKeys[0],
+      dateKeys[dateKeys.length - 1],
+    );
+    await archiveNightDutyRange(reports, dateKeys);
+    return { archivedRecords: reports.length, coveredDates: dateKeys.length };
+  }, [
+    archiveNightDutyRange,
+    fetchFirestoreNightDutyRange,
+    nightDutyAccess.canEditPanel,
+  ]);
+
+  const loadNightDutyReportRevisions = useCallback(async (operationalDateKey) => {
+    if (!hasCloudflareArchiveConfig) return [];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(operationalDateKey ?? "")) {
+      throw new Error("Select a valid report date.");
+    }
+
+    const revisions = await loadArchivedRevisions("night-duty", operationalDateKey);
+    return revisions
+      .filter((revision) => revision?.payload)
+      .map((revision) => ({
+        revisionId: revision.revisionId,
+        archivedAt: revision.archivedAt,
+        archivedByName: revision.updatedByName,
+        report: normalizeStoredNightDutyReport({
+          id: operationalDateKey,
+          ...revision.payload,
+        }),
+      }));
   }, []);
 
   const loadInHouseReport = useCallback(async (operationalDateKey) => {
@@ -1485,9 +1700,22 @@ export function usePortalData(profile) {
     }
 
     const snapshot = await getDoc(doc(db, "inHouseReports", operationalDateKey));
-    return snapshot.exists()
-      ? normalizeStoredInHouseReport(snapshot.data(), operationalDateKey)
-      : null;
+    if (snapshot.exists()) {
+      return normalizeStoredInHouseReport(snapshot.data(), operationalDateKey);
+    }
+
+    if (hasCloudflareArchiveConfig) {
+      try {
+        const archived = await loadArchivedRecord("in-house", operationalDateKey);
+        if (archived?.payload) {
+          return normalizeStoredInHouseReport(archived.payload, operationalDateKey);
+        }
+      } catch (archiveError) {
+        console.error("Unable to load the D1 In-house archive", archiveError);
+      }
+    }
+
+    return null;
   }, []);
 
   async function saveInHouseReport(values) {
@@ -1515,10 +1743,26 @@ export function usePortalData(profile) {
     };
 
     await setDoc(doc(db, "inHouseReports", dateKey), persistedReport, { merge: false });
-    return normalizeStoredInHouseReport({
+    const savedReport = normalizeStoredInHouseReport({
       ...persistedReport,
       updatedAt: null,
     }, dateKey);
+
+    if (hasCloudflareArchiveConfig) {
+      try {
+        await archiveRecord(buildArchiveRecord(
+          "in-house",
+          dateKey,
+          dateKey,
+          savedReport,
+        ));
+      } catch (archiveError) {
+        console.error("In-house report saved without its D1 archive copy", archiveError);
+        savedReport.archiveWarning = "The Firebase report was saved, but its Cloudflare D1 backup is pending.";
+      }
+    }
+
+    return savedReport;
   }
 
   async function saveStaffProfile(userId, values) {
@@ -1743,6 +1987,8 @@ export function usePortalData(profile) {
     saveStoreAdjustment,
     loadNightDutyReport,
     loadNightDutyReportsInRange,
+    backupNightDutyReportsInRange,
+    loadNightDutyReportRevisions,
     saveNightDutyData,
     loadInHouseReport,
     saveInHouseReport,

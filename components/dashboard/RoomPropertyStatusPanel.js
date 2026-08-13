@@ -436,8 +436,10 @@ export default function RoomPropertyStatusPanel({
         (getRoomRecord(right.roomNumber)?.sortOrder ?? Number.MAX_SAFE_INTEGER)
       )));
       setFeedback({
-        type: "success",
-        message: `Room ${selectedRoom} property status report signed and saved.`,
+        type: savedReport.archiveWarning ? "warning" : "success",
+        message: savedReport.archiveWarning
+          ? `Room ${selectedRoom} property status report signed and saved. ${savedReport.archiveWarning}`
+          : `Room ${selectedRoom} property status report signed and saved.`,
       });
     } catch (error) {
       setFeedback({ type: "error", message: error.message });
@@ -688,6 +690,8 @@ export default function RoomPropertyStatusPanel({
         <div className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
           feedback.type === "success"
             ? "bg-emerald-50 text-emerald-700"
+            : feedback.type === "warning"
+              ? "bg-amber-50 text-amber-800"
             : "bg-rose-50 text-rose-700"
         }`}>
           {feedback.message}

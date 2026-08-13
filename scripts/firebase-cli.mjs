@@ -49,12 +49,7 @@ async function loadProjectId() {
 
 const projectId = await loadProjectId();
 const loginLikeCommand = args[0] === "login";
-const firebaseCommand = path.join(
-  root,
-  "node_modules",
-  ".bin",
-  process.platform === "win32" ? "firebase.cmd" : "firebase",
-);
+const firebaseCommand = process.platform === "win32" ? "firebase.cmd" : "firebase";
 const finalArgs = [...args, "--config", "firebase.json"];
 
 if (projectId && !loginLikeCommand) {
@@ -78,6 +73,17 @@ const child = process.platform === "win32"
       stdio: "inherit",
       shell: false,
     });
+
+child.on("error", (error) => {
+  if (error?.code === "ENOENT") {
+    console.error("Firebase CLI is not installed in your terminal PATH.");
+    console.error("Install it separately with `npm install --global firebase-tools`, then retry.");
+    process.exit(1);
+  }
+
+  console.error("Unable to start Firebase CLI:", error?.message || error);
+  process.exit(1);
+});
 
 child.on("exit", (code) => {
   process.exit(code ?? 0);

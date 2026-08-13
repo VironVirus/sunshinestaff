@@ -1,0 +1,21 @@
+{
+  "name": "sunshine-hotel-d1-archive",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:dry": "wrangler deploy --dry-run",
+    "types": "wrangler types worker-configuration.d.ts --include-runtime=false",
+    "typecheck": "tsc --noEmit",
+    "migrate:local": "wrangler d1 migrations apply ARCHIVE_DB --local",
+    "migrate:remote": "wrangler d1 migrations apply ARCHIVE_DB --remote",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260812.1",
+    "typescript": "7.0.2",
+    "wrangler": "4.121.0"
+  }
+}

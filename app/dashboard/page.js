@@ -180,6 +180,8 @@ export default function DashboardPage() {
     saveStoreAdjustment,
     loadNightDutyReport,
     loadNightDutyReportsInRange,
+    backupNightDutyReportsInRange,
+    loadNightDutyReportRevisions,
     saveNightDutyData,
     loadInHouseReport,
     saveInHouseReport,
@@ -446,6 +448,8 @@ export default function DashboardPage() {
                   reportHistory={nightDutyReportHistory}
                   onLoadNightDutyReport={loadNightDutyReport}
                   onLoadNightDutyReportsInRange={loadNightDutyReportsInRange}
+                  onBackupNightDutyReportsInRange={backupNightDutyReportsInRange}
+                  onLoadNightDutyReportRevisions={loadNightDutyReportRevisions}
                   onLoadInHouseReport={loadInHouseReport}
                   onSaveNightDuty={saveNightDutyData}
                   onSaveUtilities={saveUtilities}

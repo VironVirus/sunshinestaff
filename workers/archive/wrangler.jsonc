@@ -1,0 +1,32 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "sunshine-hotel-archive",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-08-11",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"workers_dev": true,
+	"vars": {
+		"FIREBASE_PROJECT_ID": "sunshine-staff-portal",
+		"ALLOWED_ORIGINS": "https://sunshinestaff.consolish.com,http://localhost:3000,http://127.0.0.1:3000"
+	},
+	"d1_databases": [
+		{
+			"binding": "ARCHIVE_DB",
+			"database_name": "sunshine-hotel-archive",
+			"database_id": "bfe70816-8135-409a-947b-34be6f541812",
+			"migrations_dir": "migrations"
+		}
+	],
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"head_sampling_rate": 1
+		},
+		"traces": {
+			"enabled": true,
+			"head_sampling_rate": 0.05
+		}
+	}
+}

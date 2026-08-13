@@ -14,7 +14,13 @@
     "firebase:check": "node scripts/check-firebase-config.mjs",
     "firebase:rules": "node scripts/firebase-cli.mjs deploy --only firestore:rules",
     "firebase:indexes": "node scripts/firebase-cli.mjs deploy --only firestore:indexes",
-    "firebase:emulators": "node scripts/firebase-cli.mjs emulators:start --only auth,firestore"
+    "firebase:emulators": "node scripts/firebase-cli.mjs emulators:start --only auth,firestore",
+    "cloudflare:types": "npm --prefix workers/archive run types",
+    "cloudflare:check": "npm --prefix workers/archive run typecheck",
+    "cloudflare:dry-run": "npm --prefix workers/archive run deploy:dry",
+    "cloudflare:migrate": "npm --prefix workers/archive run migrate:remote",
+    "cloudflare:deploy": "npm --prefix workers/archive run deploy",
+    "cloudflare:tail": "npm --prefix workers/archive run tail"
   },
   "engines": {
     "node": "22.x"
@@ -32,7 +38,6 @@
     "autoprefixer": "^10.5.4",
     "eslint": "9.39.2",
     "eslint-config-next": "16.3.0",
-    "firebase-tools": "^15.26.0",
     "postcss": "8.5.23",
     "registry-url": "^7.2.0",
     "tailwindcss": "^3.4.19"

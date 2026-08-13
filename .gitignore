@@ -17,7 +17,10 @@ pnpm-debug.log*
 build-run.log
 dev-server.log
 dev-server-error.log
+dev-server-*.log
+.codex-start-*.log
 start-preview.out.log
 start-preview.err.log
 start-stable.log
 sunshine-staff-netlify-clean.zip
+backups/
