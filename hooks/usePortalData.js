@@ -23,6 +23,7 @@ import {
   defaultSiteContent,
 } from "@/data/mockData";
 import {
+  configuredHotelRoomCount,
   deriveOperationsSnapshot,
   getRoomRecord,
   hotelRooms,
@@ -177,6 +178,7 @@ function buildDailyReportEntry(snapshot, profile) {
     dateKey: snapshot.operationalDateKey,
     inHouse: snapshot.inHouse ?? 0,
     availableRooms: snapshot.availableRooms ?? 0,
+    outOfOrderRoomNumbers: snapshot.outOfOrderRoomNumbers ?? [],
     breakfastEntitled: snapshot.breakfastEntitled ?? 0,
     cleanedRooms: snapshot.cleanedRooms ?? 0,
     occupiedRoomNumbers: snapshot.occupiedRoomNumbers ?? [],
@@ -243,11 +245,7 @@ function mergeOperationsWithPropertyStatus(rawOperations = {}, propertyStatusPay
   const outOfOrderRoomNumbers = normalizeRoomNumbers(
     propertyStatus.roomIssues.map((roomIssue) => roomIssue.roomNumber),
   );
-  const occupiedRoomSet = new Set(baseOperations.occupiedRoomNumbers);
   const outOfOrderRoomSet = new Set(outOfOrderRoomNumbers);
-  const blockedAvailableCount = outOfOrderRoomNumbers.filter(
-    (roomNumber) => !occupiedRoomSet.has(roomNumber),
-  ).length;
   const cleanedRoomNumbers = baseOperations.cleanedRoomNumbers.filter(
     (roomNumber) => !outOfOrderRoomSet.has(roomNumber),
   );
@@ -257,7 +255,7 @@ function mergeOperationsWithPropertyStatus(rawOperations = {}, propertyStatusPay
     cleanedRoomNumbers,
     cleanedRooms: cleanedRoomNumbers.length,
     outOfOrderRoomNumbers,
-    availableRooms: Math.max(baseOperations.availableRooms - blockedAvailableCount, 0),
+    availableRooms: Math.max(configuredHotelRoomCount - outOfOrderRoomNumbers.length, 0),
   };
 }
 
@@ -1827,7 +1825,11 @@ export function usePortalData(profile) {
       throw new Error("Dated In-house reports can only be saved for yesterday or an earlier date.");
     }
 
-    const normalized = buildInHouseReport(values?.occupiedRooms ?? [], dateKey);
+    const normalized = buildInHouseReport(
+      values?.occupiedRooms ?? [],
+      dateKey,
+      values?.outOfOrderRoomNumbers ?? portalState.operations.outOfOrderRoomNumbers ?? [],
+    );
     const persistedReport = {
       ...normalized,
       updatedAt: serverTimestamp(),
@@ -1866,6 +1868,7 @@ export function usePortalData(profile) {
           occupiedRoomNumbers: persistedReport.occupiedRoomNumbers,
           occupancyByFloor: persistedReport.occupancyByFloor,
           inHouse: persistedReport.inHouse,
+          outOfOrderRoomNumbers: persistedReport.outOfOrderRoomNumbers,
           availableRooms: persistedReport.availableRooms,
           breakfastEntitled: persistedReport.breakfastEntitled,
           updatedAt: persistedReport.updatedAt,

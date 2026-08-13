@@ -437,7 +437,7 @@ export default function DashboardPage() {
         ? [
             {
               key: "night-duty",
-              label: "Night Duty",
+              label: "Operations Report",
               content: (
                 <NightDutyPanel
                   profile={profile}

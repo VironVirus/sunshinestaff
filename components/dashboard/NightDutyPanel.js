@@ -482,7 +482,7 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
   });
   const lines = [
     {
-      text: `NIGHT DUTY RANGE ANALYSIS: ${formatDateKey(rangeStart)} TO ${formatDateKey(rangeEnd)}`,
+      text: `OPERATIONS REPORT ANALYSIS: ${formatDateKey(rangeStart)} TO ${formatDateKey(rangeEnd)}`,
       bold: true,
       fontSize: 15,
       dividerAfter: true,
@@ -498,7 +498,7 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
   ];
 
   if (reports.length === 0) {
-    lines.push("No stored Night Duty reports were found in this date range.");
+    lines.push("No stored Operations Reports were found in this date range.");
     return lines;
   }
 
@@ -925,7 +925,7 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
 
   reportWindow.document.open();
   reportWindow.document.write(`
-    <!doctype html><html><head><title>Sunshine Hotel Night Duty Report ${escapeHtml(rangeStart)} to ${escapeHtml(rangeEnd)}</title>
+    <!doctype html><html><head><title>Sunshine Hotel Operations Report ${escapeHtml(rangeStart)} to ${escapeHtml(rangeEnd)}</title>
       <style>
         @page { size: A4; margin: 12mm; }
         body { color: #1f2937; font-family: Arial, sans-serif; margin: 0; }
@@ -959,7 +959,7 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
         .actual-total { color: #162338; font-size: 13px; font-weight: 800; margin-bottom: 10px; padding: 4px 0 8px; }
       </style>
     </head><body>
-      <h1>Sunshine Hotel Full Night Duty Report</h1>
+      <h1>Sunshine Hotel Operations Report</h1>
       <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Coverage:</strong> ${analysis.reportCount} report(s) from ${analysis.selectedDayCount} selected day(s)<br><strong>Total In-house (occupant-nights):</strong> ${analysis.totalInHouse}<br><strong>Average occupancy:</strong> ${escapeHtml(formatAverage(analysis.averageOccupancy))} of ${analysis.hotelRoomCapacity} rooms (${escapeHtml(formatPercentage(analysis.averageOccupancyPercentage))})<br><strong>Grand Revenue:</strong> ${escapeHtml(formatAmount(analysis.grandRevenueTotal))}<br><strong>Actual Revenue:</strong> ${escapeHtml(formatAmount(analysis.actualRevenueTotal))}</div>
       <section class="analysis-section"><h2>Occupancy analysis by floor</h2><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }], formatPercentage)}<h3>Room occupancy by guest source</h3><div class="summary"><strong>Walk-in guests occupying rooms:</strong> ${analysis.guestMixTotals.walkInGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.walkInPercentage))})<br><strong>Corporate guests occupying rooms:</strong> ${analysis.guestMixTotals.corporateGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.corporatePercentage))})</div>${chartMarkup("Walk-in versus corporate room occupancy", [{ label: "Walk-in", value: analysis.guestMixTotals.walkInGuests, percentage: analysis.guestMixTotals.walkInPercentage }, { label: "Corporate", value: analysis.guestMixTotals.corporateGuests, percentage: analysis.guestMixTotals.corporatePercentage }], (value) => String(value))}${lineChartMarkup("Daily room occupancy guest source", analysis.dailyOccupancyGuestMix.map((day) => day.operationalDateKey), [{ label: "Walk-in", values: analysis.dailyOccupancyGuestMix.map((day) => day.walkInGuests) }, { label: "Corporate", values: analysis.dailyOccupancyGuestMix.map((day) => day.corporateGuests) }], (value) => String(value))}<table><thead><tr><th>Date</th><th>Walk-in occupants</th><th>Corporate occupants</th><th>Categorized occupants</th></tr></thead><tbody>${dailyOccupancyGuestMixRows}</tbody></table></section>
       <section class="analysis-section"><h2>Income totals by section</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
@@ -971,7 +971,7 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
       <section><h2>Departmental notes</h2>${notesMarkup}</section>
       <section><h2>Utilities and other indicators</h2><table><tbody>${analysis.gasAverages.map((gas) => `<tr><th>${escapeHtml(gas.label)} average</th><td>${escapeHtml(formatAverage(gas.average))} (${gas.recordedDays} recorded day(s))</td></tr>`).join("")}<tr><th>Average hot water temperature</th><td>${escapeHtml(formatAverage(analysis.averageHotWaterTemperature, " degrees C"))}</td></tr><tr><th>Total water supplied</th><td>${analysis.totalWaterSupplied} time(s)</td></tr><tr><th>Latest generator service reading</th><td>${latestGeneratorReading}</td></tr><tr><th>Power supply totals</th><td>${powerTotals}</td></tr><tr><th>Guest / employee incident days</th><td>${analysis.guestIncidentDays} / ${analysis.employeeIncidentDays}</td></tr><tr><th>Events / complaints</th><td>${analysis.totalEvents} / ${analysis.totalComplaints}</td></tr><tr><th>Brunch attendees</th><td>${analysis.totalBrunchAttendees}</td></tr></tbody></table></section>
       <h2>Complete daily report appendix</h2>
-      ${dailyReports || "<p>No stored Night Duty reports were found in this date range.</p>"}
+      ${dailyReports || "<p>No stored Operations Reports were found in this date range.</p>"}
     </body></html>
   `);
   reportWindow.document.close();
@@ -1049,7 +1049,7 @@ function printNightDutyReport(reportData) {
 
   reportWindow.document.open();
   reportWindow.document.write(`
-    <!doctype html><html><head><title>Sunshine Hotel Night Duty Report ${escapeHtml(reportData.operationalDateKey)}</title>
+    <!doctype html><html><head><title>Sunshine Hotel Operations Report ${escapeHtml(reportData.operationalDateKey)}</title>
       <style>
         @page { size: A4; margin: 12mm; }
         * { box-sizing: border-box; }
@@ -1068,7 +1068,7 @@ function printNightDutyReport(reportData) {
         .signature { border-top: 1px solid #475569; margin-top: 38px; padding-top: 7px; width: 48%; }
       </style>
     </head><body>
-      <h1>Sunshine Hotel Night Duty Report</h1>
+      <h1>Sunshine Hotel Operations Report</h1>
       <p class="meta"><strong>Activity date:</strong> ${escapeHtml(formatDateKey(reportData.operationalDateKey))}<br>Generated: ${escapeHtml(formatFriendlyDate(reportData.generatedAt))}</p>
 
       <h2>Occupancy totals by floor</h2>
@@ -1612,7 +1612,7 @@ export default function NightDutyPanel({
       await loadReportRange();
       setFeedback({
         type: "success",
-        message: `${result.archivedRecords} Night Duty report(s) backed up in Cloudflare D1. ${result.coveredDates} selected date(s) are marked as checked, and ${result.compactedFirebaseRecords ?? 0} older Firebase report(s) were reduced to compact summaries.`,
+        message: `${result.archivedRecords} Operations Report record(s) backed up in Cloudflare D1. ${result.coveredDates} selected date(s) are marked as checked, and ${result.compactedFirebaseRecords ?? 0} older Firebase report(s) were reduced to compact summaries.`,
       });
     } catch (error) {
       setFeedback({ type: "error", message: error.message });
@@ -1712,8 +1712,8 @@ export default function NightDutyPanel({
 
   function handleDownload(report = reportData) {
     downloadTextPdf({
-      filename: `sunshine-night-duty-report-${report.operationalDateKey}.pdf`,
-      title: "Sunshine Hotel Night Duty Report",
+      filename: `sunshine-operations-report-${report.operationalDateKey}.pdf`,
+      title: "Sunshine Hotel Operations Report",
       lines: buildNightDutyReportLines(report),
     });
   }
@@ -1725,8 +1725,8 @@ export default function NightDutyPanel({
     const rangeEnd = dateKeys[dateKeys.length - 1];
 
     downloadTextPdf({
-      filename: `sunshine-night-duty-full-report-${rangeStart}-to-${rangeEnd}.pdf`,
-      title: "Sunshine Hotel Full Night Duty Report",
+      filename: `sunshine-operations-report-${rangeStart}-to-${rangeEnd}.pdf`,
+      title: "Sunshine Hotel Operations Report",
       lines: buildNightDutyRangeReportLines(rangeReportData, rangeStart, rangeEnd),
     });
   }
@@ -1740,8 +1740,8 @@ export default function NightDutyPanel({
 
     try {
       await downloadNightDutyRangeDocx({
-        filename: `sunshine-night-duty-analysis-${rangeStart}-to-${rangeEnd}.docx`,
-        title: "Sunshine Hotel Night Duty Range Analysis",
+        filename: `sunshine-operations-report-${rangeStart}-to-${rangeEnd}.docx`,
+        title: "Sunshine Hotel Operations Report",
         rangeLabel: `${formatDateKey(rangeStart)} to ${formatDateKey(rangeEnd)}`,
         lines: buildNightDutyRangeReportLines(rangeReportData, rangeStart, rangeEnd),
       });
@@ -1770,9 +1770,9 @@ export default function NightDutyPanel({
     <section className="panel p-4 sm:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="section-title">Night Duty</h2>
+          <h2 className="section-title">Operations Report</h2>
           <p className="section-copy max-w-3xl">
-            Select any past activity date. The dated Front Office In-house report for that same date is loaded automatically, keeping both reports synchronized.
+            Enter Night Duty operational data for any past activity date. The matching Front Office In-house report is loaded automatically, keeping both records synchronized in one Operations Report.
           </p>
         </div>
         <div className="flex flex-wrap gap-3 no-print">
@@ -1804,19 +1804,19 @@ export default function NightDutyPanel({
         </div>
         <p className="mt-3 text-sm text-slate-600">
           {loadingSelectedReport || loadingInHouseReport
-            ? "Loading the Night Duty report and dated In-house reference..."
+            ? "Loading the Operations Report and dated In-house reference..."
             : hasSavedSelectedReport
-              ? `Saved Night Duty report loaded for ${formatDateKey(selectedReportDate)}. ${loadedInHouseReport ? "Its Front Office reference is synchronized with the dated In-house report." : "You can continue editing it."}`
+              ? `Saved Operations Report loaded for ${formatDateKey(selectedReportDate)}. ${loadedInHouseReport ? "Its Front Office reference is synchronized with the dated In-house report." : "You can continue editing it."}`
               : selectedOperationsSnapshot
-                ? `No saved Night Duty report exists for ${formatDateKey(selectedReportDate)}. The matching dated Front Office In-house occupancy has been loaded.`
+                ? `No saved Operations Report exists for ${formatDateKey(selectedReportDate)}. The matching dated Front Office In-house occupancy has been loaded.`
                 : `No saved report exists for ${formatDateKey(selectedReportDate)}, and no Front Office archive was found for that date. Occupancy starts at zero and can be entered manually.`}
         </p>
         <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           Every input and save button below applies only to {formatDateKey(selectedReportDate)}.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <button type="button" onClick={() => printNightDutyReport(reportData)} className="button-secondary" disabled={loadingSelectedReport || loadingInHouseReport}>Print Night Duty for {formatDateKey(selectedReportDate)}</button>
-          <button type="button" onClick={() => handleDownload(reportData)} className="button-secondary" disabled={loadingSelectedReport || loadingInHouseReport}>Download Night Duty PDF for selected date</button>
+          <button type="button" onClick={() => printNightDutyReport(reportData)} className="button-secondary" disabled={loadingSelectedReport || loadingInHouseReport}>Print Operations Report for {formatDateKey(selectedReportDate)}</button>
+          <button type="button" onClick={() => handleDownload(reportData)} className="button-secondary" disabled={loadingSelectedReport || loadingInHouseReport}>Download Operations Report PDF</button>
         </div>
       </div>
 
@@ -2016,14 +2016,14 @@ export default function NightDutyPanel({
           <div className="grid gap-4 sm:grid-cols-2"><div className="subpanel"><p className="metric-label">Last 7 days room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(weeklyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div><div className="subpanel"><p className="metric-label">{formatDateKey(`${currentMonth}-01`, { month: "long", year: "numeric" })} room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(monthlyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div></div>
           <div className="subpanel">
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_auto_auto_auto] xl:items-end"><label className="field"><span>Stored activity date</span><input type="date" value={selectedHistoryDate} max={latestNightDutyReportDateKey} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button><button type="button" className="button-secondary" disabled={!hasCloudflareArchiveConfig || !selectedHistoryDate || loadingArchiveRevisions} onClick={loadRevisionHistory}>{loadingArchiveRevisions ? "Loading history..." : "View D1 revisions"}</button></div>
-            {loadingHistoryReport ? <p className="mt-5 text-sm text-slate-500">Loading the selected date...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Grand Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.grandIncomeTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Actual Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.actualRevenueTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Night Duty report exists for the selected date.</p>}
+            {loadingHistoryReport ? <p className="mt-5 text-sm text-slate-500">Loading the selected date...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Grand Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.grandIncomeTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Actual Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.actualRevenueTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Operations Report exists for the selected date.</p>}
             {archiveRevisions.length > 0 ? <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4"><h4 className="font-semibold text-[#162338]">Cloudflare D1 revision history</h4><p className="mt-1 text-xs text-slate-500">These are read-only historical copies. Printing or downloading one does not change the live Firebase report.</p><div className="mt-3 space-y-2">{archiveRevisions.map((revision) => { const revisionReport = buildNightDutyReportData(revision.report); return <div key={revision.revisionId} className="flex flex-col gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><strong>Revision {revision.revisionId}</strong><br /><span className="text-xs text-slate-500">Archived {formatFriendlyDate(revision.archivedAt)} by {revision.archivedByName || "Authorized staff"}</span></div><div className="flex gap-2"><button type="button" className="button-secondary" onClick={() => printNightDutyReport(revisionReport)}>Print</button><button type="button" className="button-secondary" onClick={() => handleDownload(revisionReport)}>Download</button></div></div>; })}</div></div> : null}
           </div>
           <div className="subpanel">
             <div>
               <p className="metric-label">Full report by date range</p>
               <p className="mt-2 text-sm text-slate-500">
-                Choose up to 120 activity dates. The app retrieves every stored Night Duty report in the range and combines all daily details into one printable or downloadable report.
+                Choose up to 120 activity dates. The app retrieves every stored daily record in the range and combines all operational details into one printable or downloadable Operations Report.
               </p>
               <p className={`mt-2 text-xs font-semibold ${hasCloudflareArchiveConfig ? "text-emerald-700" : "text-amber-700"}`}>
                 {hasCloudflareArchiveConfig
@@ -2188,7 +2188,7 @@ export default function NightDutyPanel({
                       <table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Stored daily reports</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Activity date</th><th className="px-3 py-2">Occupancy</th><th className="px-3 py-2">Grand Revenue</th><th className="px-3 py-2">Actual Revenue</th><th className="px-3 py-2">Signed by</th></tr></thead><tbody>{rangeReportData.map((report) => <tr key={report.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(report.operationalDateKey)}</td><td className="px-3 py-2">{report.occupancyTotal}</td><td className="px-3 py-2">{formatAmount(report.grandIncomeTotal)}</td><td className="px-3 py-2">{formatAmount(report.actualRevenueTotal)}</td><td className="px-3 py-2">{report.nightDutySupervisorSignature || "Not signed"}</td></tr>)}</tbody></table>
                     </div>
                   </div>
-                ) : <p className="mt-4 text-sm text-slate-500">No stored Night Duty reports were found in the selected range.</p>}
+                ) : <p className="mt-4 text-sm text-slate-500">No stored Operations Reports were found in the selected range.</p>}
               </div>
             ) : null}
           </div>

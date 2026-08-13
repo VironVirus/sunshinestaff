@@ -309,6 +309,7 @@ function getOperationsSnapshotForDate(operations, targetDateKey) {
       dateKey: targetDateKey,
       inHouse: operations?.inHouse ?? 0,
       availableRooms: operations?.availableRooms ?? 0,
+      outOfOrderRoomNumbers: operations?.outOfOrderRoomNumbers ?? [],
       breakfastEntitled: operations?.breakfastEntitled ?? 0,
       cleanedRooms: operations?.cleanedRooms ?? 0,
     };
@@ -541,7 +542,8 @@ function buildDailyReportSectionLines({
 
   if (snapshot) {
     lines.push(createReportLine(`In-house rooms: ${snapshot.inHouse ?? 0}`));
-    lines.push(createReportLine(`Available rooms: ${snapshot.availableRooms ?? 0}`));
+    lines.push(createReportLine(`Out-of-order rooms: ${snapshot.outOfOrderRoomNumbers?.length ?? 0}`));
+    lines.push(createReportLine(`Available room inventory: ${snapshot.availableRooms ?? 0} (88 total rooms minus out-of-order rooms)`));
     lines.push(createReportLine(`Breakfast entitlement: ${snapshot.breakfastEntitled ?? 0}`));
     lines.push(createReportLine(`Cleaned rooms: ${snapshot.cleanedRooms ?? 0}`));
   } else {
@@ -641,7 +643,7 @@ function buildInHouseReportLines(operations) {
       timeStyle: "short",
     })}`,
     "",
-    `Summary: ${operations?.inHouse ?? 0} occupied room(s), ${operations?.breakfastEntitled ?? 0} breakfast entitlement`,
+    `Summary: ${operations?.inHouse ?? 0} occupied room(s), ${operations?.availableRooms ?? configuredHotelRoomCount} available room inventory, ${operations?.outOfOrderRoomNumbers?.length ?? 0} out of order, ${operations?.breakfastEntitled ?? 0} breakfast entitlement`,
     "",
   ];
 
@@ -1051,13 +1053,23 @@ export default function OperationsPanel({
     () => datedInHouseRooms.map((room) => room.roomNumber),
     [datedInHouseRooms],
   );
+  const datedOutOfOrderRoomNumbers = useMemo(
+    () => datedInHouseMeta?.outOfOrderRoomNumbers ?? outOfOrderRoomNumbers,
+    [datedInHouseMeta?.outOfOrderRoomNumbers, outOfOrderRoomNumbers],
+  );
   const datedAvailableFloors = useMemo(
-    () => getFloorsWithAvailableRooms(datedOccupiedRoomNumbers),
-    [datedOccupiedRoomNumbers],
+    () => getFloorsWithAvailableRooms([
+      ...datedOccupiedRoomNumbers,
+      ...datedOutOfOrderRoomNumbers,
+    ]),
+    [datedOccupiedRoomNumbers, datedOutOfOrderRoomNumbers],
   );
   const datedAvailableRooms = useMemo(
-    () => getRoomOptionsForFloor(datedRoomFloor, datedOccupiedRoomNumbers),
-    [datedOccupiedRoomNumbers, datedRoomFloor],
+    () => getRoomOptionsForFloor(datedRoomFloor, [
+      ...datedOccupiedRoomNumbers,
+      ...datedOutOfOrderRoomNumbers,
+    ]),
+    [datedOccupiedRoomNumbers, datedOutOfOrderRoomNumbers, datedRoomFloor],
   );
   const dailyReportLines = useMemo(
     () => buildDailyReportLines({ operations, eventsBookings, propertyStatus }),
@@ -1088,11 +1100,13 @@ export default function OperationsPanel({
     operationalDateKey: selectedInHouseDate,
     occupiedRooms: datedInHouseRooms,
     inHouse: datedInHouseRooms.length,
+    availableRooms: datedInHouseMeta?.availableRooms ?? operations?.availableRooms ?? configuredHotelRoomCount,
+    outOfOrderRoomNumbers: datedInHouseMeta?.outOfOrderRoomNumbers ?? operations?.outOfOrderRoomNumbers ?? [],
     breakfastEntitled: datedInHouseRooms.reduce(
       (total, room) => total + (room.breakfastIncluded ? Number(room.breakfastCount) || 0 : 0),
       0,
     ),
-  }), [datedInHouseRooms, selectedInHouseDate]);
+  }), [datedInHouseMeta?.availableRooms, datedInHouseMeta?.outOfOrderRoomNumbers, datedInHouseRooms, operations?.availableRooms, operations?.outOfOrderRoomNumbers, selectedInHouseDate]);
   const selectedInHouseReportLines = useMemo(
     () => buildInHouseReportLines(datedInHouseSnapshot),
     [datedInHouseSnapshot],
@@ -1357,6 +1371,7 @@ export default function OperationsPanel({
       const storedReport = await onSaveInHouseReport({
         operationalDateKey: selectedInHouseDate,
         occupiedRooms: nextRooms,
+        outOfOrderRoomNumbers: datedOutOfOrderRoomNumbers,
       });
       setDatedInHouseRooms(storedReport?.occupiedRooms ?? nextRooms);
       setDatedInHouseMeta(storedReport ?? null);
@@ -1702,6 +1717,12 @@ export default function OperationsPanel({
         ))}
       </div>
 
+      {access.visibleMetrics.includes("availableRooms") ? (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          Available room inventory: {configuredHotelRoomCount} total rooms − {outOfOrderRoomNumbers.length} out of order = <strong className="text-[#162338]">{operations?.availableRooms ?? configuredHotelRoomCount} rooms available</strong>.
+        </div>
+      ) : null}
+
       <nav className="no-print mt-6 flex gap-2 overflow-x-auto rounded-2xl bg-slate-100 p-1" aria-label="Room sections">
         <button type="button" onClick={() => setActiveRoomNav("in_house")}
           className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold ${activeRoomNav === "in_house" ? "bg-white text-[#162338] shadow" : "text-slate-500"}`}>
@@ -1723,7 +1744,7 @@ export default function OperationsPanel({
                   {formatDateKey(selectedInHouseDate)}
                 </h3>
                 <p className="mt-2 text-sm text-slate-500">
-                  Select yesterday or any earlier activity date. This dated room list becomes the Front Office reference in the Night Duty report for the same date.
+                  Select yesterday or any earlier activity date. This dated room list becomes the Front Office reference in the Operations Report for the same date.
                 </p>
                 {datedInHouseMeta?.updatedByName ? (
                   <p className="mt-2 text-xs text-slate-500">

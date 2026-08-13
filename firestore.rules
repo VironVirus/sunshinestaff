@@ -376,7 +376,7 @@ service cloud.firestore {
     function validInHouseReport() {
       return request.resource.data.keys().hasOnly([
           "storageMode", "operationalDateKey", "occupiedRooms", "occupiedRoomNumbers",
-          "occupancyByFloor", "inHouse", "availableRooms", "breakfastEntitled",
+          "occupancyByFloor", "inHouse", "outOfOrderRoomNumbers", "availableRooms", "breakfastEntitled",
           "updatedAt", "updatedAtIso", "updatedByUid", "updatedByName",
           "updatedByDepartment"
         ]) &&
@@ -393,6 +393,8 @@ service cloud.firestore {
         request.resource.data.inHouse is int &&
         request.resource.data.inHouse >= 0 &&
         request.resource.data.inHouse <= 88 &&
+        request.resource.data.outOfOrderRoomNumbers is list &&
+        request.resource.data.outOfOrderRoomNumbers.size() <= 88 &&
         request.resource.data.availableRooms is int &&
         request.resource.data.availableRooms >= 0 &&
         request.resource.data.availableRooms <= 88 &&
