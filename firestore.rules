@@ -289,7 +289,7 @@ service cloud.firestore {
     function validNightDutyReport() {
       return request.resource.data.keys().hasOnly([
           "operationalDateKey", "occupancyByFloor", "frontOfficeOccupancyByFloor",
-          "occupancyQuery", "income", "onDutyStaff", "departmentNotes",
+          "occupancyQuery", "occupancyGuestMix", "income", "onDutyStaff", "departmentNotes",
           "gasLevels", "hotWaterTemperature", "generatorServices",
           "powerSupplies", "waterSupplyCount",
           "guestIncident", "employeeIncident", "nightDutySupervisorSignature",
@@ -303,6 +303,7 @@ service cloud.firestore {
         request.resource.data.frontOfficeOccupancyByFloor is list &&
         optionalListWithin(request.resource.data, "frontOfficeOccupancyByFloor", 8) &&
         request.resource.data.occupancyQuery is map &&
+        request.resource.data.occupancyGuestMix is map &&
         request.resource.data.income is map &&
         request.resource.data.onDutyStaff is list &&
         optionalListWithin(request.resource.data, "onDutyStaff", 200) &&
@@ -340,7 +341,7 @@ service cloud.firestore {
 
     function validNightDutySummary() {
       return request.resource.data.keys().hasOnly([
-          "storageMode", "operationalDateKey", "occupancyByFloor", "income",
+          "storageMode", "operationalDateKey", "occupancyByFloor", "occupancyGuestMix", "income",
           "gasLevels", "hotWaterTemperature", "waterSupplyCount",
           "nightDutySupervisorSignature", "updatedAt", "updatedAtIso",
           "updatedByUid", "updatedByName", "updatedByDepartment"
@@ -350,6 +351,7 @@ service cloud.firestore {
         request.resource.data.operationalDateKey.size() == 10 &&
         request.resource.data.occupancyByFloor is list &&
         optionalListWithin(request.resource.data, "occupancyByFloor", 8) &&
+        request.resource.data.occupancyGuestMix is map &&
         request.resource.data.income is map &&
         request.resource.data.gasLevels is map &&
         (request.resource.data.hotWaterTemperature == null ||

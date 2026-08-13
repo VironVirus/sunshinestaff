@@ -44,18 +44,6 @@ export const nightDutyOutletConfig = [
     fields: [
       { key: "roomRevenue", label: "Room revenue", monthlyRoomRevenue: true },
       {
-        key: "walkInGuests",
-        label: "Walk-in guests",
-        nonFinancial: true,
-        guestCategory: "walkIn",
-      },
-      {
-        key: "corporateGuests",
-        label: "Corporate guests",
-        nonFinancial: true,
-        guestCategory: "corporate",
-      },
-      {
         key: "guestRefunds",
         label: "Guest refunds",
         separateAccount: true,
@@ -133,6 +121,7 @@ export function buildDefaultNightDutyData(operationalDateKey = getNightDutyRepor
     occupancyByFloor: buildDefaultOccupancyByFloor(),
     frontOfficeOccupancyByFloor: buildDefaultOccupancyByFloor(),
     occupancyQuery: { hasDiscrepancy: false, note: "" },
+    occupancyGuestMix: { walkInGuests: 0, corporateGuests: 0 },
     income: buildDefaultIncome(),
     onDutyStaff: [],
     departmentNotes: buildDefaultDepartmentNotes(),
@@ -187,6 +176,19 @@ function normalizeIncome(income = {}) {
       ),
     ]),
   );
+}
+
+function normalizeOccupancyGuestMix(value = {}, legacyIncome = {}) {
+  return {
+    walkInGuests: normalizeCount(
+      value?.walkInGuests ?? legacyIncome?.frontOffice?.walkInGuests,
+      1000000,
+    ),
+    corporateGuests: normalizeCount(
+      value?.corporateGuests ?? legacyIncome?.frontOffice?.corporateGuests,
+      1000000,
+    ),
+  };
 }
 
 function normalizeOccupancyByFloor(entries = []) {
@@ -390,11 +392,8 @@ export function getGuestRefundTotal(income = {}) {
   return normalizeAmount(income?.frontOffice?.guestRefunds);
 }
 
-export function getGuestMix(income = {}) {
-  return {
-    walkInGuests: normalizeCount(income?.frontOffice?.walkInGuests, 1000000),
-    corporateGuests: normalizeCount(income?.frontOffice?.corporateGuests, 1000000),
-  };
+export function getGuestMix(report = {}) {
+  return normalizeOccupancyGuestMix(report.occupancyGuestMix, report.income);
 }
 
 export function getGasLevelLabel(value) {
@@ -436,6 +435,10 @@ export function normalizeStoredNightDutyReport(payload = {}) {
       hasDiscrepancy: payload?.occupancyQuery?.hasDiscrepancy === true,
       note: normalizeShortText(payload?.occupancyQuery?.note, 1500),
     },
+    occupancyGuestMix: normalizeOccupancyGuestMix(
+      payload.occupancyGuestMix,
+      payload.income,
+    ),
     income: normalizeIncome(payload.income),
     onDutyStaff: normalizeOnDutyStaff(payload.onDutyStaff),
     departmentNotes: normalizeDepartmentNotes(payload.departmentNotes),

@@ -174,17 +174,20 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     revenue: Number(report.income?.restaurant?.brunchRevenue) || 0,
     attendees: Number(report.income?.restaurant?.brunchAttendees) || 0,
   }));
-  const dailyGuestAccounts = orderedReports.map((report) => {
-    const guestMix = getGuestMix(report.income);
+  const dailyOccupancyGuestMix = orderedReports.map((report) => {
+    const guestMix = getGuestMix(report);
     return {
       operationalDateKey: report.operationalDateKey,
       ...guestMix,
       totalGuests: guestMix.walkInGuests + guestMix.corporateGuests,
-      guestRefunds: getGuestRefundTotal(report.income),
     };
   });
-  const totalWalkInGuests = sum(dailyGuestAccounts.map((day) => day.walkInGuests));
-  const totalCorporateGuests = sum(dailyGuestAccounts.map((day) => day.corporateGuests));
+  const dailyGuestRefunds = orderedReports.map((report) => ({
+    operationalDateKey: report.operationalDateKey,
+    amount: getGuestRefundTotal(report.income),
+  }));
+  const totalWalkInGuests = sum(dailyOccupancyGuestMix.map((day) => day.walkInGuests));
+  const totalCorporateGuests = sum(dailyOccupancyGuestMix.map((day) => day.corporateGuests));
   const totalCategorizedGuests = totalWalkInGuests + totalCorporateGuests;
 
   const latestGeneratorReport = [...orderedReports].reverse().find(
@@ -256,7 +259,7 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     dailyFoodBeverage,
     dailyBrunch,
     totalBrunchRevenue: sum(dailyBrunch.map((day) => day.revenue)),
-    dailyGuestAccounts,
+    dailyOccupancyGuestMix,
     guestMixTotals: {
       walkInGuests: totalWalkInGuests,
       corporateGuests: totalCorporateGuests,
@@ -268,7 +271,8 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
         ? (totalCorporateGuests / totalCategorizedGuests) * 100
         : 0,
     },
-    guestRefundsTotal: sum(dailyGuestAccounts.map((day) => day.guestRefunds)),
+    dailyGuestRefunds,
+    guestRefundsTotal: sum(dailyGuestRefunds.map((day) => day.amount)),
     grandRevenueTotal,
     actualRevenueTotal,
     departmentalNotes,

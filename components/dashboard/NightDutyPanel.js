@@ -270,7 +270,7 @@ function buildNightDutyReportData(record = {}) {
       { includeNonRevenue: true },
     ),
   }));
-  const guestMix = getGuestMix(record.income);
+  const guestMix = getGuestMix(record);
   const foodTotal = nightDutyOutletConfig.reduce(
     (total, outlet) => total + (Number(record.income?.[outlet.key]?.food) || 0),
     0,
@@ -348,6 +348,9 @@ function buildNightDutyReportLines(reportData) {
     );
   });
   lines.push({ text: `Total occupancy: ${reportData.occupancyTotal}`, bold: true });
+  lines.push(subsectionHeading("Room occupancy guest source"));
+  lines.push(`Walk-in guests occupying rooms: ${reportData.guestMix.walkInGuests}`);
+  lines.push(`Corporate guests occupying rooms: ${reportData.guestMix.corporateGuests}`);
   lines.push(
     `Discrepancy query: ${reportData.occupancyQuery?.hasDiscrepancy ? "Yes" : "No"}`,
   );
@@ -375,9 +378,7 @@ function buildNightDutyReportLines(reportData) {
   lines.push(subsectionHeading("Brunch report"));
   lines.push(`- Brunch revenue: ${formatAmount(reportData.brunchReport.revenue)}`);
   lines.push(`- Brunch attendees: ${reportData.brunchReport.attendees}`);
-  lines.push(subsectionHeading("Guest categories and refund account"));
-  lines.push(`- Walk-in guests: ${reportData.guestMix.walkInGuests}`);
-  lines.push(`- Corporate guests: ${reportData.guestMix.corporateGuests}`);
+  lines.push(subsectionHeading("Guest refund account"));
   lines.push(`- Guest refunds: ${formatAmount(reportData.guestRefunds)} (excluded from all revenue totals)`);
   lines.push({
     text: `GRAND REVENUE TOTAL: ${formatAmount(reportData.grandIncomeTotal)}`,
@@ -543,6 +544,50 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     spaceBefore: 8,
     spaceAfter: 8,
   });
+  lines.push({
+    type: "table",
+    title: "Room occupancy by guest source",
+    headers: ["Occupancy source", "Guest total", "Share"],
+    widths: [2.2, 1.2, 1.2],
+    rows: [
+      ["Walk-in guests occupying rooms", String(analysis.guestMixTotals.walkInGuests), formatPercentage(analysis.guestMixTotals.walkInPercentage)],
+      ["Corporate guests occupying rooms", String(analysis.guestMixTotals.corporateGuests), formatPercentage(analysis.guestMixTotals.corporatePercentage)],
+    ],
+  });
+  lines.push({
+    type: "barChart",
+    title: "Walk-in versus corporate room occupancy",
+    items: [
+      { label: "Walk-in", value: analysis.guestMixTotals.walkInGuests, percentage: analysis.guestMixTotals.walkInPercentage },
+      { label: "Corporate", value: analysis.guestMixTotals.corporateGuests, percentage: analysis.guestMixTotals.corporatePercentage },
+    ],
+    spaceBefore: 8,
+    spaceAfter: 8,
+  });
+  lines.push({
+    type: "lineChart",
+    title: "Daily room occupancy guest source",
+    labels: analysis.dailyOccupancyGuestMix.map((day) => day.operationalDateKey),
+    series: [
+      { key: "walkInGuests", label: "Walk-in", values: analysis.dailyOccupancyGuestMix.map((day) => day.walkInGuests) },
+      { key: "corporateGuests", label: "Corporate", values: analysis.dailyOccupancyGuestMix.map((day) => day.corporateGuests) },
+    ],
+    spaceBefore: 8,
+    spaceAfter: 8,
+  });
+  lines.push({
+    type: "table",
+    title: "Daily room occupancy by guest source",
+    headers: ["Date", "Walk-in occupants", "Corporate occupants", "Categorized occupants"],
+    widths: [1.4, 1.2, 1.3, 1.4],
+    rows: analysis.dailyOccupancyGuestMix.map((day) => [
+      day.operationalDateKey,
+      String(day.walkInGuests),
+      String(day.corporateGuests),
+      String(day.totalGuests),
+    ]),
+    chunkSize: 22,
+  });
 
   lines.push(sectionHeading("Income totals by section", true));
   lines.push({
@@ -624,7 +669,7 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     chunkSize: 18,
   });
 
-  lines.push(sectionHeading("Food, beverage, brunch and guest accounts", true));
+  lines.push(sectionHeading("Food, beverage, brunch and refund accounts", true));
   lines.push({
     type: "table",
     title: "Food and beverage totals",
@@ -654,12 +699,10 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
   });
   lines.push({
     type: "table",
-    title: "Guest categories and refunds",
-    headers: ["Account", "Period total", "Share / treatment"],
+    title: "Guest refund account",
+    headers: ["Account", "Period total", "Treatment"],
     widths: [1.8, 1.2, 2.1],
     rows: [
-      ["Walk-in guests", String(analysis.guestMixTotals.walkInGuests), formatPercentage(analysis.guestMixTotals.walkInPercentage)],
-      ["Corporate guests", String(analysis.guestMixTotals.corporateGuests), formatPercentage(analysis.guestMixTotals.corporatePercentage)],
       ["Guest refunds", formatAmount(analysis.guestRefundsTotal), "Separate account; excluded from all revenue totals"],
     ],
   });
@@ -710,14 +753,13 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
   });
   lines.push({
     type: "table",
-    title: "Daily guest categories and refunds",
-    headers: ["Date", "Walk-in", "Corporate", "Guest refunds"],
-    widths: [1.4, 1, 1, 1.5],
-    rows: analysis.dailyGuestAccounts.map((day) => [
+    title: "Daily guest refund account",
+    headers: ["Date", "Guest refunds", "Treatment"],
+    widths: [1.4, 1.3, 2.2],
+    rows: analysis.dailyGuestRefunds.map((day) => [
       day.operationalDateKey,
-      String(day.walkInGuests),
-      String(day.corporateGuests),
-      formatAmount(day.guestRefunds),
+      formatAmount(day.amount),
+      "Excluded from all revenue totals",
     ]),
     chunkSize: 22,
   });
@@ -818,8 +860,11 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
   const dailyBrunchRows = analysis.dailyBrunch.map((day) => `
     <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatAmount(day.revenue))}</td><td>${day.attendees}</td></tr>
   `).join("");
-  const dailyGuestAccountRows = analysis.dailyGuestAccounts.map((day) => `
-    <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${day.walkInGuests}</td><td>${day.corporateGuests}</td><td>${escapeHtml(formatAmount(day.guestRefunds))}</td></tr>
+  const dailyOccupancyGuestMixRows = analysis.dailyOccupancyGuestMix.map((day) => `
+    <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${day.walkInGuests}</td><td>${day.corporateGuests}</td><td>${day.totalGuests}</td></tr>
+  `).join("");
+  const dailyGuestRefundRows = analysis.dailyGuestRefunds.map((day) => `
+    <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatAmount(day.amount))}</td><td>Excluded from all revenue totals</td></tr>
   `).join("");
   const dailyRevenueSourceTables = nightDutyOutletConfig.map((outlet) => {
     const sources = analysis.revenueSources.filter((source) => source.outletKey === outlet.key);
@@ -916,11 +961,11 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
     </head><body>
       <h1>Sunshine Hotel Full Night Duty Report</h1>
       <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Coverage:</strong> ${analysis.reportCount} report(s) from ${analysis.selectedDayCount} selected day(s)<br><strong>Total In-house (occupant-nights):</strong> ${analysis.totalInHouse}<br><strong>Average occupancy:</strong> ${escapeHtml(formatAverage(analysis.averageOccupancy))} of ${analysis.hotelRoomCapacity} rooms (${escapeHtml(formatPercentage(analysis.averageOccupancyPercentage))})<br><strong>Grand Revenue:</strong> ${escapeHtml(formatAmount(analysis.grandRevenueTotal))}<br><strong>Actual Revenue:</strong> ${escapeHtml(formatAmount(analysis.actualRevenueTotal))}</div>
-      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }], formatPercentage)}</section>
+      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }], formatPercentage)}<h3>Room occupancy by guest source</h3><div class="summary"><strong>Walk-in guests occupying rooms:</strong> ${analysis.guestMixTotals.walkInGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.walkInPercentage))})<br><strong>Corporate guests occupying rooms:</strong> ${analysis.guestMixTotals.corporateGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.corporatePercentage))})</div>${chartMarkup("Walk-in versus corporate room occupancy", [{ label: "Walk-in", value: analysis.guestMixTotals.walkInGuests, percentage: analysis.guestMixTotals.walkInPercentage }, { label: "Corporate", value: analysis.guestMixTotals.corporateGuests, percentage: analysis.guestMixTotals.corporatePercentage }], (value) => String(value))}${lineChartMarkup("Daily room occupancy guest source", analysis.dailyOccupancyGuestMix.map((day) => day.operationalDateKey), [{ label: "Walk-in", values: analysis.dailyOccupancyGuestMix.map((day) => day.walkInGuests) }, { label: "Corporate", values: analysis.dailyOccupancyGuestMix.map((day) => day.corporateGuests) }], (value) => String(value))}<table><thead><tr><th>Date</th><th>Walk-in occupants</th><th>Corporate occupants</th><th>Categorized occupants</th></tr></thead><tbody>${dailyOccupancyGuestMixRows}</tbody></table></section>
       <section class="analysis-section"><h2>Income totals by section</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
       <section><h2>Food and beverage analysis</h2><table><thead><tr><th>Account</th><th>Range total</th></tr></thead><tbody><tr><td>Food</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.food))}</td></tr><tr><td>Beverage</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.beverage))}</td></tr><tr><th>Combined</th><th>${escapeHtml(formatAmount(analysis.foodBeverageTotals.combined))}</th></tr></tbody></table>${lineChartMarkup("Daily food and beverage trend", analysis.dailyFoodBeverage.map((day) => day.operationalDateKey), [{ label: "Food", values: analysis.dailyFoodBeverage.map((day) => day.food) }, { label: "Beverage", values: analysis.dailyFoodBeverage.map((day) => day.beverage) }], formatAmount)}<table><thead><tr><th>Date</th><th>Food</th><th>Beverage</th><th>Combined</th></tr></thead><tbody>${dailyFoodBeverageRows}</tbody></table></section>
       <section><h2>Brunch report</h2><div class="summary"><strong>Total brunch revenue:</strong> ${escapeHtml(formatAmount(analysis.totalBrunchRevenue))}<br><strong>Total attendees:</strong> ${analysis.totalBrunchAttendees}</div><table><thead><tr><th>Date</th><th>Brunch revenue</th><th>Attendees</th></tr></thead><tbody>${dailyBrunchRows}</tbody></table></section>
-      <section><h2>Guest categories and refunds</h2><div class="summary"><strong>Walk-in guests:</strong> ${analysis.guestMixTotals.walkInGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.walkInPercentage))})<br><strong>Corporate guests:</strong> ${analysis.guestMixTotals.corporateGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.corporatePercentage))})<br><strong>Guest refunds:</strong> ${escapeHtml(formatAmount(analysis.guestRefundsTotal))} — separate account, excluded from all revenue totals.</div><table><thead><tr><th>Date</th><th>Walk-in</th><th>Corporate</th><th>Guest refunds</th></tr></thead><tbody>${dailyGuestAccountRows}</tbody></table></section>
+      <section><h2>Guest refund account</h2><div class="summary"><strong>Guest refunds:</strong> ${escapeHtml(formatAmount(analysis.guestRefundsTotal))} — separate account, excluded from all revenue totals.</div><table><thead><tr><th>Date</th><th>Guest refunds</th><th>Treatment</th></tr></thead><tbody>${dailyGuestRefundRows}</tbody></table></section>
       <section><h2>Total of every revenue source</h2><table><thead><tr><th>Section</th><th>Revenue source</th><th>Range total</th><th>Treatment</th></tr></thead><tbody>${revenueSourceTotalRows}</tbody></table></section>
       <section><h2>Day-by-day income analysis</h2><table><thead><tr><th>Date</th><th>Kenny's</th><th>Tropics</th><th>Restaurant</th><th>Front Office</th><th>Grand</th><th>Actual</th></tr></thead><tbody>${dailyIncomeRows}</tbody></table>${dailyRevenueSourceTables}</section>
       <section><h2>Departmental notes</h2>${notesMarkup}</section>
@@ -1028,12 +1073,13 @@ function printNightDutyReport(reportData) {
 
       <h2>Occupancy totals by floor</h2>
       <table><thead><tr><th>Floor</th><th>Night Duty total</th><th>Front Office reference</th></tr></thead><tbody>${occupancyRows}<tr><th>Total</th><th>${reportData.occupancyTotal}</th><th></th></tr></tbody></table>
+      <h3>Room occupancy by guest source</h3><table><tbody><tr><td>Walk-in guests occupying rooms</td><td>${reportData.guestMix.walkInGuests}</td></tr><tr><td>Corporate guests occupying rooms</td><td>${reportData.guestMix.corporateGuests}</td></tr></tbody></table>
       <p><strong>Discrepancy query:</strong> ${reportData.occupancyQuery?.hasDiscrepancy ? "Yes" : "No"}<br>${escapeHtml(reportData.occupancyQuery?.note || "Nil")}</p>
 
       <h2>Income dashboard</h2>${incomeHtml}
       <h3>Food and beverage report</h3><table><tbody><tr><td>Food total</td><td>${escapeHtml(formatAmount(reportData.foodBeverageTotals.food))}</td></tr><tr><td>Beverage total</td><td>${escapeHtml(formatAmount(reportData.foodBeverageTotals.beverage))}</td></tr><tr><th>Combined</th><th>${escapeHtml(formatAmount(reportData.foodBeverageTotals.combined))}</th></tr></tbody></table>
       <h3>Brunch report</h3><table><tbody><tr><td>Brunch revenue</td><td>${escapeHtml(formatAmount(reportData.brunchReport.revenue))}</td></tr><tr><td>Brunch attendees</td><td>${reportData.brunchReport.attendees}</td></tr></tbody></table>
-      <h3>Guest categories and separate refund account</h3><table><tbody><tr><td>Walk-in guests</td><td>${reportData.guestMix.walkInGuests}</td></tr><tr><td>Corporate guests</td><td>${reportData.guestMix.corporateGuests}</td></tr><tr><td>Guest refunds</td><td>${escapeHtml(formatAmount(reportData.guestRefunds))}</td></tr><tr><th colspan="2">Guest refunds are excluded from Grand Revenue and Actual Revenue.</th></tr></tbody></table>
+      <h3>Separate guest refund account</h3><table><tbody><tr><td>Guest refunds</td><td>${escapeHtml(formatAmount(reportData.guestRefunds))}</td></tr><tr><th colspan="2">Guest refunds are excluded from Grand Revenue and Actual Revenue.</th></tr></tbody></table>
       <p class="grand-total">GRAND REVENUE TOTAL: ${escapeHtml(formatAmount(reportData.grandIncomeTotal))}</p>
       <p class="actual-total">ACTUAL REVENUE TOTAL: ${escapeHtml(formatAmount(reportData.actualRevenueTotal))}</p>
 
@@ -1116,6 +1162,9 @@ export default function NightDutyPanel({
   const [activeSection, setActiveSection] = useState("report");
   const [occupancyByFloor, setOccupancyByFloor] = useState([]);
   const [occupancyQuery, setOccupancyQuery] = useState({ hasDiscrepancy: false, note: "" });
+  const [occupancyGuestMix, setOccupancyGuestMix] = useState(
+    buildDefaultNightDutyData().occupancyGuestMix,
+  );
   const [incomeForm, setIncomeForm] = useState(buildDefaultNightDutyData().income);
   const [onDutyStaff, setOnDutyStaff] = useState([]);
   const [departmentNotes, setDepartmentNotes] = useState({});
@@ -1264,6 +1313,7 @@ export default function NightDutyPanel({
       hasSavedSelectedReport ? report.occupancyByFloor : frontOfficeOccupancyByFloor,
     );
     setOccupancyQuery(report.occupancyQuery);
+    setOccupancyGuestMix(report.occupancyGuestMix);
     setIncomeForm(report.income);
     setOnDutyStaff(report.onDutyStaff);
     setDepartmentNotes(report.departmentNotes);
@@ -1321,6 +1371,7 @@ export default function NightDutyPanel({
     occupancyByFloor,
     frontOfficeOccupancyByFloor,
     occupancyQuery,
+    occupancyGuestMix,
     income: incomeForm,
     onDutyStaff,
     departmentNotes,
@@ -1347,6 +1398,7 @@ export default function NightDutyPanel({
     hotWaterTemperature,
     incomeForm,
     occupancyByFloor,
+    occupancyGuestMix,
     occupancyQuery,
     onDutyStaff,
     nightDutySupervisorSignature,
@@ -1809,6 +1861,14 @@ export default function NightDutyPanel({
             </div>
           </div>
           <div className="subpanel">
+            <p className="metric-label">Room occupancy by guest source</p>
+            <p className="mt-2 text-sm text-slate-500">Record guests occupying rooms as walk-in or corporate. These are occupancy counts and are never treated as income or brunch attendance.</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="field"><span>Walk-in guests occupying rooms</span><input type="number" min="0" step="1" value={occupancyGuestMix.walkInGuests} onChange={(event) => setOccupancyGuestMix((current) => ({ ...current, walkInGuests: event.target.value }))} disabled={readOnly || savingSection} /></label>
+              <label className="field"><span>Corporate guests occupying rooms</span><input type="number" min="0" step="1" value={occupancyGuestMix.corporateGuests} onChange={(event) => setOccupancyGuestMix((current) => ({ ...current, corporateGuests: event.target.value }))} disabled={readOnly || savingSection} /></label>
+            </div>
+          </div>
+          <div className="subpanel">
             <p className="metric-label">Occupancy discrepancy query</p>
             <div className="mt-4 flex gap-4">
               <label className="flex items-center gap-2 text-sm"><input type="radio" checked={!occupancyQuery.hasDiscrepancy} onChange={() => setOccupancyQuery({ hasDiscrepancy: false, note: "" })} disabled={readOnly || savingSection} />No discrepancy</label>
@@ -1835,13 +1895,13 @@ export default function NightDutyPanel({
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   {outlet.fields.map((field) => (
                     <label key={field.key} className="field">
-                      <span>{field.label}{field.nonFinancial ? " — guest count" : field.separateAccount ? " — separate refund account" : field.excludeFromRevenue ? " — Grand Revenue only" : ""}</span>
+                      <span>{field.label}{field.nonFinancial ? " — attendance count" : field.separateAccount ? " — separate refund account" : field.excludeFromRevenue ? " — Grand Revenue only" : ""}</span>
                       <input type="number" min="0" max={field.nonFinancial ? "1000000" : undefined} step={field.nonFinancial ? "1" : "0.01"} value={incomeForm?.[outlet.key]?.[field.key] ?? 0} onChange={(event) => updateIncome(outlet.key, field.key, event.target.value)} disabled={readOnly || savingSection} />
                     </label>
                   ))}
                 </div>
                 {outlet.key === "restaurant" ? <p className="mt-3 text-xs leading-5 text-slate-500">Brunch revenue is included in both totals. Brunch attendees is a head count and is never added as money.</p> : null}
-                {outlet.key === "frontOffice" ? <p className="mt-3 text-xs leading-5 text-slate-500">Walk-in and corporate entries are guest counts. Guest refunds are kept as a separate account and are excluded from both Grand Revenue and Actual Revenue. Advance payments and deposits are included in Grand Revenue but excluded from Actual Revenue.</p> : null}
+                {outlet.key === "frontOffice" ? <p className="mt-3 text-xs leading-5 text-slate-500">Guest refunds are kept as a separate account and are excluded from both Grand Revenue and Actual Revenue. Advance payments and deposits are included in Grand Revenue but excluded from Actual Revenue.</p> : null}
               </div>
             ))}
           </div>
@@ -2028,6 +2088,24 @@ export default function NightDutyPanel({
                       />
                     </div>
 
+                    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+                      <div>
+                        <h4 className="font-semibold text-[#162338]">Room occupancy by guest source</h4>
+                        <p className="mt-1 text-xs text-slate-500">These figures describe guests occupying rooms. They are not brunch attendance or revenue.</p>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="rounded-xl bg-slate-50 p-4 text-sm">Walk-in guests occupying rooms<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.guestMixTotals.walkInGuests}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.guestMixTotals.walkInPercentage)}</span></div>
+                        <div className="rounded-xl bg-slate-50 p-4 text-sm">Corporate guests occupying rooms<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.guestMixTotals.corporateGuests}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.guestMixTotals.corporatePercentage)}</span></div>
+                      </div>
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <RangeBarChart title="Walk-in versus corporate room occupancy" items={[{ key: "walk-in", label: "Walk-in", value: rangeAnalytics.guestMixTotals.walkInGuests, percentage: rangeAnalytics.guestMixTotals.walkInPercentage }, { key: "corporate", label: "Corporate", value: rangeAnalytics.guestMixTotals.corporateGuests, percentage: rangeAnalytics.guestMixTotals.corporatePercentage }]} />
+                        <RangeLineChart title="Daily room occupancy guest source" labels={rangeAnalytics.dailyOccupancyGuestMix.map((day) => day.operationalDateKey)} series={[{ key: "walk-in", label: "Walk-in", color: "#a67c2e", values: rangeAnalytics.dailyOccupancyGuestMix.map((day) => day.walkInGuests) }, { key: "corporate", label: "Corporate", color: "#162338", values: rangeAnalytics.dailyOccupancyGuestMix.map((day) => day.corporateGuests) }]} />
+                      </div>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily room occupancy by guest source</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Walk-in occupants</th><th className="px-3 py-2">Corporate occupants</th><th className="px-3 py-2">Categorized occupants</th></tr></thead><tbody>{rangeAnalytics.dailyOccupancyGuestMix.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{day.walkInGuests}</td><td className="px-3 py-2">{day.corporateGuests}</td><td className="px-3 py-2">{day.totalGuests}</td></tr>)}</tbody></table>
+                      </div>
+                    </div>
+
                     <RangeLineChart
                       title="Daily outlet revenue trends"
                       labels={rangeAnalytics.dailyIncome.map((day) => day.operationalDateKey)}
@@ -2043,7 +2121,7 @@ export default function NightDutyPanel({
                       <div className="flex flex-wrap gap-2">
                         <SectionButton active={rangeIncomeTab === "totals"} label="Total income" onClick={() => setRangeIncomeTab("totals")} />
                         <SectionButton active={rangeIncomeTab === "daily"} label="Daily income" onClick={() => setRangeIncomeTab("daily")} />
-                        <SectionButton active={rangeIncomeTab === "guest-accounts"} label="Brunch, guests and refunds" onClick={() => setRangeIncomeTab("guest-accounts")} />
+                        <SectionButton active={rangeIncomeTab === "brunch-refunds"} label="Brunch and refunds" onClick={() => setRangeIncomeTab("brunch-refunds")} />
                       </div>
                     </div>
 
@@ -2077,16 +2155,13 @@ export default function NightDutyPanel({
                       </div>
                     ) : null}
 
-                    {rangeIncomeTab === "guest-accounts" ? (
+                    {rangeIncomeTab === "brunch-refunds" ? (
                       <div className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">Walk-in guests<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.guestMixTotals.walkInGuests}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.guestMixTotals.walkInPercentage)}</span></div>
-                          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">Corporate guests<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.guestMixTotals.corporateGuests}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.guestMixTotals.corporatePercentage)}</span></div>
+                        <div className="grid gap-4 sm:grid-cols-2">
                           <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">Brunch<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeAnalytics.totalBrunchRevenue)}</strong><br /><span className="text-xs text-slate-500">{rangeAnalytics.totalBrunchAttendees} attendees</span></div>
                           <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm">Guest refunds<br /><strong className="text-xl text-rose-800">{formatAmount(rangeAnalytics.guestRefundsTotal)}</strong><br /><span className="text-xs text-rose-700">Excluded from all revenue totals</span></div>
                         </div>
-                        <RangeBarChart title="Walk-in versus corporate guests" items={[{ key: "walk-in", label: "Walk-in", value: rangeAnalytics.guestMixTotals.walkInGuests, percentage: rangeAnalytics.guestMixTotals.walkInPercentage }, { key: "corporate", label: "Corporate", value: rangeAnalytics.guestMixTotals.corporateGuests, percentage: rangeAnalytics.guestMixTotals.corporatePercentage }]} />
-                        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily brunch, guest mix and refund account</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Walk-in</th><th className="px-3 py-2">Corporate</th><th className="px-3 py-2">Brunch revenue</th><th className="px-3 py-2">Brunch attendees</th><th className="px-3 py-2">Guest refunds</th></tr></thead><tbody>{rangeAnalytics.dailyGuestAccounts.map((day, index) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{day.walkInGuests}</td><td className="px-3 py-2">{day.corporateGuests}</td><td className="px-3 py-2">{formatAmount(rangeAnalytics.dailyBrunch[index]?.revenue)}</td><td className="px-3 py-2">{rangeAnalytics.dailyBrunch[index]?.attendees ?? 0}</td><td className="px-3 py-2 text-rose-700">{formatAmount(day.guestRefunds)}</td></tr>)}</tbody></table></div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily brunch and separate guest refund account</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Brunch revenue</th><th className="px-3 py-2">Brunch attendees</th><th className="px-3 py-2">Guest refunds</th></tr></thead><tbody>{rangeAnalytics.dailyBrunch.map((day, index) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{formatAmount(day.revenue)}</td><td className="px-3 py-2">{day.attendees}</td><td className="px-3 py-2 text-rose-700">{formatAmount(rangeAnalytics.dailyGuestRefunds[index]?.amount)}</td></tr>)}</tbody></table></div>
                       </div>
                     ) : null}
 
