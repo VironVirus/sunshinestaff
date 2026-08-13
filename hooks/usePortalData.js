@@ -1400,9 +1400,44 @@ export function usePortalData(profile) {
       updatedByName: profile?.fullName ?? "",
       updatedByDepartment: profile?.departmentName ?? "",
     };
+    let warning = "";
+    let archivedInD1 = false;
+
+    if (hasCloudflareArchiveConfig) {
+      try {
+        await archiveRecord(buildArchiveRecord(
+          "night-duty",
+          nextNightDutyData.operationalDateKey,
+          nextNightDutyData.operationalDateKey,
+          persistedReport,
+        ));
+        archivedInD1 = true;
+      } catch (archiveError) {
+        warning = "Cloudflare D1 was unavailable, so the full report was retained in Firebase as a safety fallback.";
+        console.error("Night Duty report could not be archived in D1 before saving", archiveError);
+      }
+    }
+
+    const datedReportData = archivedInD1
+      ? {
+          storageMode: "d1-full",
+          operationalDateKey: persistedReport.operationalDateKey,
+          occupancyByFloor: persistedReport.occupancyByFloor,
+          income: persistedReport.income,
+          gasLevels: persistedReport.gasLevels,
+          hotWaterTemperature: persistedReport.hotWaterTemperature,
+          waterSupplyCount: persistedReport.waterSupplyCount,
+          nightDutySupervisorSignature: persistedReport.nightDutySupervisorSignature,
+          updatedAt: persistedReport.updatedAt,
+          updatedAtIso: persistedReport.updatedAtIso,
+          updatedByUid: persistedReport.updatedByUid,
+          updatedByName: persistedReport.updatedByName,
+          updatedByDepartment: persistedReport.updatedByDepartment,
+        }
+      : persistedReport;
     const datedReportWrite = {
       ref: doc(db, "nightDutyReports", nextNightDutyData.operationalDateKey),
-      data: persistedReport,
+      data: datedReportData,
       options: { merge: false },
     };
     const currentBoardDate = portalState.nightDutyData?.operationalDateKey ?? "";
@@ -1457,8 +1492,6 @@ export function usePortalData(profile) {
       throw diagnosedError;
     }
 
-    let warning = "";
-
     if (shouldUpdateCurrentBoard) {
       try {
         await commitTrackedWrite({
@@ -1469,7 +1502,7 @@ export function usePortalData(profile) {
           }],
         });
       } catch (error) {
-        warning = "The dated report was saved, but Firestore rejected the current Night Duty dashboard copy.";
+        warning = `${warning} The dated report was saved, but Firestore rejected the current Night Duty dashboard copy.`.trim();
         console.error("Night Duty dated report saved without current dashboard copy", error);
       }
     }
@@ -1491,20 +1524,6 @@ export function usePortalData(profile) {
     } catch (error) {
       warning = `${warning} The report was saved, but Firestore rejected its notification/audit entry.`.trim();
       console.error("Night Duty report saved without its tracking entries", error);
-    }
-
-    if (hasCloudflareArchiveConfig) {
-      try {
-        await archiveRecord(buildArchiveRecord(
-          "night-duty",
-          nextNightDutyData.operationalDateKey,
-          nextNightDutyData.operationalDateKey,
-          persistedReport,
-        ));
-      } catch (archiveError) {
-        warning = `${warning} The Firebase report was saved, but its Cloudflare D1 backup is pending.`.trim();
-        console.error("Night Duty report saved without its D1 archive copy", archiveError);
-      }
     }
 
     return { warning };
@@ -1566,12 +1585,6 @@ export function usePortalData(profile) {
       throw new Error("Select a valid report date.");
     }
 
-    const snapshot = await getDoc(doc(db, "nightDutyReports", operationalDateKey));
-
-    if (snapshot.exists()) {
-      return normalizeStoredNightDutyReport({ id: snapshot.id, ...snapshot.data() });
-    }
-
     if (hasCloudflareArchiveConfig) {
       try {
         const archived = await loadArchivedRecord("night-duty", operationalDateKey);
@@ -1584,6 +1597,12 @@ export function usePortalData(profile) {
       } catch (archiveError) {
         console.error("Unable to load the D1 Night Duty archive", archiveError);
       }
+    }
+
+    const snapshot = await getDoc(doc(db, "nightDutyReports", operationalDateKey));
+
+    if (snapshot.exists()) {
+      return normalizeStoredNightDutyReport({ id: snapshot.id, ...snapshot.data() });
     }
 
     return null;
@@ -1626,16 +1645,40 @@ export function usePortalData(profile) {
 
     try {
       const firestoreReports = await fetchFirestoreNightDutyRange(rangeStart, rangeEnd);
+      const archivedByDate = new Map(
+        archivedReports.map((report) => [report.operationalDateKey, report]),
+      );
+      const combinedReports = firestoreReports.map((report) =>
+        archivedByDate.get(report.operationalDateKey) ?? report,
+      );
+      archivedReports.forEach((report) => {
+        if (!combinedReports.some((entry) => entry.operationalDateKey === report.operationalDateKey)) {
+          combinedReports.push(report);
+        }
+      });
 
       if (hasCloudflareArchiveConfig && nightDutyAccess.canEditPanel) {
         try {
-          await archiveNightDutyRange(firestoreReports, dateKeys);
+          const legacyFullReports = firestoreReports.filter(
+            (report) => report.storageMode !== "d1-full",
+          );
+          const unavailableCompactDates = new Set(
+            firestoreReports
+              .filter((report) => report.storageMode === "d1-full" && !archivedByDate.has(report.operationalDateKey))
+              .map((report) => report.operationalDateKey),
+          );
+          await archiveNightDutyRange(
+            legacyFullReports,
+            dateKeys.filter((dateKey) => !unavailableCompactDates.has(dateKey)),
+          );
         } catch (archiveError) {
           console.error("Unable to backfill the D1 Night Duty archive", archiveError);
         }
       }
 
-      return firestoreReports;
+      return combinedReports.sort((left, right) =>
+        left.operationalDateKey.localeCompare(right.operationalDateKey),
+      );
     } catch (firestoreError) {
       if (archivedReports.length > 0) return archivedReports;
       throw firestoreError;
@@ -1662,12 +1705,61 @@ export function usePortalData(profile) {
       dateKeys[0],
       dateKeys[dateKeys.length - 1],
     );
-    await archiveNightDutyRange(reports, dateKeys);
-    return { archivedRecords: reports.length, coveredDates: dateKeys.length };
+    const archivedRange = await loadArchivedRange(
+      "night-duty",
+      dateKeys[0],
+      dateKeys[dateKeys.length - 1],
+    );
+    const archivedKeys = new Set(
+      archivedRange.records.map((record) => record.recordKey),
+    );
+    const legacyFullReports = reports.filter((report) => report.storageMode !== "d1-full");
+    const unavailableCompactDates = new Set(
+      reports
+        .filter((report) => report.storageMode === "d1-full" && !archivedKeys.has(report.operationalDateKey))
+        .map((report) => report.operationalDateKey),
+    );
+    const coveredDateKeys = dateKeys.filter((dateKey) => !unavailableCompactDates.has(dateKey));
+    await archiveNightDutyRange(legacyFullReports, coveredDateKeys);
+
+    if (legacyFullReports.length > 0) {
+      const compactedAtIso = new Date().toISOString();
+      const batch = writeBatch(db);
+      legacyFullReports.forEach((report) => {
+        batch.set(doc(db, "nightDutyReports", report.operationalDateKey), {
+          storageMode: "d1-full",
+          operationalDateKey: report.operationalDateKey,
+          occupancyByFloor: report.occupancyByFloor,
+          income: report.income,
+          gasLevels: report.gasLevels,
+          hotWaterTemperature: report.hotWaterTemperature,
+          waterSupplyCount: report.waterSupplyCount,
+          nightDutySupervisorSignature: report.nightDutySupervisorSignature,
+          updatedAt: serverTimestamp(),
+          updatedAtIso: compactedAtIso,
+          updatedByUid: profile?.uid ?? null,
+          updatedByName: profile?.fullName ?? "",
+          updatedByDepartment: profile?.departmentName ?? "",
+        });
+      });
+      await batch.commit();
+    }
+
+    return {
+      archivedRecords: new Set([
+        ...archivedKeys,
+        ...legacyFullReports.map((report) => report.operationalDateKey),
+      ]).size,
+      coveredDates: coveredDateKeys.length,
+      compactedFirebaseRecords: legacyFullReports.length,
+    };
   }, [
     archiveNightDutyRange,
     fetchFirestoreNightDutyRange,
     nightDutyAccess.canEditPanel,
+    profile?.departmentName,
+    profile?.fullName,
+    profile?.uid,
   ]);
 
   const loadNightDutyReportRevisions = useCallback(async (operationalDateKey) => {
@@ -1699,11 +1791,6 @@ export function usePortalData(profile) {
       throw new Error("Select a valid In-house activity date.");
     }
 
-    const snapshot = await getDoc(doc(db, "inHouseReports", operationalDateKey));
-    if (snapshot.exists()) {
-      return normalizeStoredInHouseReport(snapshot.data(), operationalDateKey);
-    }
-
     if (hasCloudflareArchiveConfig) {
       try {
         const archived = await loadArchivedRecord("in-house", operationalDateKey);
@@ -1713,6 +1800,11 @@ export function usePortalData(profile) {
       } catch (archiveError) {
         console.error("Unable to load the D1 In-house archive", archiveError);
       }
+    }
+
+    const snapshot = await getDoc(doc(db, "inHouseReports", operationalDateKey));
+    if (snapshot.exists()) {
+      return normalizeStoredInHouseReport(snapshot.data(), operationalDateKey);
     }
 
     return null;
@@ -1742,11 +1834,11 @@ export function usePortalData(profile) {
       updatedByDepartment: profile?.departmentName ?? "",
     };
 
-    await setDoc(doc(db, "inHouseReports", dateKey), persistedReport, { merge: false });
     const savedReport = normalizeStoredInHouseReport({
       ...persistedReport,
       updatedAt: null,
     }, dateKey);
+    let archivedInD1 = false;
 
     if (hasCloudflareArchiveConfig) {
       try {
@@ -1756,11 +1848,31 @@ export function usePortalData(profile) {
           dateKey,
           savedReport,
         ));
+        archivedInD1 = true;
       } catch (archiveError) {
-        console.error("In-house report saved without its D1 archive copy", archiveError);
-        savedReport.archiveWarning = "The Firebase report was saved, but its Cloudflare D1 backup is pending.";
+        console.error("In-house report could not be archived in D1 before saving", archiveError);
+        savedReport.archiveWarning = "Cloudflare D1 was unavailable, so the full In-house report was retained in Firebase as a safety fallback.";
       }
     }
+
+    const firestoreReport = archivedInD1
+      ? {
+          storageMode: "d1-full",
+          operationalDateKey: persistedReport.operationalDateKey,
+          occupiedRooms: [],
+          occupiedRoomNumbers: persistedReport.occupiedRoomNumbers,
+          occupancyByFloor: persistedReport.occupancyByFloor,
+          inHouse: persistedReport.inHouse,
+          availableRooms: persistedReport.availableRooms,
+          breakfastEntitled: persistedReport.breakfastEntitled,
+          updatedAt: persistedReport.updatedAt,
+          updatedAtIso: persistedReport.updatedAtIso,
+          updatedByUid: persistedReport.updatedByUid,
+          updatedByName: persistedReport.updatedByName,
+          updatedByDepartment: persistedReport.updatedByDepartment,
+        }
+      : persistedReport;
+    await setDoc(doc(db, "inHouseReports", dateKey), firestoreReport, { merge: false });
 
     return savedReport;
   }

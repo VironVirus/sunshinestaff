@@ -43,6 +43,23 @@ export const nightDutyOutletConfig = [
     label: "Front Office",
     fields: [
       { key: "roomRevenue", label: "Room revenue", monthlyRoomRevenue: true },
+      {
+        key: "walkInGuests",
+        label: "Walk-in guests",
+        nonFinancial: true,
+        guestCategory: "walkIn",
+      },
+      {
+        key: "corporateGuests",
+        label: "Corporate guests",
+        nonFinancial: true,
+        guestCategory: "corporate",
+      },
+      {
+        key: "guestRefunds",
+        label: "Guest refunds",
+        separateAccount: true,
+      },
       { key: "advancePayment", label: "Advance payment", excludeFromRevenue: true },
       { key: "deposits", label: "Other deposits", excludeFromRevenue: true },
       { key: "hallHire", label: "Hall hire" },
@@ -338,7 +355,7 @@ export function getOutletTotal(income = {}, outletKey, { includeNonRevenue = fal
 
   return outlet.fields.reduce(
     (total, field) => {
-      if (field.nonFinancial) return total;
+      if (field.nonFinancial || field.separateAccount) return total;
       return includeNonRevenue || !field.excludeFromRevenue
         ? total + normalizeAmount(income?.[outlet.key]?.[field.key])
         : total;
@@ -367,6 +384,17 @@ export function getGrandIncomeTotal(income = {}) {
 
 export function getFrontOfficeRoomRevenue(income = {}) {
   return normalizeAmount(income?.frontOffice?.roomRevenue);
+}
+
+export function getGuestRefundTotal(income = {}) {
+  return normalizeAmount(income?.frontOffice?.guestRefunds);
+}
+
+export function getGuestMix(income = {}) {
+  return {
+    walkInGuests: normalizeCount(income?.frontOffice?.walkInGuests, 1000000),
+    corporateGuests: normalizeCount(income?.frontOffice?.corporateGuests, 1000000),
+  };
 }
 
 export function getGasLevelLabel(value) {

@@ -338,13 +338,48 @@ service cloud.firestore {
         request.resource.data.updatedByDepartment.size() <= 80;
     }
 
+    function validNightDutySummary() {
+      return request.resource.data.keys().hasOnly([
+          "storageMode", "operationalDateKey", "occupancyByFloor", "income",
+          "gasLevels", "hotWaterTemperature", "waterSupplyCount",
+          "nightDutySupervisorSignature", "updatedAt", "updatedAtIso",
+          "updatedByUid", "updatedByName", "updatedByDepartment"
+        ]) &&
+        request.resource.data.storageMode == "d1-full" &&
+        request.resource.data.operationalDateKey is string &&
+        request.resource.data.operationalDateKey.size() == 10 &&
+        request.resource.data.occupancyByFloor is list &&
+        optionalListWithin(request.resource.data, "occupancyByFloor", 8) &&
+        request.resource.data.income is map &&
+        request.resource.data.gasLevels is map &&
+        (request.resource.data.hotWaterTemperature == null ||
+          (request.resource.data.hotWaterTemperature is number &&
+            request.resource.data.hotWaterTemperature >= 0 &&
+            request.resource.data.hotWaterTemperature <= 120)) &&
+        request.resource.data.waterSupplyCount is int &&
+        request.resource.data.waterSupplyCount >= 0 &&
+        request.resource.data.waterSupplyCount <= 1000 &&
+        request.resource.data.nightDutySupervisorSignature is string &&
+        request.resource.data.nightDutySupervisorSignature.size() <= 120 &&
+        request.resource.data.updatedAt is timestamp &&
+        request.resource.data.updatedAtIso is string &&
+        request.resource.data.updatedAtIso.size() <= 40 &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        request.resource.data.updatedByName is string &&
+        request.resource.data.updatedByName.size() <= 80 &&
+        request.resource.data.updatedByDepartment is string &&
+        request.resource.data.updatedByDepartment.size() <= 80;
+    }
+
     function validInHouseReport() {
       return request.resource.data.keys().hasOnly([
-          "operationalDateKey", "occupiedRooms", "occupiedRoomNumbers",
+          "storageMode", "operationalDateKey", "occupiedRooms", "occupiedRoomNumbers",
           "occupancyByFloor", "inHouse", "availableRooms", "breakfastEntitled",
           "updatedAt", "updatedAtIso", "updatedByUid", "updatedByName",
           "updatedByDepartment"
         ]) &&
+        (!request.resource.data.keys().hasAny(["storageMode"]) ||
+          request.resource.data.storageMode == "d1-full") &&
         request.resource.data.operationalDateKey is string &&
         request.resource.data.operationalDateKey.size() == 10 &&
         request.resource.data.occupiedRooms is list &&
@@ -511,7 +546,10 @@ service cloud.firestore {
 
     match /nightDutyReports/{reportDate} {
       allow read: if isSuperAdmin() || isLead();
-      allow create, update: if validNightDutyReport() &&
+      allow create, update: if (
+          (request.resource.data.keys().hasAny(["storageMode"]) && validNightDutySummary()) ||
+          (!request.resource.data.keys().hasAny(["storageMode"]) && validNightDutyReport())
+        ) &&
         request.resource.data.operationalDateKey == reportDate &&
         (isSuperAdmin() || isNightDutyManager());
       allow delete: if false;

@@ -117,15 +117,25 @@ Copy the complete HTTPS address. The Worker runs separately from Hostinger; Host
 In Hostinger, open the website's environment variables and add:
 
 ```text
-NEXT_PUBLIC_CLOUDFLARE_ARCHIVE_URL=https://sunshine-hotel-archive.YOUR-SUBDOMAIN.workers.dev
+NEXT_PUBLIC_CLOUDFLARE_ARCHIVE_URL=https://sunshine-hotel-archive.elebeobinnavitalis.workers.dev
 ```
 
 Important:
 
 - Do not add a trailing slash.
-- This URL is public configuration, not a secret.
+- This URL is public configuration, not a secret. The same verified URL is also built into the portal as a safe default; the Hostinger variable remains the recommended explicit configuration and can override it later.
 - Keep every existing `NEXT_PUBLIC_FIREBASE_*` variable unchanged.
 - Rebuild and redeploy the Hostinger application after adding it. Next.js embeds `NEXT_PUBLIC_*` variables during the build.
+
+## Storage policy used by the portal
+
+- Cloudflare D1 stores the complete dated Night Duty and In-house reports, including editable historical details and revisions.
+- Firestore keeps compact dated summaries for fast indexes, date lists and financial/occupancy fallback calculations.
+- The single current Night Duty dashboard document remains complete in Firestore so current operations continue if D1 is temporarily unavailable.
+- If a D1 write fails, the portal keeps the full report in Firestore instead of discarding information and shows a warning. The report can be backed up to D1 later.
+- Room Property Status documents are bounded to the configured rooms; their historical revisions are archived in D1.
+
+This arrangement reduces repeated large arrays and notes in Firestore while preserving Firebase Authentication, authorization and live operational state.
 
 ## 7. Back up existing Night Duty reports
 
