@@ -1977,7 +1977,7 @@ export function usePortalData(profile) {
       ? {
           storageMode: "d1-full",
           operationalDateKey: persistedReport.operationalDateKey,
-          occupiedRooms: [],
+          occupiedRooms: persistedReport.occupiedRooms,
           occupiedRoomNumbers: persistedReport.occupiedRoomNumbers,
           occupancyByFloor: persistedReport.occupancyByFloor,
           inHouse: persistedReport.inHouse,

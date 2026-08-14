@@ -217,16 +217,36 @@ function buildOccupancyByFloor(operations = {}) {
       occupiedRoomSet.has(room?.roomNumber) &&
       ["walk_in", "corporate"].includes(room?.guestType),
     );
+  const storedFloorMap = new Map(
+    (Array.isArray(operations.occupancyByFloor) ? operations.occupancyByFloor : [])
+      .map((floor) => [floor?.floorKey, floor]),
+  );
+  const hasStoredGuestSourceData = roomGroups.every((group) => {
+    const floor = storedFloorMap.get(group.key);
+    return Object.prototype.hasOwnProperty.call(floor ?? {}, "walkInGuests") &&
+      Object.prototype.hasOwnProperty.call(floor ?? {}, "corporateGuests");
+  });
 
   return roomGroups.map((group) => {
     const floorRoomSet = new Set(group.rooms);
+    const storedFloor = storedFloorMap.get(group.key);
     const base = {
       floorKey: group.key,
       floorLabel: group.label,
-      occupiedRooms: group.rooms.filter((roomNumber) => occupiedRoomSet.has(roomNumber)).length,
+      occupiedRooms: occupiedRoomSet.size > 0
+        ? group.rooms.filter((roomNumber) => occupiedRoomSet.has(roomNumber)).length
+        : Number(storedFloor?.occupiedRooms) || 0,
     };
 
-    if (!hasCompleteGuestSourceData) return base;
+    if (!hasCompleteGuestSourceData) {
+      return hasStoredGuestSourceData
+        ? {
+            ...base,
+            walkInGuests: Number(storedFloor?.walkInGuests) || 0,
+            corporateGuests: Number(storedFloor?.corporateGuests) || 0,
+          }
+        : base;
+    }
 
     const floorEntries = occupiedRoomEntries.filter((room) =>
       floorRoomSet.has(room.roomNumber),
