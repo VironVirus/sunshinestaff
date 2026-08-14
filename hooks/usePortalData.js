@@ -190,6 +190,25 @@ function buildDailyReportEntry(snapshot, profile) {
   };
 }
 
+function hasCompleteClassifiedRoomData(payload = {}) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(source.operationalDateKey ?? "")) return false;
+  const occupiedRooms = Array.isArray(source.occupiedRooms)
+    ? source.occupiedRooms
+    : [];
+  const occupiedRoomNumbers = Array.isArray(source.occupiedRoomNumbers)
+    ? source.occupiedRoomNumbers
+    : [];
+  const expectedRoomCount = Number.isFinite(Number(source.inHouse))
+    ? Number(source.inHouse)
+    : occupiedRoomNumbers.length;
+
+  return occupiedRooms.length === expectedRoomCount &&
+    occupiedRooms.every((room) =>
+      room?.roomNumber && ["walk_in", "corporate"].includes(room?.guestType),
+    );
+}
+
 function upsertOperationsReportHistory(reportHistory = [], snapshot, profile) {
   if (!snapshot?.operationalDateKey) {
     return normalizeOperationsReportHistory(reportHistory);
@@ -1021,6 +1040,11 @@ export function usePortalData(profile) {
         portalState.propertyStatus,
       );
       const normalizedActivityEntries = normalizeOperationsActivityEntries(activityEntries);
+      const inHouseReport = buildInHouseReport(
+        nextOperations.occupiedRooms,
+        nextOperations.operationalDateKey,
+        visibleOperations.outOfOrderRoomNumbers,
+      );
 
       transaction.set(frontOfficeRef, {
         occupiedRooms: nextOperations.occupiedRooms,
@@ -1041,6 +1065,19 @@ export function usePortalData(profile) {
         updatedByName: profile?.fullName ?? "Front Office",
         updatedByDepartment: profile?.departmentName ?? "Front Office",
       }, { merge: true });
+
+      transaction.set(
+        doc(db, "inHouseReports", inHouseReport.operationalDateKey),
+        {
+          ...inHouseReport,
+          updatedAt: serverTimestamp(),
+          updatedAtIso: new Date().toISOString(),
+          updatedByUid: profile?.uid ?? null,
+          updatedByName: profile?.fullName ?? "Front Office",
+          updatedByDepartment: profile?.departmentName ?? "Front Office",
+        },
+        { merge: false },
+      );
 
       if (notificationRef) transaction.set(notificationRef, notification);
       if (activityRef) transaction.set(activityRef, activity);
@@ -1790,11 +1827,13 @@ export function usePortalData(profile) {
       throw new Error("Select a valid In-house activity date.");
     }
 
+    let archivedPayload = null;
+
     if (hasCloudflareArchiveConfig) {
       try {
         const archived = await loadArchivedRecord("in-house", operationalDateKey);
         if (archived?.payload) {
-          return normalizeStoredInHouseReport(archived.payload, operationalDateKey);
+          archivedPayload = archived.payload;
         }
       } catch (archiveError) {
         console.error("Unable to load the D1 In-house archive", archiveError);
@@ -1803,10 +1842,18 @@ export function usePortalData(profile) {
 
     const snapshot = await getDoc(doc(db, "inHouseReports", operationalDateKey));
     if (snapshot.exists()) {
-      return normalizeStoredInHouseReport(snapshot.data(), operationalDateKey);
+      const firestorePayload = snapshot.data();
+      const preferredPayload = hasCompleteClassifiedRoomData(firestorePayload) ||
+        !hasCompleteClassifiedRoomData(archivedPayload)
+        ? firestorePayload
+        : archivedPayload;
+
+      return normalizeStoredInHouseReport(preferredPayload, operationalDateKey);
     }
 
-    return null;
+    return archivedPayload
+      ? normalizeStoredInHouseReport(archivedPayload, operationalDateKey)
+      : null;
   }, []);
 
   const loadInHouseReportsInRange = useCallback(async (startDateKey, endDateKey) => {
@@ -1833,7 +1880,10 @@ export function usePortalData(profile) {
           .forEach((entry) => {
             archivedByDate.set(
               entry.recordKey,
-              normalizeStoredInHouseReport(entry.payload, entry.recordKey),
+              {
+                complete: hasCompleteClassifiedRoomData(entry.payload),
+                report: normalizeStoredInHouseReport(entry.payload, entry.recordKey),
+              },
             );
           });
       } catch (archiveError) {
@@ -1850,19 +1900,26 @@ export function usePortalData(profile) {
     ));
     const reportsByDate = new Map(
       snapshot.docs.map((reportDocument) => {
+        const payload = reportDocument.data();
         const report = normalizeStoredInHouseReport(
-          reportDocument.data(),
+          payload,
           reportDocument.id,
         );
-        return [report.operationalDateKey, report];
+        return [report.operationalDateKey, {
+          complete: hasCompleteClassifiedRoomData(payload),
+          report,
+        }];
       }),
     );
 
-    archivedByDate.forEach((report, dateKey) => {
-      reportsByDate.set(dateKey, report);
+    archivedByDate.forEach((archivedEntry, dateKey) => {
+      const firestoreEntry = reportsByDate.get(dateKey);
+      if (!firestoreEntry || (!firestoreEntry.complete && archivedEntry.complete)) {
+        reportsByDate.set(dateKey, archivedEntry);
+      }
     });
 
-    return [...reportsByDate.values()].sort((left, right) =>
+    return [...reportsByDate.values()].map((entry) => entry.report).sort((left, right) =>
       left.operationalDateKey.localeCompare(right.operationalDateKey),
     );
   }, []);
