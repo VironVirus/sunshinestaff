@@ -1035,8 +1035,6 @@ export function usePortalData(profile) {
         inHouse: nextOperations.inHouse,
         availableRooms: visibleOperations.availableRooms,
         breakfastEntitled: nextOperations.breakfastEntitled,
-        cleanedRoomNumbers: nextOperations.cleanedRoomNumbers,
-        cleanedRooms: nextOperations.cleanedRooms,
         notes: nextOperations.notes ?? "",
         updatedAt: serverTimestamp(),
         updatedByUid: profile?.uid ?? null,

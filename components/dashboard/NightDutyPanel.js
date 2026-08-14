@@ -8,7 +8,6 @@ import {
   getFrontOfficeRoomRevenue,
   getGasLevelLabel,
   getGrandIncomeTotal,
-  getGuestMix,
   getGuestRefundTotal,
   getNightDutyReportDateKey,
   getOutletTotal,
@@ -56,6 +55,19 @@ function getRevenueTreatment(field) {
   if (field?.nonFinancial) return "Attendance count";
   if (field?.separateAccount) return "Separate refund account; excluded from all revenue";
   return field?.excludeFromRevenue ? "Excluded from actual revenue" : "Included";
+}
+
+function shouldIncludeIncomeFieldInReport(outletKey, field, income) {
+  if (outletKey === "restaurant" && ["brunchRevenue", "brunchAttendees"].includes(field.key)) {
+    return (Number(income?.restaurant?.brunchRevenue) || 0) > 0 ||
+      (Number(income?.restaurant?.brunchAttendees) || 0) > 0;
+  }
+
+  if (outletKey === "frontOffice" && field.key === "guestRefunds") {
+    return (Number(income?.frontOffice?.guestRefunds) || 0) > 0;
+  }
+
+  return true;
 }
 
 function formatDuration(hours, minutes) {
@@ -193,13 +205,63 @@ function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
 }
 
 function buildOccupancyByFloor(operations = {}) {
-  const occupiedRoomSet = new Set(operations.occupiedRoomNumbers ?? []);
+  const occupiedRoomNumbers = Array.isArray(operations.occupiedRoomNumbers)
+    ? operations.occupiedRoomNumbers
+    : [];
+  const occupiedRoomSet = new Set(occupiedRoomNumbers);
+  const occupiedRoomEntries = Array.isArray(operations.occupiedRooms)
+    ? operations.occupiedRooms
+    : [];
+  const hasCompleteGuestSourceData = occupiedRoomEntries.length === occupiedRoomSet.size &&
+    occupiedRoomEntries.every((room) =>
+      occupiedRoomSet.has(room?.roomNumber) &&
+      ["walk_in", "corporate"].includes(room?.guestType),
+    );
 
-  return roomGroups.map((group) => ({
-    floorKey: group.key,
-    floorLabel: group.label,
-    occupiedRooms: group.rooms.filter((roomNumber) => occupiedRoomSet.has(roomNumber)).length,
-  }));
+  return roomGroups.map((group) => {
+    const floorRoomSet = new Set(group.rooms);
+    const base = {
+      floorKey: group.key,
+      floorLabel: group.label,
+      occupiedRooms: group.rooms.filter((roomNumber) => occupiedRoomSet.has(roomNumber)).length,
+    };
+
+    if (!hasCompleteGuestSourceData) return base;
+
+    const floorEntries = occupiedRoomEntries.filter((room) =>
+      floorRoomSet.has(room.roomNumber),
+    );
+
+    return {
+      ...base,
+      walkInGuests: floorEntries.filter((room) => room.guestType === "walk_in").length,
+      corporateGuests: floorEntries.filter((room) => room.guestType === "corporate").length,
+    };
+  });
+}
+
+function summarizeFrontOfficeGuestMix(occupancyByFloor = []) {
+  const recordedFloors = occupancyByFloor.filter((floor) =>
+    Object.prototype.hasOwnProperty.call(floor ?? {}, "walkInGuests") &&
+    Object.prototype.hasOwnProperty.call(floor ?? {}, "corporateGuests"),
+  );
+
+  if (recordedFloors.length !== roomGroups.length) return null;
+
+  const walkInGuests = recordedFloors.reduce(
+    (total, floor) => total + (Number(floor.walkInGuests) || 0),
+    0,
+  );
+  const corporateGuests = recordedFloors.reduce(
+    (total, floor) => total + (Number(floor.corporateGuests) || 0),
+    0,
+  );
+
+  return {
+    walkInGuests,
+    corporateGuests,
+    totalGuests: walkInGuests + corporateGuests,
+  };
 }
 
 function getOperationsSnapshotForDate(operations = {}, dateKey) {
@@ -215,6 +277,9 @@ function getOperationsSnapshotForDate(operations = {}, dateKey) {
     ...operations,
     ...historyEntry,
     operationalDateKey: dateKey,
+    occupiedRooms: Array.isArray(historyEntry.occupiedRooms)
+      ? historyEntry.occupiedRooms
+      : undefined,
     occupiedRoomNumbers: historyEntry.occupiedRoomNumbers ?? [],
   };
 }
@@ -270,7 +335,6 @@ function buildNightDutyReportData(record = {}) {
       { includeNonRevenue: true },
     ),
   }));
-  const guestMix = getGuestMix(record);
   const foodTotal = nightDutyOutletConfig.reduce(
     (total, outlet) => total + (Number(record.income?.[outlet.key]?.food) || 0),
     0,
@@ -284,9 +348,11 @@ function buildNightDutyReportData(record = {}) {
     ...record,
     generatedAt: new Date(),
     occupancyTotal,
+    frontOfficeGuestMix: summarizeFrontOfficeGuestMix(
+      record.frontOfficeOccupancyByFloor,
+    ),
     groupedStaff,
     incomeSections,
-    guestMix,
     guestRefunds: getGuestRefundTotal(record.income),
     foodBeverageTotals: {
       food: foodTotal,
@@ -348,9 +414,11 @@ function buildNightDutyReportLines(reportData) {
     );
   });
   lines.push({ text: `Total occupancy: ${reportData.occupancyTotal}`, bold: true });
-  lines.push(subsectionHeading("Room occupancy guest source"));
-  lines.push(`Walk-in guests occupying rooms: ${reportData.guestMix.walkInGuests}`);
-  lines.push(`Corporate guests occupying rooms: ${reportData.guestMix.corporateGuests}`);
+  if (reportData.frontOfficeGuestMix) {
+    lines.push(subsectionHeading("Front Office room occupancy by guest source"));
+    lines.push(`Walk-in occupied rooms: ${reportData.frontOfficeGuestMix.walkInGuests}`);
+    lines.push(`Corporate occupied rooms: ${reportData.frontOfficeGuestMix.corporateGuests}`);
+  }
   lines.push(
     `Discrepancy query: ${reportData.occupancyQuery?.hasDiscrepancy ? "Yes" : "No"}`,
   );
@@ -358,7 +426,9 @@ function buildNightDutyReportLines(reportData) {
   lines.push(sectionHeading("Income dashboard"));
   reportData.incomeSections.forEach((outlet) => {
     lines.push(subsectionHeading(outlet.label));
-    outlet.fields.forEach((field) => {
+    outlet.fields
+      .filter((field) => shouldIncludeIncomeFieldInReport(outlet.key, field, reportData.income))
+      .forEach((field) => {
       const suffix = field.nonFinancial
         ? " (attendance count; not revenue)"
         : field.separateAccount
@@ -367,7 +437,7 @@ function buildNightDutyReportLines(reportData) {
           ? " (included in Grand Revenue; excluded from Actual Revenue)"
           : "";
       lines.push(`- ${field.label}: ${formatIncomeFieldValue(field, reportData.income?.[outlet.key]?.[field.key])}${suffix}`);
-    });
+      });
     lines.push(`- Grand Revenue: ${formatAmount(outlet.grandRevenueTotal)}`);
     lines.push(`- Actual Revenue: ${formatAmount(outlet.actualRevenueTotal)}`);
   });
@@ -375,11 +445,15 @@ function buildNightDutyReportLines(reportData) {
   lines.push(`- Food total: ${formatAmount(reportData.foodBeverageTotals.food)}`);
   lines.push(`- Beverage total: ${formatAmount(reportData.foodBeverageTotals.beverage)}`);
   lines.push(`- Combined food and beverage: ${formatAmount(reportData.foodBeverageTotals.combined)}`);
-  lines.push(subsectionHeading("Brunch report"));
-  lines.push(`- Brunch revenue: ${formatAmount(reportData.brunchReport.revenue)}`);
-  lines.push(`- Brunch attendees: ${reportData.brunchReport.attendees}`);
-  lines.push(subsectionHeading("Guest refund account"));
-  lines.push(`- Guest refunds: ${formatAmount(reportData.guestRefunds)} (excluded from all revenue totals)`);
+  if (reportData.brunchReport.revenue > 0 || reportData.brunchReport.attendees > 0) {
+    lines.push(subsectionHeading("Brunch report"));
+    lines.push(`- Brunch revenue: ${formatAmount(reportData.brunchReport.revenue)}`);
+    lines.push(`- Brunch attendees: ${reportData.brunchReport.attendees}`);
+  }
+  if (reportData.guestRefunds > 0) {
+    lines.push(subsectionHeading("Guest refund account"));
+    lines.push(`- Guest refunds: ${formatAmount(reportData.guestRefunds)} (excluded from all revenue totals)`);
+  }
   lines.push({
     text: `GRAND REVENUE TOTAL: ${formatAmount(reportData.grandIncomeTotal)}`,
     bold: true,
@@ -544,51 +618,41 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     spaceBefore: 8,
     spaceAfter: 8,
   });
-  lines.push({
-    type: "table",
-    title: "Room occupancy by guest source",
-    headers: ["Occupancy source", "Guest total", "Share"],
-    widths: [2.2, 1.2, 1.2],
-    rows: [
-      ["Walk-in guests occupying rooms", String(analysis.guestMixTotals.walkInGuests), formatPercentage(analysis.guestMixTotals.walkInPercentage)],
-      ["Corporate guests occupying rooms", String(analysis.guestMixTotals.corporateGuests), formatPercentage(analysis.guestMixTotals.corporatePercentage)],
-    ],
-  });
-  lines.push({
-    type: "barChart",
-    title: "Walk-in versus corporate room occupancy",
-    items: [
-      { label: "Walk-in", value: analysis.guestMixTotals.walkInGuests, percentage: analysis.guestMixTotals.walkInPercentage },
-      { label: "Corporate", value: analysis.guestMixTotals.corporateGuests, percentage: analysis.guestMixTotals.corporatePercentage },
-    ],
-    spaceBefore: 8,
-    spaceAfter: 8,
-  });
-  lines.push({
-    type: "lineChart",
-    title: "Daily room occupancy guest source",
-    labels: analysis.dailyOccupancyGuestMix.map((day) => day.operationalDateKey),
-    series: [
-      { key: "walkInGuests", label: "Walk-in", values: analysis.dailyOccupancyGuestMix.map((day) => day.walkInGuests) },
-      { key: "corporateGuests", label: "Corporate", values: analysis.dailyOccupancyGuestMix.map((day) => day.corporateGuests) },
-    ],
-    spaceBefore: 8,
-    spaceAfter: 8,
-  });
-  lines.push({
-    type: "table",
-    title: "Daily room occupancy by guest source",
-    headers: ["Date", "Walk-in occupants", "Corporate occupants", "Categorized occupants"],
-    widths: [1.4, 1.2, 1.3, 1.4],
-    rows: analysis.dailyOccupancyGuestMix.map((day) => [
-      day.operationalDateKey,
-      String(day.walkInGuests),
-      String(day.corporateGuests),
-      String(day.totalGuests),
-    ]),
-    chunkSize: 22,
-  });
-
+  if (analysis.dailyOccupancyGuestMix.length > 0) {
+    lines.push({
+      type: "table",
+      title: "Front Office room occupancy by guest source",
+      headers: ["Guest source", "Occupied-room nights", "Share"],
+      widths: [2.2, 1.4, 1.2],
+      rows: [
+        ["Walk-in", String(analysis.guestMixTotals.walkInGuests), formatPercentage(analysis.guestMixTotals.walkInPercentage)],
+        ["Corporate", String(analysis.guestMixTotals.corporateGuests), formatPercentage(analysis.guestMixTotals.corporatePercentage)],
+      ],
+    });
+    lines.push({
+      type: "barChart",
+      title: "Front Office walk-in versus corporate occupancy",
+      items: [
+        { label: "Walk-in", value: analysis.guestMixTotals.walkInGuests, percentage: analysis.guestMixTotals.walkInPercentage },
+        { label: "Corporate", value: analysis.guestMixTotals.corporateGuests, percentage: analysis.guestMixTotals.corporatePercentage },
+      ],
+      spaceBefore: 8,
+      spaceAfter: 8,
+    });
+    lines.push({
+      type: "table",
+      title: "Daily Front Office occupancy by guest source",
+      headers: ["Date", "Walk-in rooms", "Corporate rooms", "Categorized rooms"],
+      widths: [1.4, 1.2, 1.3, 1.4],
+      rows: analysis.dailyOccupancyGuestMix.map((day) => [
+        day.operationalDateKey,
+        String(day.walkInGuests),
+        String(day.corporateGuests),
+        String(day.totalGuests),
+      ]),
+      chunkSize: 22,
+    });
+  }
   lines.push(sectionHeading("Income totals by section", true));
   lines.push({
     type: "table",
@@ -857,14 +921,18 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
   const dailyFoodBeverageRows = analysis.dailyFoodBeverage.map((day) => `
     <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatAmount(day.food))}</td><td>${escapeHtml(formatAmount(day.beverage))}</td><td>${escapeHtml(formatAmount(day.combined))}</td></tr>
   `).join("");
-  const dailyBrunchRows = analysis.dailyBrunch.map((day) => `
-    <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatAmount(day.revenue))}</td><td>${day.attendees}</td></tr>
-  `).join("");
+  const dailyBrunchRows = analysis.dailyBrunch.length > 0
+    ? analysis.dailyBrunch.map((day) => `
+        <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatAmount(day.revenue))}</td><td>${day.attendees}</td></tr>
+      `).join("")
+    : "<tr><td colspan='3'>No brunch entries in this range.</td></tr>";
+  const dailyGuestRefundRows = analysis.dailyGuestRefunds.length > 0
+    ? analysis.dailyGuestRefunds.map((day) => `
+        <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatAmount(day.amount))}</td><td>Excluded from all revenue totals</td></tr>
+      `).join("")
+    : "<tr><td colspan='3'>No guest refund entries in this range.</td></tr>";
   const dailyOccupancyGuestMixRows = analysis.dailyOccupancyGuestMix.map((day) => `
     <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${day.walkInGuests}</td><td>${day.corporateGuests}</td><td>${day.totalGuests}</td></tr>
-  `).join("");
-  const dailyGuestRefundRows = analysis.dailyGuestRefunds.map((day) => `
-    <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatAmount(day.amount))}</td><td>Excluded from all revenue totals</td></tr>
   `).join("");
   const dailyRevenueSourceTables = nightDutyOutletConfig.map((outlet) => {
     const sources = analysis.revenueSources.filter((source) => source.outletKey === outlet.key);
@@ -888,6 +956,9 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
     const total = items.reduce((sum, item) => sum + Math.max(Number(item.value) || 0, 0), 0);
     return `<section class="chart"><h3>${escapeHtml(title)}</h3>${items.map((item, index) => { const percentage = item.percentage ?? (total > 0 ? ((Number(item.value) || 0) / total) * 100 : 0); return `<div class="bar-row"><span>${escapeHtml(item.label)}</span><div class="bar-track"><i class="bar-${index % 4}" style="width:${Math.max(((Number(item.value) || 0) / maximum) * 100, Number(item.value) > 0 ? 1 : 0)}%"></i></div><strong>${escapeHtml(formatter(item.value))}<small>${escapeHtml(formatPercentage(percentage))}</small></strong></div>`; }).join("")}</section>`;
   };
+  const guestSourceRangeHtml = analysis.dailyOccupancyGuestMix.length > 0
+    ? `<h3>Front Office room occupancy by guest source</h3><div class="summary"><strong>Walk-in occupied-room nights:</strong> ${analysis.guestMixTotals.walkInGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.walkInPercentage))})<br><strong>Corporate occupied-room nights:</strong> ${analysis.guestMixTotals.corporateGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.corporatePercentage))})</div>${chartMarkup("Front Office walk-in versus corporate occupancy", [{ label: "Walk-in", value: analysis.guestMixTotals.walkInGuests, percentage: analysis.guestMixTotals.walkInPercentage }, { label: "Corporate", value: analysis.guestMixTotals.corporateGuests, percentage: analysis.guestMixTotals.corporatePercentage }], (value) => String(value))}<table><thead><tr><th>Date</th><th>Walk-in rooms</th><th>Corporate rooms</th><th>Categorized rooms</th></tr></thead><tbody>${dailyOccupancyGuestMixRows}</tbody></table>`
+    : `<p><strong>Front Office guest source:</strong> No complete walk-in/corporate snapshot is stored in this range.</p>`;
   const lineChartMarkup = (title, labels, series, formatter) => {
     const width = 720;
     const height = 220;
@@ -961,7 +1032,7 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
     </head><body>
       <h1>Sunshine Hotel Operations Report</h1>
       <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Coverage:</strong> ${analysis.reportCount} report(s) from ${analysis.selectedDayCount} selected day(s)<br><strong>Total In-house (occupant-nights):</strong> ${analysis.totalInHouse}<br><strong>Average occupancy:</strong> ${escapeHtml(formatAverage(analysis.averageOccupancy))} of ${analysis.hotelRoomCapacity} rooms (${escapeHtml(formatPercentage(analysis.averageOccupancyPercentage))})<br><strong>Grand Revenue:</strong> ${escapeHtml(formatAmount(analysis.grandRevenueTotal))}<br><strong>Actual Revenue:</strong> ${escapeHtml(formatAmount(analysis.actualRevenueTotal))}</div>
-      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }], formatPercentage)}<h3>Room occupancy by guest source</h3><div class="summary"><strong>Walk-in guests occupying rooms:</strong> ${analysis.guestMixTotals.walkInGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.walkInPercentage))})<br><strong>Corporate guests occupying rooms:</strong> ${analysis.guestMixTotals.corporateGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.corporatePercentage))})</div>${chartMarkup("Walk-in versus corporate room occupancy", [{ label: "Walk-in", value: analysis.guestMixTotals.walkInGuests, percentage: analysis.guestMixTotals.walkInPercentage }, { label: "Corporate", value: analysis.guestMixTotals.corporateGuests, percentage: analysis.guestMixTotals.corporatePercentage }], (value) => String(value))}${lineChartMarkup("Daily room occupancy guest source", analysis.dailyOccupancyGuestMix.map((day) => day.operationalDateKey), [{ label: "Walk-in", values: analysis.dailyOccupancyGuestMix.map((day) => day.walkInGuests) }, { label: "Corporate", values: analysis.dailyOccupancyGuestMix.map((day) => day.corporateGuests) }], (value) => String(value))}<table><thead><tr><th>Date</th><th>Walk-in occupants</th><th>Corporate occupants</th><th>Categorized occupants</th></tr></thead><tbody>${dailyOccupancyGuestMixRows}</tbody></table></section>
+      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }], formatPercentage)}${guestSourceRangeHtml}</section>
       <section class="analysis-section"><h2>Income totals by section</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
       <section><h2>Food and beverage analysis</h2><table><thead><tr><th>Account</th><th>Range total</th></tr></thead><tbody><tr><td>Food</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.food))}</td></tr><tr><td>Beverage</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.beverage))}</td></tr><tr><th>Combined</th><th>${escapeHtml(formatAmount(analysis.foodBeverageTotals.combined))}</th></tr></tbody></table>${lineChartMarkup("Daily food and beverage trend", analysis.dailyFoodBeverage.map((day) => day.operationalDateKey), [{ label: "Food", values: analysis.dailyFoodBeverage.map((day) => day.food) }, { label: "Beverage", values: analysis.dailyFoodBeverage.map((day) => day.beverage) }], formatAmount)}<table><thead><tr><th>Date</th><th>Food</th><th>Beverage</th><th>Combined</th></tr></thead><tbody>${dailyFoodBeverageRows}</tbody></table></section>
       <section><h2>Brunch report</h2><div class="summary"><strong>Total brunch revenue:</strong> ${escapeHtml(formatAmount(analysis.totalBrunchRevenue))}<br><strong>Total attendees:</strong> ${analysis.totalBrunchAttendees}</div><table><thead><tr><th>Date</th><th>Brunch revenue</th><th>Attendees</th></tr></thead><tbody>${dailyBrunchRows}</tbody></table></section>
@@ -1011,12 +1082,15 @@ function printNightDutyReport(reportData) {
     );
     return `<tr><td>${escapeHtml(floor.floorLabel)}</td><td>${floor.occupiedRooms}</td><td>${reference?.occupiedRooms ?? 0}</td></tr>`;
   }).join("");
+  const frontOfficeGuestSourceHtml = reportData.frontOfficeGuestMix
+    ? `<h3>Front Office room occupancy by guest source</h3><table><tbody><tr><td>Walk-in occupied rooms</td><td>${reportData.frontOfficeGuestMix.walkInGuests}</td></tr><tr><td>Corporate occupied rooms</td><td>${reportData.frontOfficeGuestMix.corporateGuests}</td></tr></tbody></table>`
+    : "";
   const incomeHtml = reportData.incomeSections.map((outlet) => `
     <section>
       <h3>${escapeHtml(outlet.label)}</h3>
       <table><thead><tr><th>Source</th><th>Amount</th><th>Revenue treatment</th></tr></thead>
         <tbody>
-          ${outlet.fields.map((field) => `<tr><td>${escapeHtml(field.label)}</td><td>${escapeHtml(formatIncomeFieldValue(field, reportData.income?.[outlet.key]?.[field.key]))}</td><td>${escapeHtml(getRevenueTreatment(field))}</td></tr>`).join("")}
+          ${outlet.fields.filter((field) => shouldIncludeIncomeFieldInReport(outlet.key, field, reportData.income)).map((field) => `<tr><td>${escapeHtml(field.label)}</td><td>${escapeHtml(formatIncomeFieldValue(field, reportData.income?.[outlet.key]?.[field.key]))}</td><td>${escapeHtml(getRevenueTreatment(field))}</td></tr>`).join("")}
           <tr><th>Grand Revenue</th><th>${escapeHtml(formatAmount(outlet.grandRevenueTotal))}</th><th>Revenue and deposit entries; refunds excluded</th></tr>
           <tr><th>Actual Revenue</th><th>${escapeHtml(formatAmount(outlet.actualRevenueTotal))}</th><th>Included revenue only</th></tr>
         </tbody>
@@ -1046,6 +1120,12 @@ function printNightDutyReport(reportData) {
   const complaintRows = (reportData.complaintsSnapshot ?? []).length > 0
     ? reportData.complaintsSnapshot.map((entry) => `<tr><td>${escapeHtml(entry.roomNumber || "Not stated")}</td><td>${escapeHtml(getRoomComplaintLabel(entry.complaintType))}</td><td>${escapeHtml(entry.complaintNote || "No note")}</td></tr>`).join("")
     : "<tr><td colspan='3'>Nil</td></tr>";
+  const brunchSectionHtml = reportData.brunchReport.revenue > 0 || reportData.brunchReport.attendees > 0
+    ? `<h3>Brunch report</h3><table><tbody><tr><td>Brunch revenue</td><td>${escapeHtml(formatAmount(reportData.brunchReport.revenue))}</td></tr><tr><td>Brunch attendees</td><td>${reportData.brunchReport.attendees}</td></tr></tbody></table>`
+    : "";
+  const guestRefundSectionHtml = reportData.guestRefunds > 0
+    ? `<h3>Separate guest refund account</h3><table><tbody><tr><td>Guest refunds</td><td>${escapeHtml(formatAmount(reportData.guestRefunds))}</td></tr><tr><th colspan="2">Guest refunds are excluded from Grand Revenue and Actual Revenue.</th></tr></tbody></table>`
+    : "";
 
   reportWindow.document.open();
   reportWindow.document.write(`
@@ -1073,13 +1153,13 @@ function printNightDutyReport(reportData) {
 
       <h2>Occupancy totals by floor</h2>
       <table><thead><tr><th>Floor</th><th>Night Duty total</th><th>Front Office reference</th></tr></thead><tbody>${occupancyRows}<tr><th>Total</th><th>${reportData.occupancyTotal}</th><th></th></tr></tbody></table>
-      <h3>Room occupancy by guest source</h3><table><tbody><tr><td>Walk-in guests occupying rooms</td><td>${reportData.guestMix.walkInGuests}</td></tr><tr><td>Corporate guests occupying rooms</td><td>${reportData.guestMix.corporateGuests}</td></tr></tbody></table>
+      ${frontOfficeGuestSourceHtml}
       <p><strong>Discrepancy query:</strong> ${reportData.occupancyQuery?.hasDiscrepancy ? "Yes" : "No"}<br>${escapeHtml(reportData.occupancyQuery?.note || "Nil")}</p>
 
       <h2>Income dashboard</h2>${incomeHtml}
       <h3>Food and beverage report</h3><table><tbody><tr><td>Food total</td><td>${escapeHtml(formatAmount(reportData.foodBeverageTotals.food))}</td></tr><tr><td>Beverage total</td><td>${escapeHtml(formatAmount(reportData.foodBeverageTotals.beverage))}</td></tr><tr><th>Combined</th><th>${escapeHtml(formatAmount(reportData.foodBeverageTotals.combined))}</th></tr></tbody></table>
-      <h3>Brunch report</h3><table><tbody><tr><td>Brunch revenue</td><td>${escapeHtml(formatAmount(reportData.brunchReport.revenue))}</td></tr><tr><td>Brunch attendees</td><td>${reportData.brunchReport.attendees}</td></tr></tbody></table>
-      <h3>Separate guest refund account</h3><table><tbody><tr><td>Guest refunds</td><td>${escapeHtml(formatAmount(reportData.guestRefunds))}</td></tr><tr><th colspan="2">Guest refunds are excluded from Grand Revenue and Actual Revenue.</th></tr></tbody></table>
+      ${brunchSectionHtml}
+      ${guestRefundSectionHtml}
       <p class="grand-total">GRAND REVENUE TOTAL: ${escapeHtml(formatAmount(reportData.grandIncomeTotal))}</p>
       <p class="actual-total">ACTUAL REVENUE TOTAL: ${escapeHtml(formatAmount(reportData.actualRevenueTotal))}</p>
 
@@ -1162,9 +1242,6 @@ export default function NightDutyPanel({
   const [activeSection, setActiveSection] = useState("report");
   const [occupancyByFloor, setOccupancyByFloor] = useState([]);
   const [occupancyQuery, setOccupancyQuery] = useState({ hasDiscrepancy: false, note: "" });
-  const [occupancyGuestMix, setOccupancyGuestMix] = useState(
-    buildDefaultNightDutyData().occupancyGuestMix,
-  );
   const [incomeForm, setIncomeForm] = useState(buildDefaultNightDutyData().income);
   const [onDutyStaff, setOnDutyStaff] = useState([]);
   const [departmentNotes, setDepartmentNotes] = useState({});
@@ -1313,7 +1390,6 @@ export default function NightDutyPanel({
       hasSavedSelectedReport ? report.occupancyByFloor : frontOfficeOccupancyByFloor,
     );
     setOccupancyQuery(report.occupancyQuery);
-    setOccupancyGuestMix(report.occupancyGuestMix);
     setIncomeForm(report.income);
     setOnDutyStaff(report.onDutyStaff);
     setDepartmentNotes(report.departmentNotes);
@@ -1371,7 +1447,6 @@ export default function NightDutyPanel({
     occupancyByFloor,
     frontOfficeOccupancyByFloor,
     occupancyQuery,
-    occupancyGuestMix,
     income: incomeForm,
     onDutyStaff,
     departmentNotes,
@@ -1398,7 +1473,6 @@ export default function NightDutyPanel({
     hotWaterTemperature,
     incomeForm,
     occupancyByFloor,
-    occupancyGuestMix,
     occupancyQuery,
     onDutyStaff,
     nightDutySupervisorSignature,
@@ -1861,14 +1935,6 @@ export default function NightDutyPanel({
             </div>
           </div>
           <div className="subpanel">
-            <p className="metric-label">Room occupancy by guest source</p>
-            <p className="mt-2 text-sm text-slate-500">Record guests occupying rooms as walk-in or corporate. These are occupancy counts and are never treated as income or brunch attendance.</p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="field"><span>Walk-in guests occupying rooms</span><input type="number" min="0" step="1" value={occupancyGuestMix.walkInGuests} onChange={(event) => setOccupancyGuestMix((current) => ({ ...current, walkInGuests: event.target.value }))} disabled={readOnly || savingSection} /></label>
-              <label className="field"><span>Corporate guests occupying rooms</span><input type="number" min="0" step="1" value={occupancyGuestMix.corporateGuests} onChange={(event) => setOccupancyGuestMix((current) => ({ ...current, corporateGuests: event.target.value }))} disabled={readOnly || savingSection} /></label>
-            </div>
-          </div>
-          <div className="subpanel">
             <p className="metric-label">Occupancy discrepancy query</p>
             <div className="mt-4 flex gap-4">
               <label className="flex items-center gap-2 text-sm"><input type="radio" checked={!occupancyQuery.hasDiscrepancy} onChange={() => setOccupancyQuery({ hasDiscrepancy: false, note: "" })} disabled={readOnly || savingSection} />No discrepancy</label>
@@ -2088,23 +2154,21 @@ export default function NightDutyPanel({
                       />
                     </div>
 
-                    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
-                      <div>
-                        <h4 className="font-semibold text-[#162338]">Room occupancy by guest source</h4>
-                        <p className="mt-1 text-xs text-slate-500">These figures describe guests occupying rooms. They are not brunch attendance or revenue.</p>
+                    {rangeAnalytics.dailyOccupancyGuestMix.length > 0 ? (
+                      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+                        <div>
+                          <h4 className="font-semibold text-[#162338]">Front Office room occupancy by guest source</h4>
+                          <p className="mt-1 text-xs text-slate-500">Calculated automatically from the Walk in or Corporate type saved against each occupied room in Front Office. Days without a complete source snapshot are excluded.</p>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="rounded-xl bg-slate-50 p-4 text-sm">Walk-in occupied-room nights<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.guestMixTotals.walkInGuests}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.guestMixTotals.walkInPercentage)}</span></div>
+                          <div className="rounded-xl bg-slate-50 p-4 text-sm">Corporate occupied-room nights<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.guestMixTotals.corporateGuests}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.guestMixTotals.corporatePercentage)}</span></div>
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily Front Office occupancy source</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Walk-in rooms</th><th className="px-3 py-2">Corporate rooms</th><th className="px-3 py-2">Categorized rooms</th></tr></thead><tbody>{rangeAnalytics.dailyOccupancyGuestMix.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{day.walkInGuests}</td><td className="px-3 py-2">{day.corporateGuests}</td><td className="px-3 py-2">{day.totalGuests}</td></tr>)}</tbody></table>
+                        </div>
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="rounded-xl bg-slate-50 p-4 text-sm">Walk-in guests occupying rooms<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.guestMixTotals.walkInGuests}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.guestMixTotals.walkInPercentage)}</span></div>
-                        <div className="rounded-xl bg-slate-50 p-4 text-sm">Corporate guests occupying rooms<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.guestMixTotals.corporateGuests}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.guestMixTotals.corporatePercentage)}</span></div>
-                      </div>
-                      <div className="grid gap-4 xl:grid-cols-2">
-                        <RangeBarChart title="Walk-in versus corporate room occupancy" items={[{ key: "walk-in", label: "Walk-in", value: rangeAnalytics.guestMixTotals.walkInGuests, percentage: rangeAnalytics.guestMixTotals.walkInPercentage }, { key: "corporate", label: "Corporate", value: rangeAnalytics.guestMixTotals.corporateGuests, percentage: rangeAnalytics.guestMixTotals.corporatePercentage }]} />
-                        <RangeLineChart title="Daily room occupancy guest source" labels={rangeAnalytics.dailyOccupancyGuestMix.map((day) => day.operationalDateKey)} series={[{ key: "walk-in", label: "Walk-in", color: "#a67c2e", values: rangeAnalytics.dailyOccupancyGuestMix.map((day) => day.walkInGuests) }, { key: "corporate", label: "Corporate", color: "#162338", values: rangeAnalytics.dailyOccupancyGuestMix.map((day) => day.corporateGuests) }]} />
-                      </div>
-                      <div className="overflow-x-auto rounded-xl border border-slate-200">
-                        <table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily room occupancy by guest source</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Walk-in occupants</th><th className="px-3 py-2">Corporate occupants</th><th className="px-3 py-2">Categorized occupants</th></tr></thead><tbody>{rangeAnalytics.dailyOccupancyGuestMix.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{day.walkInGuests}</td><td className="px-3 py-2">{day.corporateGuests}</td><td className="px-3 py-2">{day.totalGuests}</td></tr>)}</tbody></table>
-                      </div>
-                    </div>
+                    ) : null}
 
                     <RangeLineChart
                       title="Daily outlet revenue trends"
@@ -2161,7 +2225,8 @@ export default function NightDutyPanel({
                           <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">Brunch<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeAnalytics.totalBrunchRevenue)}</strong><br /><span className="text-xs text-slate-500">{rangeAnalytics.totalBrunchAttendees} attendees</span></div>
                           <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm">Guest refunds<br /><strong className="text-xl text-rose-800">{formatAmount(rangeAnalytics.guestRefundsTotal)}</strong><br /><span className="text-xs text-rose-700">Excluded from all revenue totals</span></div>
                         </div>
-                        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily brunch and separate guest refund account</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Brunch revenue</th><th className="px-3 py-2">Brunch attendees</th><th className="px-3 py-2">Guest refunds</th></tr></thead><tbody>{rangeAnalytics.dailyBrunch.map((day, index) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{formatAmount(day.revenue)}</td><td className="px-3 py-2">{day.attendees}</td><td className="px-3 py-2 text-rose-700">{formatAmount(rangeAnalytics.dailyGuestRefunds[index]?.amount)}</td></tr>)}</tbody></table></div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Brunch entries</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Brunch revenue</th><th className="px-3 py-2">Brunch attendees</th></tr></thead><tbody>{rangeAnalytics.dailyBrunch.length > 0 ? rangeAnalytics.dailyBrunch.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{formatAmount(day.revenue)}</td><td className="px-3 py-2">{day.attendees}</td></tr>) : <tr><td colSpan={3} className="px-3 py-4 text-slate-500">No brunch entries in this range.</td></tr>}</tbody></table></div>
+                        <div className="overflow-x-auto rounded-xl border border-rose-200 bg-white"><table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-rose-800">Guest refund entries</caption><thead><tr className="bg-rose-50 text-left text-rose-700"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Guest refunds</th></tr></thead><tbody>{rangeAnalytics.dailyGuestRefunds.length > 0 ? rangeAnalytics.dailyGuestRefunds.map((day) => <tr key={day.operationalDateKey} className="border-t border-rose-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2 text-rose-700">{formatAmount(day.amount)}</td></tr>) : <tr><td colSpan={2} className="px-3 py-4 text-slate-500">No guest refund entries in this range.</td></tr>}</tbody></table></div>
                       </div>
                     ) : null}
 
@@ -2199,6 +2264,7 @@ export default function NightDutyPanel({
         <div className="mt-6 subpanel">
           <p className="metric-label">Current report preview</p>
           <div className="mt-4 overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="text-left text-slate-500"><th className="px-3 py-2">Floor</th><th className="px-3 py-2">Night Duty occupancy</th><th className="px-3 py-2">Front Office reference</th></tr></thead><tbody>{reportData.occupancyByFloor.map((floor) => <tr key={floor.floorKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{floor.floorLabel}</td><td className="px-3 py-2">{floor.occupiedRooms}</td><td className="px-3 py-2">{reportData.frontOfficeOccupancyByFloor.find((entry) => entry.floorKey === floor.floorKey)?.occupiedRooms ?? 0}</td></tr>)}</tbody></table></div>
+          {reportData.frontOfficeGuestMix ? <p className="mt-4 text-sm text-slate-600">Front Office guest source: <strong>{reportData.frontOfficeGuestMix.walkInGuests} walk-in room(s) · {reportData.frontOfficeGuestMix.corporateGuests} corporate room(s)</strong></p> : null}
           <p className="mt-4 text-sm text-slate-600">Discrepancy query: <strong>{occupancyQuery.hasDiscrepancy ? occupancyQuery.note || "Yes" : "Nil"}</strong></p>
           <p className="mt-2 text-sm text-slate-600">Guest incident: <strong>{getIncidentSummary(guestIncident)}</strong> · Employee incident: <strong>{getIncidentSummary(employeeIncident)}</strong></p>
         </div>

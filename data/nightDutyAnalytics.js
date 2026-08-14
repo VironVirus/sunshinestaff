@@ -1,6 +1,5 @@
 import {
   cookingGasOptions,
-  getGuestMix,
   getGuestRefundTotal,
   nightDutyOutletConfig,
 } from "@/data/nightDuty";
@@ -50,6 +49,27 @@ function aggregateNamedDurations(reports, fieldName, hourKey, minuteKey) {
   return [...entriesByName.values()].sort((left, right) =>
     left.name.localeCompare(right.name),
   );
+}
+
+function getFrontOfficeGuestMix(report = {}) {
+  const floors = Array.isArray(report.frontOfficeOccupancyByFloor)
+    ? report.frontOfficeOccupancyByFloor
+    : [];
+  const recordedFloors = floors.filter((floor) =>
+    Object.prototype.hasOwnProperty.call(floor ?? {}, "walkInGuests") &&
+    Object.prototype.hasOwnProperty.call(floor ?? {}, "corporateGuests"),
+  );
+
+  if (recordedFloors.length !== roomGroups.length) return null;
+
+  const walkInGuests = sum(recordedFloors.map((floor) => floor.walkInGuests));
+  const corporateGuests = sum(recordedFloors.map((floor) => floor.corporateGuests));
+
+  return {
+    walkInGuests,
+    corporateGuests,
+    totalGuests: walkInGuests + corporateGuests,
+  };
 }
 
 export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []) {
@@ -126,7 +146,11 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
   }));
   const revenueSourceDefinitions = nightDutyOutletConfig.flatMap((outlet) =>
     outlet.fields
-      .filter((field) => !field.nonFinancial && !field.separateAccount)
+      .filter((field) =>
+        !field.nonFinancial &&
+        !field.separateAccount &&
+        field.key !== "brunchRevenue",
+      )
       .map((field) => ({
         sourceKey: `${outlet.key}.${field.key}`,
         outletKey: outlet.key,
@@ -169,23 +193,26 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     beverage: sum(dailyFoodBeverage.map((day) => day.beverage)),
     combined: sum(dailyFoodBeverage.map((day) => day.combined)),
   };
-  const dailyBrunch = orderedReports.map((report) => ({
-    operationalDateKey: report.operationalDateKey,
-    revenue: Number(report.income?.restaurant?.brunchRevenue) || 0,
-    attendees: Number(report.income?.restaurant?.brunchAttendees) || 0,
-  }));
-  const dailyOccupancyGuestMix = orderedReports.map((report) => {
-    const guestMix = getGuestMix(report);
-    return {
+  const dailyBrunch = orderedReports
+    .map((report) => ({
       operationalDateKey: report.operationalDateKey,
-      ...guestMix,
-      totalGuests: guestMix.walkInGuests + guestMix.corporateGuests,
-    };
+      revenue: Number(report.income?.restaurant?.brunchRevenue) || 0,
+      attendees: Number(report.income?.restaurant?.brunchAttendees) || 0,
+    }))
+    .filter((day) => day.revenue > 0 || day.attendees > 0);
+  const dailyGuestRefunds = orderedReports
+    .map((report) => ({
+      operationalDateKey: report.operationalDateKey,
+      amount: getGuestRefundTotal(report.income),
+    }))
+    .filter((day) => day.amount > 0);
+  const dailyOccupancyGuestMix = orderedReports.flatMap((report) => {
+    const guestMix = getFrontOfficeGuestMix(report);
+
+    return guestMix
+      ? [{ operationalDateKey: report.operationalDateKey, ...guestMix }]
+      : [];
   });
-  const dailyGuestRefunds = orderedReports.map((report) => ({
-    operationalDateKey: report.operationalDateKey,
-    amount: getGuestRefundTotal(report.income),
-  }));
   const totalWalkInGuests = sum(dailyOccupancyGuestMix.map((day) => day.walkInGuests));
   const totalCorporateGuests = sum(dailyOccupancyGuestMix.map((day) => day.corporateGuests));
   const totalCategorizedGuests = totalWalkInGuests + totalCorporateGuests;
@@ -259,6 +286,8 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     dailyFoodBeverage,
     dailyBrunch,
     totalBrunchRevenue: sum(dailyBrunch.map((day) => day.revenue)),
+    dailyGuestRefunds,
+    guestRefundsTotal: sum(dailyGuestRefunds.map((day) => day.amount)),
     dailyOccupancyGuestMix,
     guestMixTotals: {
       walkInGuests: totalWalkInGuests,
@@ -271,8 +300,6 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
         ? (totalCorporateGuests / totalCategorizedGuests) * 100
         : 0,
     },
-    dailyGuestRefunds,
-    guestRefundsTotal: sum(dailyGuestRefunds.map((day) => day.amount)),
     grandRevenueTotal,
     actualRevenueTotal,
     departmentalNotes,
@@ -291,8 +318,6 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     employeeIncidentDays: orderedReports.filter((report) => report.employeeIncident?.hasIncident).length,
     totalEvents: sum(orderedReports.map((report) => report.eventsSnapshot?.length)),
     totalComplaints: sum(orderedReports.map((report) => report.complaintsSnapshot?.length)),
-    totalBrunchAttendees: sum(orderedReports.map((report) =>
-      report.income?.restaurant?.brunchAttendees,
-    )),
+    totalBrunchAttendees: sum(dailyBrunch.map((day) => day.attendees)),
   };
 }

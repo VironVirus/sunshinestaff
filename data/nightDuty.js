@@ -196,14 +196,28 @@ function normalizeOccupancyByFloor(entries = []) {
     (Array.isArray(entries) ? entries : []).map((entry) => [entry?.floorKey, entry]),
   );
 
-  return roomGroups.map((group) => ({
-    floorKey: group.key,
-    floorLabel: group.label,
-    occupiedRooms: Math.min(
-      normalizeCount(entryMap.get(group.key)?.occupiedRooms, group.rooms.length),
-      group.rooms.length,
-    ),
-  }));
+  return roomGroups.map((group) => {
+    const entry = entryMap.get(group.key);
+    const base = {
+      floorKey: group.key,
+      floorLabel: group.label,
+      occupiedRooms: Math.min(
+        normalizeCount(entry?.occupiedRooms, group.rooms.length),
+        group.rooms.length,
+      ),
+    };
+    const hasGuestSourceData =
+      Object.prototype.hasOwnProperty.call(entry ?? {}, "walkInGuests") &&
+      Object.prototype.hasOwnProperty.call(entry ?? {}, "corporateGuests");
+
+    return hasGuestSourceData
+      ? {
+          ...base,
+          walkInGuests: normalizeCount(entry.walkInGuests, group.rooms.length),
+          corporateGuests: normalizeCount(entry.corporateGuests, group.rooms.length),
+        }
+      : base;
+  });
 }
 
 function getDepartmentLabel(departmentKey) {
