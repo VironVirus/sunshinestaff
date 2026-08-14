@@ -264,6 +264,14 @@ function summarizeFrontOfficeGuestMix(occupancyByFloor = []) {
   };
 }
 
+function stripGuestSourceFromOccupancyByFloor(occupancyByFloor = []) {
+  return (Array.isArray(occupancyByFloor) ? occupancyByFloor : []).map((floor) => ({
+    floorKey: floor.floorKey,
+    floorLabel: floor.floorLabel,
+    occupiedRooms: Number(floor.occupiedRooms) || 0,
+  }));
+}
+
 function getOperationsSnapshotForDate(operations = {}, dateKey) {
   if (operations?.operationalDateKey === dateKey) return operations;
 
@@ -1235,6 +1243,7 @@ export default function NightDutyPanel({
   onBackupNightDutyReportsInRange,
   onLoadNightDutyReportRevisions,
   onLoadInHouseReport,
+  onLoadInHouseReportsInRange,
   onSaveNightDuty,
   onSaveUtilities,
 }) {
@@ -1276,6 +1285,8 @@ export default function NightDutyPanel({
   const [selectedHistoryDate, setSelectedHistoryDate] = useState("");
   const [loadedHistoryReport, setLoadedHistoryReport] = useState(null);
   const [loadingHistoryReport, setLoadingHistoryReport] = useState(false);
+  const [loadedHistoryInHouseReport, setLoadedHistoryInHouseReport] = useState(null);
+  const [loadingHistoryInHouseReport, setLoadingHistoryInHouseReport] = useState(false);
   const [archiveRevisions, setArchiveRevisions] = useState([]);
   const [loadingArchiveRevisions, setLoadingArchiveRevisions] = useState(false);
   const [rangeStartDate, setRangeStartDate] = useState(
@@ -1294,6 +1305,7 @@ export default function NightDutyPanel({
   const selectedLoadRequest = useRef(0);
   const inHouseLoadRequest = useRef(0);
   const historyLoadRequest = useRef(0);
+  const historyInHouseLoadRequest = useRef(0);
   const currentOperationalDateKey = operations?.operationalDateKey ?? getOperationalDateKey();
   const latestNightDutyReportDateKey = getNightDutyReportDateKey();
   const selectedOperationsSnapshot = useMemo(() => {
@@ -1326,7 +1338,9 @@ export default function NightDutyPanel({
     }
 
     if (hasSavedSelectedReport) {
-      return editableReport.frontOfficeOccupancyByFloor;
+      return stripGuestSourceFromOccupancyByFloor(
+        editableReport.frontOfficeOccupancyByFloor,
+      );
     }
 
     return selectedReportDate === currentOperationalDateKey
@@ -1382,6 +1396,35 @@ export default function NightDutyPanel({
         }
       });
   }, [onLoadInHouseReport, selectedReportDate]);
+
+  useEffect(() => {
+    const requestId = historyInHouseLoadRequest.current + 1;
+    historyInHouseLoadRequest.current = requestId;
+    setLoadedHistoryInHouseReport(null);
+
+    if (!selectedHistoryDate || !onLoadInHouseReport) {
+      setLoadingHistoryInHouseReport(false);
+      return;
+    }
+
+    setLoadingHistoryInHouseReport(true);
+    onLoadInHouseReport(selectedHistoryDate)
+      .then((storedReport) => {
+        if (historyInHouseLoadRequest.current === requestId) {
+          setLoadedHistoryInHouseReport(storedReport);
+        }
+      })
+      .catch((error) => {
+        if (historyInHouseLoadRequest.current === requestId) {
+          setFeedback({ type: "error", message: error.message });
+        }
+      })
+      .finally(() => {
+        if (historyInHouseLoadRequest.current === requestId) {
+          setLoadingHistoryInHouseReport(false);
+        }
+      });
+  }, [onLoadInHouseReport, selectedHistoryDate]);
 
   useEffect(() => {
     const defaultReport = buildDefaultNightDutyData(selectedReportDate);
@@ -1496,7 +1539,15 @@ export default function NightDutyPanel({
     (entry) => entry.operationalDateKey === selectedHistoryDate && entry.storageMode !== "d1-full",
   ) ?? null;
   const selectedHistoryReportData = selectedHistoryReport
-    ? buildNightDutyReportData(selectedHistoryReport)
+    ? buildNightDutyReportData({
+        ...selectedHistoryReport,
+        frontOfficeOccupancyByFloor:
+          loadedHistoryInHouseReport?.operationalDateKey === selectedHistoryDate
+            ? buildOccupancyByFloor(loadedHistoryInHouseReport)
+            : stripGuestSourceFromOccupancyByFloor(
+                selectedHistoryReport.frontOfficeOccupancyByFloor,
+              ),
+      })
     : null;
   const rangeReportData = useMemo(
     () => rangeReports.map((report) => buildNightDutyReportData(report)),
@@ -1639,13 +1690,34 @@ export default function NightDutyPanel({
     setFeedback({ type: "", message: "" });
 
     try {
-      const reports = onLoadNightDutyReportsInRange
-        ? await onLoadNightDutyReportsInRange(rangeStart, rangeEnd)
-        : reportHistory.filter((entry) =>
-            entry.operationalDateKey >= rangeStart &&
-            entry.operationalDateKey <= rangeEnd,
-          );
-      setRangeReports([...reports].sort((left, right) =>
+      const [reports, inHouseReports] = await Promise.all([
+        onLoadNightDutyReportsInRange
+          ? onLoadNightDutyReportsInRange(rangeStart, rangeEnd)
+          : Promise.resolve(reportHistory.filter((entry) =>
+              entry.operationalDateKey >= rangeStart &&
+              entry.operationalDateKey <= rangeEnd,
+            )),
+        onLoadInHouseReportsInRange
+          ? onLoadInHouseReportsInRange(rangeStart, rangeEnd)
+          : Promise.resolve([]),
+      ]);
+      const inHouseByDate = new Map(
+        inHouseReports.map((report) => [report.operationalDateKey, report]),
+      );
+      const reportsWithFrontOfficeRooms = reports.map((report) => {
+        const inHouseReport = inHouseByDate.get(report.operationalDateKey);
+
+        return {
+          ...report,
+          frontOfficeOccupancyByFloor: inHouseReport
+            ? buildOccupancyByFloor(inHouseReport)
+            : stripGuestSourceFromOccupancyByFloor(
+                report.frontOfficeOccupancyByFloor,
+              ),
+        };
+      });
+
+      setRangeReports([...reportsWithFrontOfficeRooms].sort((left, right) =>
         left.operationalDateKey.localeCompare(right.operationalDateKey),
       ));
       setRangeReportLoaded(true);
@@ -2081,9 +2153,9 @@ export default function NightDutyPanel({
         <div className="mt-6 space-y-6">
           <div className="grid gap-4 sm:grid-cols-2"><div className="subpanel"><p className="metric-label">Last 7 days room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(weeklyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div><div className="subpanel"><p className="metric-label">{formatDateKey(`${currentMonth}-01`, { month: "long", year: "numeric" })} room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(monthlyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div></div>
           <div className="subpanel">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_auto_auto_auto] xl:items-end"><label className="field"><span>Stored activity date</span><input type="date" value={selectedHistoryDate} max={latestNightDutyReportDateKey} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button><button type="button" className="button-secondary" disabled={!hasCloudflareArchiveConfig || !selectedHistoryDate || loadingArchiveRevisions} onClick={loadRevisionHistory}>{loadingArchiveRevisions ? "Loading history..." : "View D1 revisions"}</button></div>
-            {loadingHistoryReport ? <p className="mt-5 text-sm text-slate-500">Loading the selected date...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Grand Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.grandIncomeTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Actual Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.actualRevenueTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Operations Report exists for the selected date.</p>}
-            {archiveRevisions.length > 0 ? <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4"><h4 className="font-semibold text-[#162338]">Cloudflare D1 revision history</h4><p className="mt-1 text-xs text-slate-500">These are read-only historical copies. Printing or downloading one does not change the live Firebase report.</p><div className="mt-3 space-y-2">{archiveRevisions.map((revision) => { const revisionReport = buildNightDutyReportData(revision.report); return <div key={revision.revisionId} className="flex flex-col gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><strong>Revision {revision.revisionId}</strong><br /><span className="text-xs text-slate-500">Archived {formatFriendlyDate(revision.archivedAt)} by {revision.archivedByName || "Authorized staff"}</span></div><div className="flex gap-2"><button type="button" className="button-secondary" onClick={() => printNightDutyReport(revisionReport)}>Print</button><button type="button" className="button-secondary" onClick={() => handleDownload(revisionReport)}>Download</button></div></div>; })}</div></div> : null}
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_auto_auto_auto] xl:items-end"><label className="field"><span>Stored activity date</span><input type="date" value={selectedHistoryDate} max={latestNightDutyReportDateKey} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport || loadingHistoryInHouseReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport || loadingHistoryInHouseReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button><button type="button" className="button-secondary" disabled={!hasCloudflareArchiveConfig || !selectedHistoryDate || loadingArchiveRevisions} onClick={loadRevisionHistory}>{loadingArchiveRevisions ? "Loading history..." : "View D1 revisions"}</button></div>
+            {loadingHistoryReport || loadingHistoryInHouseReport ? <p className="mt-5 text-sm text-slate-500">Loading the Operations Report and matching Front Office room data...</p> : selectedHistoryReportData ? <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy<br /><strong className="text-xl text-[#162338]">{selectedHistoryReportData.occupancyTotal}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Grand Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.grandIncomeTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Actual Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(selectedHistoryReportData.actualRevenueTotal)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Room revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(getFrontOfficeRoomRevenue(selectedHistoryReportData.income))}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Guest incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.guestIncident)}</strong></div><div className="rounded-xl bg-slate-50 p-4 text-sm">Employee incident<br /><strong className="text-xl text-[#162338]">{getIncidentSummary(selectedHistoryReportData.employeeIncident)}</strong></div></div> : <p className="mt-5 text-sm text-slate-500">No stored Operations Report exists for the selected date.</p>}
+            {archiveRevisions.length > 0 ? <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4"><h4 className="font-semibold text-[#162338]">Cloudflare D1 revision history</h4><p className="mt-1 text-xs text-slate-500">These are read-only historical copies. Printing or downloading one does not change the live Firebase report.</p><div className="mt-3 space-y-2">{archiveRevisions.map((revision) => { const revisionReport = buildNightDutyReportData({ ...revision.report, frontOfficeOccupancyByFloor: loadedHistoryInHouseReport?.operationalDateKey === selectedHistoryDate ? buildOccupancyByFloor(loadedHistoryInHouseReport) : stripGuestSourceFromOccupancyByFloor(revision.report.frontOfficeOccupancyByFloor) }); return <div key={revision.revisionId} className="flex flex-col gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><strong>Revision {revision.revisionId}</strong><br /><span className="text-xs text-slate-500">Archived {formatFriendlyDate(revision.archivedAt)} by {revision.archivedByName || "Authorized staff"}</span></div><div className="flex gap-2"><button type="button" className="button-secondary" onClick={() => printNightDutyReport(revisionReport)}>Print</button><button type="button" className="button-secondary" onClick={() => handleDownload(revisionReport)}>Download</button></div></div>; })}</div></div> : null}
           </div>
           <div className="subpanel">
             <div>

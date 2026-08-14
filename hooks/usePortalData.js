@@ -1809,6 +1809,64 @@ export function usePortalData(profile) {
     return null;
   }, []);
 
+  const loadInHouseReportsInRange = useCallback(async (startDateKey, endDateKey) => {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(startDateKey ?? "") ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(endDateKey ?? "")
+    ) {
+      throw new Error("Select a valid In-house report date range.");
+    }
+
+    const rangeStart = startDateKey <= endDateKey ? startDateKey : endDateKey;
+    const rangeEnd = startDateKey <= endDateKey ? endDateKey : startDateKey;
+    const archivedByDate = new Map();
+
+    if (hasCloudflareArchiveConfig) {
+      try {
+        const archivedRange = await loadArchivedRange("in-house", rangeStart, rangeEnd);
+        archivedRange.records
+          .filter((entry) => entry?.payload)
+          .forEach((entry) => {
+            archivedByDate.set(
+              entry.recordKey,
+              normalizeStoredInHouseReport(entry.payload, entry.recordKey),
+            );
+          });
+      } catch (archiveError) {
+        console.error("Unable to use the D1 In-house range archive", archiveError);
+      }
+    }
+
+    const snapshot = await getDocs(query(
+      collection(db, "inHouseReports"),
+      where("operationalDateKey", ">=", rangeStart),
+      where("operationalDateKey", "<=", rangeEnd),
+      orderBy("operationalDateKey", "asc"),
+      limit(MAX_REPORT_HISTORY_DAYS),
+    ));
+    const reportsByDate = new Map(
+      snapshot.docs.map((reportDocument) => {
+        const report = normalizeStoredInHouseReport(
+          reportDocument.data(),
+          reportDocument.id,
+        );
+        return [report.operationalDateKey, report];
+      }),
+    );
+
+    archivedByDate.forEach((report, dateKey) => {
+      reportsByDate.set(dateKey, report);
+    });
+
+    return [...reportsByDate.values()].sort((left, right) =>
+      left.operationalDateKey.localeCompare(right.operationalDateKey),
+    );
+  }, []);
+
   async function saveInHouseReport(values) {
     if (!db) {
       throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
@@ -2107,6 +2165,7 @@ export function usePortalData(profile) {
     loadNightDutyReportRevisions,
     saveNightDutyData,
     loadInHouseReport,
+    loadInHouseReportsInRange,
     saveInHouseReport,
     saveStaffProfile,
     saveShiftAssignment,

@@ -184,6 +184,7 @@ export default function DashboardPage() {
     loadNightDutyReportRevisions,
     saveNightDutyData,
     loadInHouseReport,
+    loadInHouseReportsInRange,
     saveInHouseReport,
     saveStaffProfile,
     saveShiftAssignment,
@@ -451,6 +452,7 @@ export default function DashboardPage() {
                   onBackupNightDutyReportsInRange={backupNightDutyReportsInRange}
                   onLoadNightDutyReportRevisions={loadNightDutyReportRevisions}
                   onLoadInHouseReport={loadInHouseReport}
+                  onLoadInHouseReportsInRange={loadInHouseReportsInRange}
                   onSaveNightDuty={saveNightDutyData}
                   onSaveUtilities={saveUtilities}
                 />
