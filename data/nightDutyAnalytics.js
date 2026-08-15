@@ -9,6 +9,8 @@ import {
   normalizeRoomNumbers,
 } from "@/data/hotelRooms";
 
+const TARGET_OCCUPANCY_PERCENTAGE = 60;
+
 function asFiniteNumber(value) {
   if (value === "" || value === null || value === undefined) return null;
   const number = Number(value);
@@ -84,35 +86,81 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     orderedReports.map((report) => report.operationalDateKey).filter(Boolean),
   );
   const missingDateKeys = expectedDateKeys.filter((dateKey) => !reportDateKeys.has(dateKey));
-  const occupancyReports = orderedReports.filter(
-    (report) => report.frontOfficeOccupancyReport?.hasReport === true,
+  const embeddedFrontOfficeReports = Array.isArray(orderedReports[0]?.rangeOccupancyReports)
+    ? orderedReports[0].rangeOccupancyReports
+    : [];
+  const frontOfficeOccupancyReports = (embeddedFrontOfficeReports.length > 0
+    ? embeddedFrontOfficeReports
+    : orderedReports.filter(
+        (report) =>
+          report.frontOfficeOccupancyReport?.hasReport === true &&
+          report.frontOfficeOccupancyReport?.occupancySource !== "night_duty",
+      )
+  ).sort((left, right) => String(left.operationalDateKey ?? "").localeCompare(
+    String(right.operationalDateKey ?? ""),
+  ));
+  const frontOfficeOccupancyByDate = new Map(
+    frontOfficeOccupancyReports.map((report) => [report.operationalDateKey, {
+      ...report,
+      occupancySource: "front_office",
+    }]),
   );
+  const nightDutyFallbackReports = orderedReports
+    .filter((report) => !frontOfficeOccupancyByDate.has(report.operationalDateKey))
+    .map((report) => ({
+      operationalDateKey: report.operationalDateKey,
+      occupancySource: "night_duty",
+      frontOfficeOccupancyByFloor: report.occupancyByFloor,
+      frontOfficeOccupancyReport: {
+        hasReport: true,
+        inHouse: Number(report.occupancyTotal) || 0,
+        outOfOrderRoomNumbers: [],
+      },
+    }));
+  const occupancyReports = [
+    ...frontOfficeOccupancyByDate.values(),
+    ...nightDutyFallbackReports,
+  ].sort((left, right) => String(left.operationalDateKey ?? "").localeCompare(
+    String(right.operationalDateKey ?? ""),
+  ));
   const occupancyReportDateKeys = new Set(
     occupancyReports.map((report) => report.operationalDateKey).filter(Boolean),
   );
   const missingOccupancyDateKeys = expectedDateKeys.filter(
     (dateKey) => !occupancyReportDateKeys.has(dateKey),
   );
+  const latestOccupancyReport = frontOfficeOccupancyReports.at(-1) ?? null;
+  const latestOutOfOrderRoomNumbers = normalizeRoomNumbers(
+    latestOccupancyReport?.frontOfficeOccupancyReport?.outOfOrderRoomNumbers,
+  );
+  const latestOutOfOrderDateKey = latestOccupancyReport?.operationalDateKey ?? "";
+  const latestOutOfOrderRooms = latestOutOfOrderRoomNumbers.length;
+  const rangeAvailableRooms = Math.max(
+    guestRoomCount - latestOutOfOrderRooms,
+    0,
+  );
+  const targetOccupiedRooms = Math.ceil(
+    rangeAvailableRooms * (TARGET_OCCUPANCY_PERCENTAGE / 100),
+  );
   const dailyOccupancy = occupancyReports.map((report) => {
     const snapshot = report.frontOfficeOccupancyReport;
-    const outOfOrderRoomNumbers = normalizeRoomNumbers(snapshot.outOfOrderRoomNumbers);
-    const availableRooms = Math.max(
-      guestRoomCount - outOfOrderRoomNumbers.length,
-      0,
-    );
     const occupiedRooms = Math.min(
       Math.max(Number(snapshot.inHouse) || 0, 0),
-      availableRooms,
+      rangeAvailableRooms,
     );
 
     return {
       operationalDateKey: report.operationalDateKey,
+      occupancySource: report.occupancySource ?? "front_office",
       occupiedRooms,
-      outOfOrderRoomNumbers,
-      outOfOrderRooms: outOfOrderRoomNumbers.length,
-      availableRooms,
-      occupancyPercentage: availableRooms > 0
-        ? (occupiedRooms / availableRooms) * 100
+      outOfOrderRoomNumbers: latestOutOfOrderRoomNumbers,
+      outOfOrderRooms: latestOutOfOrderRooms,
+      availableRooms: rangeAvailableRooms,
+      targetOccupancyPercentage: TARGET_OCCUPANCY_PERCENTAGE,
+      targetOccupiedRooms,
+      targetVarianceRooms: occupiedRooms - targetOccupiedRooms,
+      occupancyPercentage: rangeAvailableRooms > 0
+        ? (occupiedRooms / rangeAvailableRooms) * 100
         : 0,
     };
   });
@@ -290,9 +338,23 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     selectedDayCount: expectedDateKeys.length,
     missingDateKeys,
     occupancyReportCount: occupancyReports.length,
+    frontOfficeOccupancyReportCount: frontOfficeOccupancyReports.length,
+    nightDutyFallbackCount: nightDutyFallbackReports.length,
     missingOccupancyDateKeys,
     totalInHouse,
     hotelRoomCapacity: guestRoomCount,
+    latestOutOfOrderDateKey,
+    latestOutOfOrderRoomNumbers,
+    latestOutOfOrderRooms,
+    rangeAvailableRooms,
+    targetOccupancyPercentage: TARGET_OCCUPANCY_PERCENTAGE,
+    targetOccupiedRooms,
+    targetOccupiedRoomNights: targetOccupiedRooms * occupancyReports.length,
+    occupancyTargetVarianceRoomNights:
+      totalInHouse - targetOccupiedRooms * occupancyReports.length,
+    unavailableRoomNights: latestOutOfOrderRooms * expectedDateKeys.length,
+    totalInventoryRoomNights: guestRoomCount * expectedDateKeys.length,
+    availableRoomNights: rangeAvailableRooms * expectedDateKeys.length,
     dailyOccupancy,
     averageOccupancy: occupancyReports.length > 0
       ? totalInHouse / occupancyReports.length
@@ -300,13 +362,8 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     averageOccupancyPercentage: dailyOccupancy.length > 0
       ? sum(dailyOccupancy.map((day) => day.occupancyPercentage)) / dailyOccupancy.length
       : 0,
-    averageAvailableRooms: dailyOccupancy.length > 0
-      ? sum(dailyOccupancy.map((day) => day.availableRooms)) / dailyOccupancy.length
-      : 0,
-    averageOutOfOrderRooms: dailyOccupancy.length > 0
-      ? sum(dailyOccupancy.map((day) => day.outOfOrderRooms)) / dailyOccupancy.length
-      : 0,
-    totalOutOfOrderRoomNights: sum(dailyOccupancy.map((day) => day.outOfOrderRooms)),
+    availableRooms: rangeAvailableRooms,
+    totalOutOfOrderRoomNights: latestOutOfOrderRooms * expectedDateKeys.length,
     highestOccupancy: occupancyTotals.length > 0 ? Math.max(...occupancyTotals) : 0,
     lowestOccupancy: occupancyTotals.length > 0 ? Math.min(...occupancyTotals) : 0,
     occupancyByFloor,

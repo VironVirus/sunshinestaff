@@ -25,6 +25,14 @@ import {
 import { downloadTextPdf } from "@/lib/pdf";
 import { getOperationsAccess, operationsMetricConfig } from "@/lib/roles";
 
+const TARGET_OCCUPANCY_PERCENTAGE = 60;
+
+function getTargetOccupiedRooms(availableRooms) {
+  return Math.ceil(
+    Math.max(Number(availableRooms) || 0, 0) * (TARGET_OCCUPANCY_PERCENTAGE / 100),
+  );
+}
+
 function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -546,6 +554,7 @@ function buildDailyReportSectionLines({
     lines.push(createReportLine(`In-house rooms: ${snapshot.inHouse ?? 0}`));
     lines.push(createReportLine(`Out-of-order rooms (${snapshot.outOfOrderRoomNumbers?.length ?? 0}): ${snapshot.outOfOrderRoomNumbers?.join(", ") || "Nil"}`));
     lines.push(createReportLine(`Available room inventory: ${snapshot.availableRooms ?? 0} (${guestRoomCount} guest rooms minus Out of Order rooms; Room 105 event space excluded)`));
+    lines.push(createReportLine(`Target occupancy: ${TARGET_OCCUPANCY_PERCENTAGE}% of available rooms = ${getTargetOccupiedRooms(snapshot.availableRooms)} occupied rooms required`));
     lines.push(createReportLine(`Breakfast entitlement: ${snapshot.breakfastEntitled ?? 0}`));
     lines.push(createReportLine(`Cleaned rooms: ${snapshot.cleanedRooms ?? 0}`));
   } else {
@@ -647,6 +656,7 @@ function buildInHouseReportLines(operations) {
     "",
     `Summary: ${operations?.inHouse ?? 0} occupied room(s), ${operations?.availableRooms ?? guestRoomCount} available room inventory, ${operations?.outOfOrderRoomNumbers?.length ?? 0} out of order, ${operations?.breakfastEntitled ?? 0} breakfast entitlement`,
     `Out of Order room numbers: ${operations?.outOfOrderRoomNumbers?.join(", ") || "Nil"}`,
+    `Target occupancy: ${TARGET_OCCUPANCY_PERCENTAGE}% of available rooms = ${getTargetOccupiedRooms(operations?.availableRooms ?? guestRoomCount)} occupied rooms required`,
     "",
   ];
 
@@ -1730,6 +1740,7 @@ export default function OperationsPanel({
       {access.visibleMetrics.includes("availableRooms") ? (
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           Available room inventory: {guestRoomCount} guest rooms − {outOfOrderRoomNumbers.length} Out of Order = <strong className="text-[#162338]">{operations?.availableRooms ?? guestRoomCount} rooms available</strong>. Room 105 is excluded as an event space.
+          <span className="mt-1 block"><strong>{TARGET_OCCUPANCY_PERCENTAGE}% target:</strong> {getTargetOccupiedRooms(operations?.availableRooms ?? guestRoomCount)} occupied rooms required.</span>
         </div>
       ) : null}
 

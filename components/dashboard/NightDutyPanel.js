@@ -40,6 +40,8 @@ import { downloadTextPdf } from "@/lib/pdf";
 import { downloadNightDutyRangeDocx } from "@/lib/nightDutyDocx";
 import { getNightDutyAccess } from "@/lib/roles";
 
+const TARGET_OCCUPANCY_PERCENTAGE = 60;
+
 function formatAmount(value) {
   return Number(value || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -99,6 +101,21 @@ function formatPercentage(value) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`;
+}
+
+function formatTargetVariance(value, unit = "room") {
+  const variance = Number(value) || 0;
+  if (variance === 0) return "Target met exactly";
+  return `${Math.abs(variance)} ${unit}${Math.abs(variance) === 1 ? "" : "s"} ${variance > 0 ? "above" : "below"} target`;
+}
+
+function formatTargetVarianceShort(value) {
+  const variance = Number(value) || 0;
+  return variance > 0 ? `+${variance}` : String(variance);
+}
+
+function formatOccupancySource(value) {
+  return value === "night_duty" ? "Night Duty fallback" : "Front Office";
 }
 
 function escapeHtml(value = "") {
@@ -316,12 +333,51 @@ function buildFrontOfficeOccupancyReport(inHouseReport) {
     ),
     availableRooms,
   );
+  const targetOccupiedRooms = Math.ceil(
+    availableRooms * (TARGET_OCCUPANCY_PERCENTAGE / 100),
+  );
 
   return {
     hasReport: true,
+    occupancySource: "front_office",
     inHouse,
     outOfOrderRoomNumbers,
     availableRooms,
+    targetOccupancyPercentage: TARGET_OCCUPANCY_PERCENTAGE,
+    targetOccupiedRooms,
+    targetVarianceRooms: inHouse - targetOccupiedRooms,
+    occupancyPercentage: availableRooms > 0
+      ? (inHouse / availableRooms) * 100
+      : 0,
+  };
+}
+
+function buildNightDutyOccupancyFallback(occupancyByFloor = [], outOfOrderRoomNumbers = []) {
+  const normalizedOutOfOrderRooms = normalizeRoomNumbers(outOfOrderRoomNumbers);
+  const availableRooms = Math.max(
+    guestRoomCount - normalizedOutOfOrderRooms.length,
+    0,
+  );
+  const inHouse = Math.min(
+    (Array.isArray(occupancyByFloor) ? occupancyByFloor : []).reduce(
+      (total, floor) => total + (Number(floor?.occupiedRooms) || 0),
+      0,
+    ),
+    availableRooms,
+  );
+  const targetOccupiedRooms = Math.ceil(
+    availableRooms * (TARGET_OCCUPANCY_PERCENTAGE / 100),
+  );
+
+  return {
+    hasReport: true,
+    occupancySource: "night_duty",
+    inHouse,
+    outOfOrderRoomNumbers: normalizedOutOfOrderRooms,
+    availableRooms,
+    targetOccupancyPercentage: TARGET_OCCUPANCY_PERCENTAGE,
+    targetOccupiedRooms,
+    targetVarianceRooms: inHouse - targetOccupiedRooms,
     occupancyPercentage: availableRooms > 0
       ? (inHouse / availableRooms) * 100
       : 0,
@@ -409,7 +465,10 @@ function buildNightDutyReportData(record = {}) {
   );
   const frontOfficeOccupancyReport = record.frontOfficeOccupancyReport?.hasReport
     ? record.frontOfficeOccupancyReport
-    : null;
+    : buildNightDutyOccupancyFallback(
+        record.occupancyByFloor,
+        record.outOfOrderRoomNumbers,
+      );
 
   return {
     ...record,
@@ -433,6 +492,33 @@ function buildNightDutyReportData(record = {}) {
     },
     grandIncomeTotal: getGrandIncomeTotal(record.income),
     actualRevenueTotal: getActualRevenueTotal(record.income),
+  };
+}
+
+function applyRangeRoomAvailability(reportData, analysis) {
+  const inHouse = Math.min(
+    Number(
+      reportData.frontOfficeOccupancyReport?.inHouse ?? reportData.occupancyTotal,
+    ) || 0,
+    analysis.rangeAvailableRooms,
+  );
+
+  return {
+    ...reportData,
+    frontOfficeOccupancyReport: {
+      ...(reportData.frontOfficeOccupancyReport ?? {}),
+      hasReport: true,
+      occupancySource: reportData.frontOfficeOccupancyReport?.occupancySource ?? "night_duty",
+      inHouse,
+      outOfOrderRoomNumbers: analysis.latestOutOfOrderRoomNumbers,
+      availableRooms: analysis.rangeAvailableRooms,
+      occupancyPercentage: analysis.rangeAvailableRooms > 0
+        ? (inHouse / analysis.rangeAvailableRooms) * 100
+        : 0,
+      targetOccupancyPercentage: analysis.targetOccupancyPercentage,
+      targetOccupiedRooms: analysis.targetOccupiedRooms,
+      targetVarianceRooms: inHouse - analysis.targetOccupiedRooms,
+    },
   };
 }
 
@@ -484,7 +570,8 @@ function buildNightDutyReportLines(reportData) {
   lines.push({ text: `Total occupancy: ${reportData.occupancyTotal}`, bold: true });
   if (reportData.frontOfficeOccupancyReport) {
     const official = reportData.frontOfficeOccupancyReport;
-    lines.push(subsectionHeading("Front Office room availability"));
+    lines.push(subsectionHeading("Room availability and occupancy basis"));
+    lines.push(`Occupancy source: ${formatOccupancySource(official.occupancySource)}`);
     lines.push(
       `Out of Order rooms (${official.outOfOrderRoomNumbers.length}): ${official.outOfOrderRoomNumbers.join(", ") || "Nil"}`,
     );
@@ -492,10 +579,12 @@ function buildNightDutyReportLines(reportData) {
       `Available rooms: ${guestRoomCount} guest rooms - ${official.outOfOrderRoomNumbers.length} Out of Order = ${official.availableRooms} (Room 105 event space excluded)`,
     );
     lines.push(
-      `Official occupancy rate: ${official.inHouse} occupied / ${official.availableRooms} available = ${formatPercentage(official.occupancyPercentage)}`,
+      `Calculated occupancy rate: ${official.inHouse} occupied / ${official.availableRooms} available = ${formatPercentage(official.occupancyPercentage)}`,
     );
-  } else {
-    lines.push("Front Office room availability: No dated occupancy report; excluded from occupancy analysis.");
+    lines.push(
+      `Target occupancy: ${official.targetOccupancyPercentage}% of ${official.availableRooms} available rooms = ${official.targetOccupiedRooms} occupied rooms required`,
+    );
+    lines.push(`Target position: ${formatTargetVariance(official.targetVarianceRooms)}`);
   }
   if (reportData.frontOfficeGuestMix) {
     lines.push(subsectionHeading("Front Office room occupancy by guest source"));
@@ -647,10 +736,14 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     },
     { text: `Coverage: ${analysis.reportCount} stored report(s) from ${analysis.selectedDayCount} selected day(s)`, bold: true },
     { text: `Missing report dates: ${analysis.missingDateKeys.length > 0 ? analysis.missingDateKeys.join(", ") : "None"}` },
-    { text: `Occupancy coverage: ${analysis.occupancyReportCount} dated Front Office occupancy report(s); ${analysis.missingOccupancyDateKeys.length} selected date(s) excluded`, bold: true },
+    { text: `Occupancy coverage: ${analysis.occupancyReportCount} usable date(s) - ${analysis.frontOfficeOccupancyReportCount} Front Office and ${analysis.nightDutyFallbackCount} Night Duty fallback; ${analysis.missingOccupancyDateKeys.length} date(s) excluded`, bold: true },
     { text: `Total In-house (occupied-room nights): ${analysis.totalInHouse}`, bold: true },
-    { text: `Average nightly occupancy: ${formatAverage(analysis.averageOccupancy)} occupied of ${formatAverage(analysis.averageAvailableRooms)} available rooms (${formatPercentage(analysis.averageOccupancyPercentage)})`, bold: true },
-    { text: `Average Out of Order rooms: ${formatAverage(analysis.averageOutOfOrderRooms)}; Out of Order room-nights: ${analysis.totalOutOfOrderRoomNights}` },
+    { text: `Controlling Out of Order snapshot: ${analysis.latestOutOfOrderRoomNumbers.join(", ") || "Nil"}${analysis.latestOutOfOrderDateKey ? ` (latest entry: ${formatDateKey(analysis.latestOutOfOrderDateKey)})` : ""}`, bold: true },
+    { text: `Available rooms throughout range: ${analysis.hotelRoomCapacity} guest rooms - ${analysis.latestOutOfOrderRooms} Out of Order = ${analysis.rangeAvailableRooms}`, bold: true },
+    { text: `Average nightly occupancy: ${formatAverage(analysis.averageOccupancy)} occupied of ${analysis.rangeAvailableRooms} available rooms (${formatPercentage(analysis.averageOccupancyPercentage)})`, bold: true },
+    { text: `Target occupancy: ${analysis.targetOccupancyPercentage}% = ${analysis.targetOccupiedRooms} occupied rooms per reported night; period target ${analysis.targetOccupiedRoomNights} occupied-room nights`, bold: true },
+    { text: `Performance against target: ${formatTargetVariance(analysis.occupancyTargetVarianceRoomNights, "room-night")} across dates with occupancy reports` },
+    { text: `Unavailable room-nights: ${analysis.latestOutOfOrderRooms} Out of Order rooms x ${analysis.selectedDayCount} calendar days = ${analysis.unavailableRoomNights}`, bold: true },
     { text: `Highest / lowest occupancy: ${analysis.highestOccupancy} / ${analysis.lowestOccupancy}` },
     { text: `GRAND REVENUE: ${formatAmount(analysis.grandRevenueTotal)}`, bold: true, fontSize: 14 },
     { text: `ACTUAL REVENUE: ${formatAmount(analysis.actualRevenueTotal)}`, bold: true, fontSize: 14 },
@@ -665,14 +758,16 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
   lines.push({
     type: "table",
     title: "Daily room availability and occupancy rate",
-    headers: ["Date", "Out of Order rooms", "Available", "Occupied", "Occupancy rate"],
-    widths: [1.15, 2.5, 0.9, 0.9, 1.1],
+    headers: ["Date", "Occupancy source", "Available", "Occupied", "Rate", "60% target", "Vs target"],
+    widths: [1.05, 1.6, 0.75, 0.75, 0.8, 0.85, 0.8],
     rows: analysis.dailyOccupancy.map((day) => [
       day.operationalDateKey,
-      day.outOfOrderRoomNumbers.join(", ") || "Nil",
+      formatOccupancySource(day.occupancySource),
       String(day.availableRooms),
       String(day.occupiedRooms),
       formatPercentage(day.occupancyPercentage),
+      String(day.targetOccupiedRooms),
+      formatTargetVarianceShort(day.targetVarianceRooms),
     ]),
     fontSize: 7,
     chunkSize: 20,
@@ -712,6 +807,12 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
         label: "Occupancy rate",
         values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage),
         displayValues: analysis.dailyOccupancy.map((day) => formatPercentage(day.occupancyPercentage)),
+      },
+      {
+        key: "targetOccupancyPercentage",
+        label: "60% target",
+        values: analysis.dailyOccupancy.map(() => analysis.targetOccupancyPercentage),
+        displayValues: analysis.dailyOccupancy.map(() => formatPercentage(analysis.targetOccupancyPercentage)),
       },
     ],
     valueSuffix: "%",
@@ -991,7 +1092,9 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
       keepWithNext: true,
       pageBreakBefore: true,
     });
-    lines.push(...buildNightDutyReportLines(report));
+    lines.push(...buildNightDutyReportLines(
+      applyRangeRoomAvailability(report, analysis),
+    ));
   });
 
   return lines;
@@ -1011,9 +1114,9 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
   `).join("");
   const dailyRoomAvailabilityRows = analysis.dailyOccupancy.length > 0
     ? analysis.dailyOccupancy.map((day) => `
-        <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(day.outOfOrderRoomNumbers.join(", ") || "Nil")}</td><td>${day.availableRooms}</td><td>${day.occupiedRooms}</td><td>${escapeHtml(formatPercentage(day.occupancyPercentage))}</td></tr>
+        <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatOccupancySource(day.occupancySource))}</td><td>${day.availableRooms}</td><td>${day.occupiedRooms}</td><td>${escapeHtml(formatPercentage(day.occupancyPercentage))}</td><td>${day.targetOccupiedRooms}</td><td>${escapeHtml(formatTargetVarianceShort(day.targetVarianceRooms))}</td></tr>
       `).join("")
-    : "<tr><td colspan='5'>No dated Front Office occupancy reports in this range.</td></tr>";
+    : "<tr><td colspan='7'>No Front Office or Night Duty occupancy totals in this range.</td></tr>";
   const sectionRevenueRows = analysis.incomeByOutlet.map((outlet) => `
     <tr><td>${escapeHtml(outlet.label)}</td><td>${escapeHtml(formatAmount(outlet.grandRevenueTotal))}</td><td>${escapeHtml(formatAmount(outlet.actualRevenueTotal))}</td></tr>
   `).join("");
@@ -1084,7 +1187,9 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
     return `<section class="chart line-chart"><h3>${escapeHtml(title)}</h3><svg viewBox="0 0 ${width} ${height}">${grid}${paths}${axisLabels}</svg><div class="legend">${legend}</div></section>`;
   };
   const dailyReports = reports.map((report) => {
-    const lineMarkup = buildNightDutyReportLines(report).map((line) => {
+    const lineMarkup = buildNightDutyReportLines(
+      applyRangeRoomAvailability(report, analysis),
+    ).map((line) => {
       const entry = typeof line === "string" ? { text: line } : line;
       const classes = [
         entry.bold ? "bold" : "",
@@ -1136,8 +1241,8 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
       </style>
     </head><body>
       <h1>Sunshine Hotel Operations Report</h1>
-      <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Operations Report coverage:</strong> ${analysis.reportCount} report(s) from ${analysis.selectedDayCount} selected day(s)<br><strong>Occupancy coverage:</strong> ${analysis.occupancyReportCount} dated Front Office report(s); ${analysis.missingOccupancyDateKeys.length} selected date(s) excluded<br><strong>Total In-house (occupied-room nights):</strong> ${analysis.totalInHouse}<br><strong>Average occupancy:</strong> ${escapeHtml(formatAverage(analysis.averageOccupancy))} occupied of ${escapeHtml(formatAverage(analysis.averageAvailableRooms))} available rooms (${escapeHtml(formatPercentage(analysis.averageOccupancyPercentage))})<br><strong>Average Out of Order rooms:</strong> ${escapeHtml(formatAverage(analysis.averageOutOfOrderRooms))}<br><strong>Grand Revenue:</strong> ${escapeHtml(formatAmount(analysis.grandRevenueTotal))}<br><strong>Actual Revenue:</strong> ${escapeHtml(formatAmount(analysis.actualRevenueTotal))}</div>
-      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><h3>Daily room availability and occupancy rate</h3><table><thead><tr><th>Date</th><th>Out of Order rooms</th><th>Available</th><th>Occupied</th><th>Occupancy rate</th></tr></thead><tbody>${dailyRoomAvailabilityRows}</tbody></table><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }], formatPercentage)}${guestSourceRangeHtml}</section>
+      <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Operations Report coverage:</strong> ${analysis.reportCount} report(s) from ${analysis.selectedDayCount} selected day(s)<br><strong>Occupancy coverage:</strong> ${analysis.occupancyReportCount} usable date(s) - ${analysis.frontOfficeOccupancyReportCount} Front Office and ${analysis.nightDutyFallbackCount} Night Duty fallback; ${analysis.missingOccupancyDateKeys.length} date(s) excluded<br><strong>Controlling Out of Order snapshot:</strong> ${escapeHtml(analysis.latestOutOfOrderRoomNumbers.join(", ") || "Nil")}${analysis.latestOutOfOrderDateKey ? ` (latest entry: ${escapeHtml(formatDateKey(analysis.latestOutOfOrderDateKey))})` : ""}<br><strong>Available rooms throughout range:</strong> ${analysis.hotelRoomCapacity} - ${analysis.latestOutOfOrderRooms} = ${analysis.rangeAvailableRooms}<br><strong>Unavailable room-nights:</strong> ${analysis.latestOutOfOrderRooms} x ${analysis.selectedDayCount} days = ${analysis.unavailableRoomNights}<br><strong>Total In-house (occupied-room nights):</strong> ${analysis.totalInHouse}<br><strong>Average occupancy:</strong> ${escapeHtml(formatAverage(analysis.averageOccupancy))} occupied of ${analysis.rangeAvailableRooms} available rooms (${escapeHtml(formatPercentage(analysis.averageOccupancyPercentage))})<br><strong>60% target:</strong> ${analysis.targetOccupiedRooms} occupied rooms per reported night; ${escapeHtml(formatTargetVariance(analysis.occupancyTargetVarianceRoomNights, "room-night"))} across reported dates<br><strong>Grand Revenue:</strong> ${escapeHtml(formatAmount(analysis.grandRevenueTotal))}<br><strong>Actual Revenue:</strong> ${escapeHtml(formatAmount(analysis.actualRevenueTotal))}</div>
+      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><h3>Daily room availability and occupancy rate</h3><table><thead><tr><th>Date</th><th>Occupancy source</th><th>Available</th><th>Occupied</th><th>Rate</th><th>60% target</th><th>Vs target</th></tr></thead><tbody>${dailyRoomAvailabilityRows}</tbody></table><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }, { label: "60% target", values: analysis.dailyOccupancy.map(() => analysis.targetOccupancyPercentage) }], formatPercentage)}${guestSourceRangeHtml}</section>
       <section class="analysis-section"><h2>Income totals by section</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
       <section><h2>Food and beverage analysis</h2><table><thead><tr><th>Account</th><th>Range total</th></tr></thead><tbody><tr><td>Food</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.food))}</td></tr><tr><td>Beverage</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.beverage))}</td></tr><tr><th>Combined</th><th>${escapeHtml(formatAmount(analysis.foodBeverageTotals.combined))}</th></tr></tbody></table>${lineChartMarkup("Daily food and beverage trend", analysis.dailyFoodBeverage.map((day) => day.operationalDateKey), [{ label: "Food", values: analysis.dailyFoodBeverage.map((day) => day.food) }, { label: "Beverage", values: analysis.dailyFoodBeverage.map((day) => day.beverage) }], formatAmount)}<table><thead><tr><th>Date</th><th>Food</th><th>Beverage</th><th>Combined</th></tr></thead><tbody>${dailyFoodBeverageRows}</tbody></table></section>
       <section><h2>Brunch report</h2><div class="summary"><strong>Total brunch revenue:</strong> ${escapeHtml(formatAmount(analysis.totalBrunchRevenue))}<br><strong>Total attendees:</strong> ${analysis.totalBrunchAttendees}</div><table><thead><tr><th>Date</th><th>Brunch revenue</th><th>Attendees</th></tr></thead><tbody>${dailyBrunchRows}</tbody></table></section>
@@ -1190,9 +1295,7 @@ function printNightDutyReport(reportData) {
   const frontOfficeGuestSourceHtml = reportData.frontOfficeGuestMix
     ? `<h3>Front Office room occupancy by guest source</h3><table><tbody><tr><td>Walk-in occupied rooms</td><td>${reportData.frontOfficeGuestMix.walkInGuests}</td></tr><tr><td>Corporate occupied rooms</td><td>${reportData.frontOfficeGuestMix.corporateGuests}</td></tr></tbody></table>`
     : "";
-  const roomAvailabilityHtml = reportData.frontOfficeOccupancyReport
-    ? `<h3>Front Office room availability</h3><table><tbody><tr><td>Guest-room inventory</td><td>${guestRoomCount} (Room 105 event space excluded)</td></tr><tr><td>Out of Order rooms</td><td>${escapeHtml(reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.join(", ") || "Nil")}</td></tr><tr><td>Available rooms</td><td>${guestRoomCount} guest rooms - ${reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.length} Out of Order = <strong>${reportData.frontOfficeOccupancyReport.availableRooms}</strong></td></tr><tr><td>Official occupancy rate</td><td>${reportData.frontOfficeOccupancyReport.inHouse} occupied / ${reportData.frontOfficeOccupancyReport.availableRooms} available = <strong>${escapeHtml(formatPercentage(reportData.frontOfficeOccupancyReport.occupancyPercentage))}</strong></td></tr></tbody></table>`
-    : `<p><strong>Front Office room availability:</strong> No dated occupancy report; excluded from occupancy analysis.</p>`;
+  const roomAvailabilityHtml = `<h3>Room availability and occupancy basis</h3><table><tbody><tr><td>Occupancy source</td><td>${escapeHtml(formatOccupancySource(reportData.frontOfficeOccupancyReport.occupancySource))}</td></tr><tr><td>Guest-room inventory</td><td>${guestRoomCount} (Room 105 event space excluded)</td></tr><tr><td>Out of Order rooms</td><td>${escapeHtml(reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.join(", ") || "Nil")}</td></tr><tr><td>Available rooms</td><td>${guestRoomCount} guest rooms - ${reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.length} Out of Order = <strong>${reportData.frontOfficeOccupancyReport.availableRooms}</strong></td></tr><tr><td>Calculated occupancy rate</td><td>${reportData.frontOfficeOccupancyReport.inHouse} occupied / ${reportData.frontOfficeOccupancyReport.availableRooms} available = <strong>${escapeHtml(formatPercentage(reportData.frontOfficeOccupancyReport.occupancyPercentage))}</strong></td></tr><tr><td>Target occupancy</td><td>${reportData.frontOfficeOccupancyReport.targetOccupancyPercentage}% = <strong>${reportData.frontOfficeOccupancyReport.targetOccupiedRooms} occupied rooms required</strong></td></tr><tr><td>Position against target</td><td>${escapeHtml(formatTargetVariance(reportData.frontOfficeOccupancyReport.targetVarianceRooms))}</td></tr></tbody></table>`;
   const incomeHtml = reportData.incomeSections.map((outlet) => `
     <section>
       <h3>${escapeHtml(outlet.label)}</h3>
@@ -1597,6 +1700,7 @@ export default function NightDutyPanel({
     occupancyByFloor,
     frontOfficeOccupancyByFloor,
     frontOfficeOccupancyReport: selectedFrontOfficeOccupancyReport,
+    outOfOrderRoomNumbers: selectedOperationsSnapshot?.outOfOrderRoomNumbers ?? [],
     occupancyQuery,
     income: incomeForm,
     onDutyStaff,
@@ -1619,6 +1723,7 @@ export default function NightDutyPanel({
     eventsSnapshot,
     frontOfficeOccupancyByFloor,
     selectedFrontOfficeOccupancyReport,
+    selectedOperationsSnapshot,
     gasLevels,
     generatorServices,
     guestIncident,
@@ -1832,6 +1937,13 @@ export default function NightDutyPanel({
       const inHouseByDate = new Map(
         inHouseReports.map((report) => [report.operationalDateKey, report]),
       );
+      const rangeOccupancyReports = [...inHouseReports]
+        .sort((left, right) => left.operationalDateKey.localeCompare(right.operationalDateKey))
+        .map((inHouseReport) => ({
+          operationalDateKey: inHouseReport.operationalDateKey,
+          frontOfficeOccupancyByFloor: buildOccupancyByFloor(inHouseReport),
+          frontOfficeOccupancyReport: buildFrontOfficeOccupancyReport(inHouseReport),
+        }));
       const reportsWithFrontOfficeRooms = reports.map((report) => {
         const inHouseReport = inHouseByDate.get(report.operationalDateKey);
 
@@ -1843,6 +1955,7 @@ export default function NightDutyPanel({
                 report.frontOfficeOccupancyByFloor,
               ),
           frontOfficeOccupancyReport: buildFrontOfficeOccupancyReport(inHouseReport),
+          rangeOccupancyReports,
         };
       });
 
@@ -2306,16 +2419,21 @@ export default function NightDutyPanel({
             </div>
             {rangeReportLoaded ? (
               <div className="mt-5">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                   <div className="rounded-xl bg-slate-50 p-4 text-sm">Reports found<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.reportCount} / {rangeAnalytics.selectedDayCount}</strong></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy reports<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.occupancyReportCount}</strong><br /><span className="text-xs text-slate-500">missing dates excluded</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy dates used<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.occupancyReportCount}</strong><br /><span className="text-xs text-slate-500">{rangeAnalytics.frontOfficeOccupancyReportCount} Front Office · {rangeAnalytics.nightDutyFallbackCount} Night Duty fallback</span></div>
                   <div className="rounded-xl bg-slate-50 p-4 text-sm">Total In-house<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.totalInHouse}</strong><br /><span className="text-xs text-slate-500">occupied-room nights</span></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Average occupancy<br /><strong className="text-xl text-[#162338]">{formatAverage(rangeAnalytics.averageOccupancy)}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.averageOccupancyPercentage)} of {formatAverage(rangeAnalytics.averageAvailableRooms)} available</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Average occupancy<br /><strong className="text-xl text-[#162338]">{formatAverage(rangeAnalytics.averageOccupancy)}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.averageOccupancyPercentage)} of {rangeAnalytics.rangeAvailableRooms} available rooms</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Latest Out of Order<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.latestOutOfOrderRooms}</strong><br /><span className="text-xs text-slate-500">{rangeAnalytics.latestOutOfOrderDateKey ? `from ${formatDateKey(rangeAnalytics.latestOutOfOrderDateKey)}` : "no snapshot"}</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Available rooms<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.rangeAvailableRooms}</strong><br /><span className="text-xs text-slate-500">used throughout this range</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">60% occupancy target<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.targetOccupiedRooms} rooms</strong><br /><span className="text-xs text-slate-500">per reported night</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Unavailable room-nights<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.unavailableRoomNights}</strong><br /><span className="text-xs text-slate-500">{rangeAnalytics.latestOutOfOrderRooms} × {rangeAnalytics.selectedDayCount} days</span></div>
                   <div className="rounded-xl bg-slate-50 p-4 text-sm">Grand Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeAnalytics.grandRevenueTotal)}</strong></div>
                   <div className="rounded-xl bg-slate-50 p-4 text-sm">Actual Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeAnalytics.actualRevenueTotal)}</strong></div>
                 </div>
                 {rangeAnalytics.missingDateKeys.length > 0 ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">No stored report for: {rangeAnalytics.missingDateKeys.join(", ")}. These dates are excluded from totals and averages.</p> : null}
-                {rangeAnalytics.missingOccupancyDateKeys.length > 0 ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">No dated Front Office occupancy report for: {rangeAnalytics.missingOccupancyDateKeys.join(", ")}. These dates do not count toward room totals, available-room averages, or occupancy rates.</p> : null}
+                {rangeAnalytics.missingOccupancyDateKeys.length > 0 ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">No Front Office or Night Duty occupancy total for: {rangeAnalytics.missingOccupancyDateKeys.join(", ")}. Only these dates are excluded from occupancy totals and rates.</p> : null}
+                <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">The latest Out-of-Order entry in this range ({rangeAnalytics.latestOutOfOrderRoomNumbers.join(", ") || "Nil"}) controls the available-room figure for every date until the status is changed.</p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <button type="button" className="button-secondary flex-1" disabled={rangeReportData.length === 0} onClick={() => {
                     const dates = listDateKeysInRange(rangeStartDate, rangeEndDate);
@@ -2328,7 +2446,7 @@ export default function NightDutyPanel({
                 {rangeReportData.length > 0 ? (
                   <div className="mt-6 space-y-6">
                     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                      <table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily room availability and occupancy rate</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Out of Order rooms</th><th className="px-3 py-2">Available</th><th className="px-3 py-2">Occupied</th><th className="px-3 py-2">Occupancy rate</th></tr></thead><tbody>{rangeAnalytics.dailyOccupancy.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{day.outOfOrderRoomNumbers.join(", ") || "Nil"}</td><td className="px-3 py-2">{day.availableRooms}</td><td className="px-3 py-2">{day.occupiedRooms}</td><td className="px-3 py-2 font-semibold">{formatPercentage(day.occupancyPercentage)}</td></tr>)}</tbody></table>
+                      <table className="min-w-[980px] text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily room availability and occupancy rate</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Occupancy source</th><th className="px-3 py-2">Available rooms</th><th className="px-3 py-2">Occupied</th><th className="px-3 py-2">Occupancy rate</th><th className="px-3 py-2">60% target</th><th className="px-3 py-2">Variance</th></tr></thead><tbody>{rangeAnalytics.dailyOccupancy.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{formatOccupancySource(day.occupancySource)}</td><td className="px-3 py-2">{day.availableRooms}</td><td className="px-3 py-2">{day.occupiedRooms}</td><td className="px-3 py-2 font-semibold">{formatPercentage(day.occupancyPercentage)}</td><td className="px-3 py-2">{day.targetOccupiedRooms}</td><td className="px-3 py-2">{formatTargetVariance(day.targetVarianceRooms)}</td></tr>)}</tbody></table>
                     </div>
                     <div className="grid gap-4 xl:grid-cols-2">
                       <RangeBarChart
@@ -2346,7 +2464,7 @@ export default function NightDutyPanel({
                       <RangeLineChart
                         title="Daily occupancy rate"
                         labels={rangeAnalytics.dailyOccupancy.map((day) => day.operationalDateKey)}
-                        series={[{ key: "occupancy", label: "Occupancy %", color: "#a67c2e", values: rangeAnalytics.dailyOccupancy.map((day) => Number(day.occupancyPercentage.toFixed(2))) }]}
+                        series={[{ key: "occupancy", label: "Occupancy %", color: "#a67c2e", values: rangeAnalytics.dailyOccupancy.map((day) => Number(day.occupancyPercentage.toFixed(2))) }, { key: "target", label: "60% target", color: "#162338", values: rangeAnalytics.dailyOccupancy.map(() => rangeAnalytics.targetOccupancyPercentage) }]}
                         valueSuffix="%"
                       />
                       <RangeLineChart
@@ -2470,7 +2588,7 @@ export default function NightDutyPanel({
         <div className="mt-6 subpanel">
           <p className="metric-label">Current report preview</p>
           <div className="mt-4 overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="text-left text-slate-500"><th className="px-3 py-2">Floor</th><th className="px-3 py-2">Night Duty occupancy</th><th className="px-3 py-2">Front Office reference</th></tr></thead><tbody>{reportData.occupancyByFloor.map((floor) => <tr key={floor.floorKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{floor.floorLabel}</td><td className="px-3 py-2">{floor.occupiedRooms}</td><td className="px-3 py-2">{reportData.frontOfficeOccupancyByFloor.find((entry) => entry.floorKey === floor.floorKey)?.occupiedRooms ?? 0}</td></tr>)}</tbody></table></div>
-          {reportData.frontOfficeOccupancyReport ? <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm"><p><strong>Guest-room inventory:</strong> {guestRoomCount} (Room 105 event space excluded)</p><p className="mt-1"><strong>Out of Order rooms ({reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.length}):</strong> {reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.join(", ") || "Nil"}</p><p className="mt-1"><strong>Available rooms:</strong> {guestRoomCount} guest rooms - {reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.length} Out of Order = {reportData.frontOfficeOccupancyReport.availableRooms}</p><p className="mt-1"><strong>Official occupancy rate:</strong> {reportData.frontOfficeOccupancyReport.inHouse} / {reportData.frontOfficeOccupancyReport.availableRooms} = {formatPercentage(reportData.frontOfficeOccupancyReport.occupancyPercentage)}</p></div> : <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">No dated Front Office occupancy report exists for this date, so it will not count in occupancy analysis.</p>}
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm"><p><strong>Occupancy source:</strong> {formatOccupancySource(reportData.frontOfficeOccupancyReport.occupancySource)}</p><p className="mt-1"><strong>Guest-room inventory:</strong> {guestRoomCount} (Room 105 event space excluded)</p><p className="mt-1"><strong>Out of Order rooms ({reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.length}):</strong> {reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.join(", ") || "Nil"}</p><p className="mt-1"><strong>Available rooms:</strong> {guestRoomCount} guest rooms - {reportData.frontOfficeOccupancyReport.outOfOrderRoomNumbers.length} Out of Order = {reportData.frontOfficeOccupancyReport.availableRooms}</p><p className="mt-1"><strong>Calculated occupancy rate:</strong> {reportData.frontOfficeOccupancyReport.inHouse} / {reportData.frontOfficeOccupancyReport.availableRooms} = {formatPercentage(reportData.frontOfficeOccupancyReport.occupancyPercentage)}</p><p className="mt-1"><strong>60% target:</strong> {reportData.frontOfficeOccupancyReport.targetOccupiedRooms} occupied rooms required</p><p className="mt-1"><strong>Position:</strong> {formatTargetVariance(reportData.frontOfficeOccupancyReport.targetVarianceRooms)}</p></div>
           {reportData.frontOfficeGuestMix ? <p className="mt-4 text-sm text-slate-600">Front Office guest source: <strong>{reportData.frontOfficeGuestMix.walkInGuests} walk-in room(s) · {reportData.frontOfficeGuestMix.corporateGuests} corporate room(s)</strong></p> : null}
           <p className="mt-4 text-sm text-slate-600">Discrepancy query: <strong>{occupancyQuery.hasDiscrepancy ? occupancyQuery.note || "Yes" : "Nil"}</strong></p>
           <p className="mt-2 text-sm text-slate-600">Guest incident: <strong>{getIncidentSummary(guestIncident)}</strong> · Employee incident: <strong>{getIncidentSummary(employeeIncident)}</strong></p>
