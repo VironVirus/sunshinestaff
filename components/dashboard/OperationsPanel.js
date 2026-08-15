@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   configuredHotelRoomCount,
+  eventSpaceRoomNumbers,
   getRoomOptionsForFloor,
+  guestRoomCount,
+  guestRoomGroups,
   normalizeOccupiedRooms,
   roomFloorOptions,
-  roomGroups,
   statedHotelRoomCount,
   unlistedRoomCount,
 } from "@/data/hotelRooms";
@@ -492,7 +494,7 @@ function buildDailyMovementSummaryLines(operations, targetDateKey) {
 function buildOccupiedRoomSections(occupiedRooms = [], operationalDateKey = getOperationalDateKey()) {
   const occupiedMap = new Map(occupiedRooms.map((room) => [room.roomNumber, room]));
 
-  return roomGroups.map((group) => {
+  return guestRoomGroups.map((group) => {
     const rooms = group.rooms
       .filter((roomNumber) => occupiedMap.has(roomNumber))
       .map((roomNumber, index) => {
@@ -521,7 +523,7 @@ function buildOccupiedRoomSections(occupiedRooms = [], operationalDateKey = getO
 function buildRoomNumberSections(roomNumbers = []) {
   const roomSet = new Set(roomNumbers);
 
-  return roomGroups.map((group) => ({
+  return guestRoomGroups.map((group) => ({
     key: group.key,
     label: group.label,
     rooms: group.rooms.filter((roomNumber) => roomSet.has(roomNumber)),
@@ -542,8 +544,8 @@ function buildDailyReportSectionLines({
 
   if (snapshot) {
     lines.push(createReportLine(`In-house rooms: ${snapshot.inHouse ?? 0}`));
-    lines.push(createReportLine(`Out-of-order rooms: ${snapshot.outOfOrderRoomNumbers?.length ?? 0}`));
-    lines.push(createReportLine(`Available room inventory: ${snapshot.availableRooms ?? 0} (88 total rooms minus out-of-order rooms)`));
+    lines.push(createReportLine(`Out-of-order rooms (${snapshot.outOfOrderRoomNumbers?.length ?? 0}): ${snapshot.outOfOrderRoomNumbers?.join(", ") || "Nil"}`));
+    lines.push(createReportLine(`Available room inventory: ${snapshot.availableRooms ?? 0} (${guestRoomCount} guest rooms minus Out of Order rooms; Room 105 event space excluded)`));
     lines.push(createReportLine(`Breakfast entitlement: ${snapshot.breakfastEntitled ?? 0}`));
     lines.push(createReportLine(`Cleaned rooms: ${snapshot.cleanedRooms ?? 0}`));
   } else {
@@ -643,7 +645,8 @@ function buildInHouseReportLines(operations) {
       timeStyle: "short",
     })}`,
     "",
-    `Summary: ${operations?.inHouse ?? 0} occupied room(s), ${operations?.availableRooms ?? configuredHotelRoomCount} available room inventory, ${operations?.outOfOrderRoomNumbers?.length ?? 0} out of order, ${operations?.breakfastEntitled ?? 0} breakfast entitlement`,
+    `Summary: ${operations?.inHouse ?? 0} occupied room(s), ${operations?.availableRooms ?? guestRoomCount} available room inventory, ${operations?.outOfOrderRoomNumbers?.length ?? 0} out of order, ${operations?.breakfastEntitled ?? 0} breakfast entitlement`,
+    `Out of Order room numbers: ${operations?.outOfOrderRoomNumbers?.join(", ") || "Nil"}`,
     "",
   ];
 
@@ -877,7 +880,10 @@ function CleanedRoomsOverview({ sections, canRemove, onRemove }) {
 
 function getFloorsWithAvailableRooms(excludedRooms = []) {
   return roomFloorOptions.filter(
-    (floor) => getRoomOptionsForFloor(floor.value, excludedRooms).length > 0,
+    (floor) => getRoomOptionsForFloor(
+      floor.value,
+      [...excludedRooms, ...eventSpaceRoomNumbers],
+    ).length > 0,
   );
 }
 
@@ -975,6 +981,7 @@ export default function OperationsPanel({
       const rooms = getRoomOptionsForFloor(selectedOccupiedFloor, [
         ...occupiedRoomNumbers,
         ...outOfOrderRoomNumbers,
+        ...eventSpaceRoomNumbers,
       ]).map((room, index) => ({
         ...room,
         isFreshlyCleaned: cleanedRoomSet.has(room.value),
@@ -1018,6 +1025,7 @@ export default function OperationsPanel({
     const rooms = getRoomOptionsForFloor(selectedMoveToFloor, [
       ...occupiedRoomNumbers,
       ...outOfOrderRoomNumbers,
+      ...eventSpaceRoomNumbers,
     ]).map((room, index) => ({
       ...room,
       isFreshlyCleaned: cleanedRoomSet.has(room.value),
@@ -1046,6 +1054,7 @@ export default function OperationsPanel({
         ...occupiedRoomNumbers,
         ...cleanedRoomNumbers,
         ...outOfOrderRoomNumbers,
+        ...eventSpaceRoomNumbers,
       ]),
     [cleanedRoomNumbers, occupiedRoomNumbers, outOfOrderRoomNumbers, selectedCleanedFloor],
   );
@@ -1068,6 +1077,7 @@ export default function OperationsPanel({
     () => getRoomOptionsForFloor(datedRoomFloor, [
       ...datedOccupiedRoomNumbers,
       ...datedOutOfOrderRoomNumbers,
+      ...eventSpaceRoomNumbers,
     ]),
     [datedOccupiedRoomNumbers, datedOutOfOrderRoomNumbers, datedRoomFloor],
   );
@@ -1100,7 +1110,7 @@ export default function OperationsPanel({
     operationalDateKey: selectedInHouseDate,
     occupiedRooms: datedInHouseRooms,
     inHouse: datedInHouseRooms.length,
-    availableRooms: datedInHouseMeta?.availableRooms ?? operations?.availableRooms ?? configuredHotelRoomCount,
+    availableRooms: datedInHouseMeta?.availableRooms ?? operations?.availableRooms ?? guestRoomCount,
     outOfOrderRoomNumbers: datedInHouseMeta?.outOfOrderRoomNumbers ?? operations?.outOfOrderRoomNumbers ?? [],
     breakfastEntitled: datedInHouseRooms.reduce(
       (total, room) => total + (room.breakfastIncluded ? Number(room.breakfastCount) || 0 : 0),
@@ -1719,7 +1729,7 @@ export default function OperationsPanel({
 
       {access.visibleMetrics.includes("availableRooms") ? (
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          Available room inventory: {configuredHotelRoomCount} total rooms − {outOfOrderRoomNumbers.length} out of order = <strong className="text-[#162338]">{operations?.availableRooms ?? configuredHotelRoomCount} rooms available</strong>.
+          Available room inventory: {guestRoomCount} guest rooms − {outOfOrderRoomNumbers.length} Out of Order = <strong className="text-[#162338]">{operations?.availableRooms ?? guestRoomCount} rooms available</strong>. Room 105 is excluded as an event space.
         </div>
       ) : null}
 

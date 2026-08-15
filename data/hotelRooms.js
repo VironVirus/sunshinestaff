@@ -52,6 +52,7 @@ function buildAnnexGroup(floorNumber) {
 }
 
 export const statedHotelRoomCount = 88;
+export const eventSpaceRoomNumbers = ["105"];
 
 export const roomGroups = [
   ...Array.from({ length: 6 }, (_, index) => buildMainFloorGroup(index + 1)),
@@ -68,6 +69,18 @@ export const hotelRooms = roomGroups.flatMap((group, groupIndex) =>
     sortOrder: groupIndex * 100 + roomIndex,
   })),
 );
+
+const eventSpaceRoomSet = new Set(eventSpaceRoomNumbers);
+
+export const guestRoomGroups = roomGroups.map((group) => ({
+  ...group,
+  rooms: group.rooms.filter((roomLabel) => !eventSpaceRoomSet.has(roomLabel)),
+}));
+
+export const guestRooms = hotelRooms.filter(
+  (room) => !eventSpaceRoomSet.has(room.label),
+);
+export const guestRoomCount = guestRooms.length;
 
 export const configuredHotelRoomCount = hotelRooms.length;
 export const unlistedRoomCount = Math.max(statedHotelRoomCount - configuredHotelRoomCount, 0);
@@ -95,7 +108,7 @@ const roomMap = new Map(
 
 export function normalizeRoomNumbers(roomNumbers = []) {
   return [...new Set((Array.isArray(roomNumbers) ? roomNumbers : []).filter(Boolean))]
-    .filter((roomLabel) => roomOrderMap.has(roomLabel))
+    .filter((roomLabel) => roomOrderMap.has(roomLabel) && !eventSpaceRoomSet.has(roomLabel))
     .sort((left, right) => roomOrderMap.get(left) - roomOrderMap.get(right));
 }
 
@@ -143,7 +156,7 @@ export function normalizeOccupiedRooms(
       const roomNumber = roomEntry?.roomNumber ?? roomEntry?.label ?? roomEntry;
       const roomRecord = getRoomRecord(roomNumber);
 
-      if (!roomRecord) {
+      if (!roomRecord || eventSpaceRoomSet.has(roomRecord.label)) {
         return null;
       }
 
@@ -192,7 +205,7 @@ export function normalizeOccupiedRooms(
   return normalizedRooms.filter(
     (roomEntry, index, current) =>
       current.findIndex((candidate) => candidate.roomNumber === roomEntry.roomNumber) === index,
-  ).slice(0, configuredHotelRoomCount);
+  ).slice(0, guestRoomCount);
 }
 
 export function deriveOperationsSnapshot(rawOperations = {}) {
@@ -220,7 +233,7 @@ export function deriveOperationsSnapshot(rawOperations = {}) {
     : [];
 
   const inHouse = occupiedRooms.length;
-  const availableRooms = configuredHotelRoomCount - occupiedRooms.length;
+  const availableRooms = guestRoomCount;
   const cleanedRooms = cleanedRoomNumbers
     ? cleanedRoomNumbers.length
     : 0;

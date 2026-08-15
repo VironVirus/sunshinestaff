@@ -23,7 +23,7 @@ import {
   defaultSiteContent,
 } from "@/data/mockData";
 import {
-  configuredHotelRoomCount,
+  guestRoomCount,
   deriveOperationsSnapshot,
   getRoomRecord,
   hotelRooms,
@@ -265,16 +265,27 @@ function mergeOperationsWithPropertyStatus(rawOperations = {}, propertyStatusPay
     propertyStatus.roomIssues.map((roomIssue) => roomIssue.roomNumber),
   );
   const outOfOrderRoomSet = new Set(outOfOrderRoomNumbers);
+  const occupiedRooms = baseOperations.occupiedRooms.filter(
+    (room) => !outOfOrderRoomSet.has(room.roomNumber),
+  );
+  const occupiedRoomNumbers = occupiedRooms.map((room) => room.roomNumber);
   const cleanedRoomNumbers = baseOperations.cleanedRoomNumbers.filter(
     (roomNumber) => !outOfOrderRoomSet.has(roomNumber),
   );
 
   return {
     ...baseOperations,
+    occupiedRooms,
+    occupiedRoomNumbers,
+    inHouse: occupiedRooms.length,
+    breakfastEntitled: occupiedRooms.reduce(
+      (total, room) => total + (room.breakfastIncluded ? room.breakfastCount : 0),
+      0,
+    ),
     cleanedRoomNumbers,
     cleanedRooms: cleanedRoomNumbers.length,
     outOfOrderRoomNumbers,
-    availableRooms: Math.max(configuredHotelRoomCount - outOfOrderRoomNumbers.length, 0),
+    availableRooms: Math.max(guestRoomCount - outOfOrderRoomNumbers.length, 0),
   };
 }
 
@@ -1047,8 +1058,8 @@ export function usePortalData(profile) {
       );
 
       transaction.set(frontOfficeRef, {
-        occupiedRooms: nextOperations.occupiedRooms,
-        occupiedRoomNumbers: nextOperations.occupiedRoomNumbers,
+        occupiedRooms: visibleOperations.occupiedRooms,
+        occupiedRoomNumbers: visibleOperations.occupiedRoomNumbers,
         roomMoves: normalizeOperationsRoomMoves(roomMoves),
         activityEntries: normalizedActivityEntries,
         reportHistory: upsertOperationsReportHistory(
@@ -1056,9 +1067,9 @@ export function usePortalData(profile) {
           { ...visibleOperations, activityEntries: normalizedActivityEntries },
           profile,
         ),
-        inHouse: nextOperations.inHouse,
+        inHouse: visibleOperations.inHouse,
         availableRooms: visibleOperations.availableRooms,
-        breakfastEntitled: nextOperations.breakfastEntitled,
+        breakfastEntitled: visibleOperations.breakfastEntitled,
         notes: nextOperations.notes ?? "",
         updatedAt: serverTimestamp(),
         updatedByUid: profile?.uid ?? null,

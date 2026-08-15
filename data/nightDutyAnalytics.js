@@ -3,9 +3,11 @@ import {
   getGuestRefundTotal,
   nightDutyOutletConfig,
 } from "@/data/nightDuty";
-import { roomGroups } from "@/data/hotelRooms";
-
-const HOTEL_ROOM_CAPACITY = 88;
+import {
+  guestRoomGroups,
+  guestRoomCount,
+  normalizeRoomNumbers,
+} from "@/data/hotelRooms";
 
 function asFiniteNumber(value) {
   if (value === "" || value === null || value === undefined) return null;
@@ -60,7 +62,7 @@ function getFrontOfficeGuestMix(report = {}) {
     Object.prototype.hasOwnProperty.call(floor ?? {}, "corporateGuests"),
   );
 
-  if (recordedFloors.length !== roomGroups.length) return null;
+  if (recordedFloors.length !== guestRoomGroups.length) return null;
 
   const walkInGuests = sum(recordedFloors.map((floor) => floor.walkInGuests));
   const corporateGuests = sum(recordedFloors.map((floor) => floor.corporateGuests));
@@ -82,23 +84,44 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     orderedReports.map((report) => report.operationalDateKey).filter(Boolean),
   );
   const missingDateKeys = expectedDateKeys.filter((dateKey) => !reportDateKeys.has(dateKey));
-  const occupancyTotals = orderedReports.map((report) => Number(report.occupancyTotal) || 0);
-  const totalInHouse = sum(occupancyTotals);
-  const dailyOccupancy = orderedReports.map((report) => {
-    const occupiedRooms = Number(report.occupancyTotal) || 0;
+  const occupancyReports = orderedReports.filter(
+    (report) => report.frontOfficeOccupancyReport?.hasReport === true,
+  );
+  const occupancyReportDateKeys = new Set(
+    occupancyReports.map((report) => report.operationalDateKey).filter(Boolean),
+  );
+  const missingOccupancyDateKeys = expectedDateKeys.filter(
+    (dateKey) => !occupancyReportDateKeys.has(dateKey),
+  );
+  const dailyOccupancy = occupancyReports.map((report) => {
+    const snapshot = report.frontOfficeOccupancyReport;
+    const outOfOrderRoomNumbers = normalizeRoomNumbers(snapshot.outOfOrderRoomNumbers);
+    const availableRooms = Math.max(
+      guestRoomCount - outOfOrderRoomNumbers.length,
+      0,
+    );
+    const occupiedRooms = Math.min(
+      Math.max(Number(snapshot.inHouse) || 0, 0),
+      availableRooms,
+    );
 
     return {
       operationalDateKey: report.operationalDateKey,
       occupiedRooms,
-      occupancyPercentage: HOTEL_ROOM_CAPACITY > 0
-        ? (occupiedRooms / HOTEL_ROOM_CAPACITY) * 100
+      outOfOrderRoomNumbers,
+      outOfOrderRooms: outOfOrderRoomNumbers.length,
+      availableRooms,
+      occupancyPercentage: availableRooms > 0
+        ? (occupiedRooms / availableRooms) * 100
         : 0,
     };
   });
+  const occupancyTotals = dailyOccupancy.map((day) => day.occupiedRooms);
+  const totalInHouse = sum(occupancyTotals);
 
-  const occupancyByFloor = roomGroups.map((group) => {
-    const dailyValues = orderedReports.map((report) => Number(
-      report.occupancyByFloor?.find((floor) => floor.floorKey === group.key)?.occupiedRooms,
+  const occupancyByFloor = guestRoomGroups.map((group) => {
+    const dailyValues = occupancyReports.map((report) => Number(
+      report.frontOfficeOccupancyByFloor?.find((floor) => floor.floorKey === group.key)?.occupiedRooms,
     ) || 0);
 
     return {
@@ -206,7 +229,7 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
       amount: getGuestRefundTotal(report.income),
     }))
     .filter((day) => day.amount > 0);
-  const dailyOccupancyGuestMix = orderedReports.flatMap((report) => {
+  const dailyOccupancyGuestMix = occupancyReports.flatMap((report) => {
     const guestMix = getFrontOfficeGuestMix(report);
 
     return guestMix
@@ -266,15 +289,24 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     reportCount: orderedReports.length,
     selectedDayCount: expectedDateKeys.length,
     missingDateKeys,
+    occupancyReportCount: occupancyReports.length,
+    missingOccupancyDateKeys,
     totalInHouse,
-    hotelRoomCapacity: HOTEL_ROOM_CAPACITY,
+    hotelRoomCapacity: guestRoomCount,
     dailyOccupancy,
-    averageOccupancy: orderedReports.length > 0
-      ? totalInHouse / orderedReports.length
+    averageOccupancy: occupancyReports.length > 0
+      ? totalInHouse / occupancyReports.length
       : 0,
-    averageOccupancyPercentage: orderedReports.length > 0 && HOTEL_ROOM_CAPACITY > 0
-      ? (totalInHouse / orderedReports.length / HOTEL_ROOM_CAPACITY) * 100
+    averageOccupancyPercentage: dailyOccupancy.length > 0
+      ? sum(dailyOccupancy.map((day) => day.occupancyPercentage)) / dailyOccupancy.length
       : 0,
+    averageAvailableRooms: dailyOccupancy.length > 0
+      ? sum(dailyOccupancy.map((day) => day.availableRooms)) / dailyOccupancy.length
+      : 0,
+    averageOutOfOrderRooms: dailyOccupancy.length > 0
+      ? sum(dailyOccupancy.map((day) => day.outOfOrderRooms)) / dailyOccupancy.length
+      : 0,
+    totalOutOfOrderRoomNights: sum(dailyOccupancy.map((day) => day.outOfOrderRooms)),
     highestOccupancy: occupancyTotals.length > 0 ? Math.max(...occupancyTotals) : 0,
     lowestOccupancy: occupancyTotals.length > 0 ? Math.min(...occupancyTotals) : 0,
     occupancyByFloor,

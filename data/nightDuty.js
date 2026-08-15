@@ -1,5 +1,5 @@
 import { departmentsByKey } from "@/data/departments";
-import { roomGroups } from "@/data/hotelRooms";
+import { guestRoomGroups } from "@/data/hotelRooms";
 import { addDaysToDateKey, getHotelDateKey } from "@/lib/hotelTime";
 
 export function getNightDutyReportDateKey(value = new Date()) {
@@ -88,7 +88,7 @@ function buildDefaultIncome() {
 }
 
 function buildDefaultOccupancyByFloor() {
-  return roomGroups.map((group) => ({
+  return guestRoomGroups.map((group) => ({
     floorKey: group.key,
     floorLabel: group.label,
     occupiedRooms: 0,
@@ -196,7 +196,7 @@ function normalizeOccupancyByFloor(entries = []) {
     (Array.isArray(entries) ? entries : []).map((entry) => [entry?.floorKey, entry]),
   );
 
-  return roomGroups.map((group) => {
+  return guestRoomGroups.map((group) => {
     const entry = entryMap.get(group.key);
     const base = {
       floorKey: group.key,
