@@ -193,7 +193,16 @@ function RangeBarChart({ title, items, formatValue = (value) => String(value), s
   );
 }
 
-const CHART_COLORS = ["#a67c2e", "#162338", "#0f766e", "#b45309", "#7c3aed"];
+const CHART_COLORS = [
+  "#a67c2e",
+  "#162338",
+  "#0f766e",
+  "#b45309",
+  "#7c3aed",
+  "#0369a1",
+  "#be185d",
+  "#4d7c0f",
+];
 
 function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
   const chartId = useId().replaceAll(":", "");
@@ -759,26 +768,21 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     pageBreakBefore,
   });
   const lines = [
+    sectionHeading("Executive summary"),
     {
-      text: `OPERATIONS REPORT ANALYSIS: ${formatDateKey(rangeStart)} TO ${formatDateKey(rangeEnd)}`,
-      bold: true,
-      fontSize: 15,
-      dividerAfter: true,
-      spaceAfter: 6,
+      type: "table",
+      headers: ["Executive indicator", "Position", "Executive indicator", "Position"],
+      widths: [1.6, 1.45, 1.6, 1.45],
+      rows: [
+        ["Reporting coverage", `${analysis.reportCount} reports / ${analysis.selectedDayCount} selected days`, "Occupancy coverage", `${analysis.occupancyReportCount} usable days; ${analysis.missingOccupancyDateKeys.length} excluded`],
+        ["Grand Revenue", formatAmount(analysis.grandRevenueTotal), "Actual Revenue", formatAmount(analysis.actualRevenueTotal)],
+        ["Occupied-room nights", String(analysis.totalInHouse), "Average occupancy", `${formatAverage(analysis.averageOccupancy)} rooms (${formatPercentage(analysis.averageOccupancyPercentage)})`],
+        ["Available rooms", `${analysis.hotelRoomCapacity} - ${analysis.latestOutOfOrderRooms} = ${analysis.rangeAvailableRooms}`, "60% target", `${analysis.targetOccupiedRooms} rooms per reported night`],
+        ["Out of Order control", `${analysis.latestOutOfOrderRoomNumbers.join(", ") || "Nil"}${analysis.latestOutOfOrderDateKey ? ` (${formatDateKey(analysis.latestOutOfOrderDateKey)})` : ""}`, "Unavailable room-nights", String(analysis.unavailableRoomNights)],
+        ["Target variance", formatTargetVariance(analysis.occupancyTargetVarianceRoomNights, "room-night"), "Occupancy high / low", `${analysis.highestOccupancy} / ${analysis.lowestOccupancy}`],
+      ],
     },
-    { text: `Coverage: ${analysis.reportCount} stored report(s) from ${analysis.selectedDayCount} selected day(s)`, bold: true },
-    { text: `Missing report dates: ${analysis.missingDateKeys.length > 0 ? analysis.missingDateKeys.join(", ") : "None"}` },
-    { text: `Occupancy coverage: ${analysis.occupancyReportCount} usable date(s) - ${analysis.frontOfficeOccupancyReportCount} Front Office and ${analysis.nightDutyFallbackCount} Night Duty fallback; ${analysis.missingOccupancyDateKeys.length} date(s) excluded`, bold: true },
-    { text: `Total In-house (occupied-room nights): ${analysis.totalInHouse}`, bold: true },
-    { text: `Controlling Out of Order snapshot: ${analysis.latestOutOfOrderRoomNumbers.join(", ") || "Nil"}${analysis.latestOutOfOrderDateKey ? ` (latest entry: ${formatDateKey(analysis.latestOutOfOrderDateKey)})` : ""}`, bold: true },
-    { text: `Available rooms throughout range: ${analysis.hotelRoomCapacity} guest rooms - ${analysis.latestOutOfOrderRooms} Out of Order = ${analysis.rangeAvailableRooms}`, bold: true },
-    { text: `Average nightly occupancy: ${formatAverage(analysis.averageOccupancy)} occupied of ${analysis.rangeAvailableRooms} available rooms (${formatPercentage(analysis.averageOccupancyPercentage)})`, bold: true },
-    { text: `Target occupancy: ${analysis.targetOccupancyPercentage}% = ${analysis.targetOccupiedRooms} occupied rooms per reported night; period target ${analysis.targetOccupiedRoomNights} occupied-room nights`, bold: true },
-    { text: `Performance against target: ${formatTargetVariance(analysis.occupancyTargetVarianceRoomNights, "room-night")} across dates with occupancy reports` },
-    { text: `Unavailable room-nights: ${analysis.latestOutOfOrderRooms} Out of Order rooms x ${analysis.selectedDayCount} calendar days = ${analysis.unavailableRoomNights}`, bold: true },
-    { text: `Highest / lowest occupancy: ${analysis.highestOccupancy} / ${analysis.lowestOccupancy}` },
-    { text: `GRAND REVENUE: ${formatAmount(analysis.grandRevenueTotal)}`, bold: true, fontSize: 14 },
-    { text: `ACTUAL REVENUE: ${formatAmount(analysis.actualRevenueTotal)}`, bold: true, fontSize: 14 },
+    { text: `Missing report dates: ${analysis.missingDateKeys.length > 0 ? analysis.missingDateKeys.join(", ") : "None"}`, spaceAfter: 3 },
   ];
 
   if (reports.length === 0) {
@@ -886,7 +890,7 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
       chunkSize: 22,
     });
   }
-  lines.push(sectionHeading("Income totals by section", true));
+  lines.push(sectionHeading("Revenue performance"));
   lines.push({
     type: "table",
     title: "Section revenue totals",
@@ -951,6 +955,28 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     spaceBefore: 8,
     spaceAfter: 8,
   });
+  nightDutyOutletConfig.forEach((outlet) => {
+    const sources = analysis.revenueSources.filter(
+      (source) => source.outletKey === outlet.key,
+    );
+    if (sources.length === 0) return;
+
+    lines.push({
+      type: "lineChart",
+      title: `${outlet.label} — day-by-day revenue by source`,
+      labels: analysis.dailyRevenueSources.map((day) => day.operationalDateKey),
+      series: sources.map((source, index) => ({
+        key: source.sourceKey,
+        label: source.fieldLabel,
+        color: CHART_COLORS[index % CHART_COLORS.length],
+        values: analysis.dailyRevenueSources.map(
+          (day) => day.values[source.sourceKey],
+        ),
+      })),
+      spaceBefore: 6,
+      spaceAfter: 6,
+    });
+  });
   lines.push({
     type: "table",
     title: "Detailed income totals",
@@ -970,7 +996,7 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     analysis.dailyBrunch.length > 0
       ? "Food, beverage, brunch and refund accounts"
       : "Food, beverage and refund accounts",
-    true,
+    false,
   ));
   lines.push({
     type: "table",
@@ -1007,6 +1033,19 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
         ]),
       ],
       chunkSize: 22,
+    });
+    lines.push({
+      type: "lineChart",
+      title: "Brunch day-by-day revenue",
+      labels: analysis.dailyBrunch.map((day) => day.operationalDateKey),
+      series: [{
+        key: "brunchRevenue",
+        label: "Brunch revenue",
+        color: CHART_COLORS[0],
+        values: analysis.dailyBrunch.map((day) => day.revenue),
+      }],
+      spaceBefore: 6,
+      spaceAfter: 6,
     });
     lines.push({
       type: "lineChart",
@@ -1051,7 +1090,7 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     chunkSize: 20,
   });
 
-  lines.push(sectionHeading("Day-by-day income analysis", true));
+  lines.push(sectionHeading("Day-by-day income analysis"));
   lines.push({
     type: "table",
     title: "Daily Grand Revenue by section",
@@ -1113,7 +1152,7 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
     }
   });
 
-  lines.push(sectionHeading("Departmental notes", true));
+  lines.push(sectionHeading("Departmental notes"));
   if (analysis.departmentalNotes.length === 0) {
     lines.push("Nil");
   } else {
@@ -1158,7 +1197,7 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd) {
       spaceBefore: 14,
       spaceAfter: 6,
       keepWithNext: true,
-      pageBreakBefore: true,
+      pageBreakBefore: false,
     });
     lines.push(...buildNightDutyReportLines(
       applyRangeRoomAvailability(report, analysis),
@@ -1235,16 +1274,16 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
     : `<p><strong>Front Office guest source:</strong> No complete walk-in/corporate snapshot is stored in this range.</p>`;
   const lineChartMarkup = (title, labels, series, formatter) => {
     const width = 720;
-    const height = 220;
+    const height = 206;
     const left = 48;
     const top = 18;
     const plotWidth = 650;
-    const plotHeight = 160;
+    const plotHeight = 148;
     const values = series.flatMap((entry) => entry.values.map((value) => Number(value) || 0));
     const maximum = Math.max(...values, 1);
     const x = (index) => left + (labels.length <= 1 ? plotWidth / 2 : (index / (labels.length - 1)) * plotWidth);
     const y = (value) => top + plotHeight - ((Number(value) || 0) / maximum) * plotHeight;
-    const colors = ["#a67c2e", "#162338", "#0f766e", "#7c3aed"];
+    const colors = CHART_COLORS;
     const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => `<line x1="${left}" y1="${top + plotHeight - ratio * plotHeight}" x2="${left + plotWidth}" y2="${top + plotHeight - ratio * plotHeight}" stroke="#dbe3ec" stroke-width="0.7" stroke-dasharray="3 5" />`).join("");
     const paths = series.map((entry, seriesIndex) => {
       const color = colors[seriesIndex % colors.length];
@@ -1255,12 +1294,30 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
       return `${area}<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />${entry.values.map((value, index) => `<circle cx="${x(index)}" cy="${y(value)}" r="2.2" fill="#ffffff" stroke="${color}" stroke-width="1.2" />`).join("")}`;
     }).join("");
     const step = Math.max(Math.ceil(labels.length / 6), 1);
-    const axisLabels = labels.map((label, index) => index % step === 0 || index === labels.length - 1 ? `<text x="${x(index)}" y="205" text-anchor="middle" font-size="9" fill="#64748b">${escapeHtml(label.slice(5))}</text>` : "").join("");
+    const axisLabels = labels.map((label, index) => index % step === 0 || index === labels.length - 1 ? `<text x="${x(index)}" y="194" text-anchor="middle" font-size="8" fill="#64748b">${escapeHtml(label.slice(5))}</text>` : "").join("");
     const legend = series.map((entry, index) => `<span><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(entry.label)} (${escapeHtml(formatter(entry.values[entry.values.length - 1] ?? 0))} latest)</span>`).join("");
     return `<section class="chart line-chart"><h3>${escapeHtml(title)}</h3><svg viewBox="0 0 ${width} ${height}"><rect x="0" y="0" width="${width}" height="${height}" rx="10" fill="#fbfcfe" />${grid}${paths}${axisLabels}</svg><div class="legend">${legend}</div></section>`;
   };
+  const revenueSourceChartsHtml = nightDutyOutletConfig.map((outlet) => {
+    const sources = analysis.revenueSources.filter(
+      (source) => source.outletKey === outlet.key,
+    );
+    if (sources.length === 0) return "";
+
+    return lineChartMarkup(
+      `${outlet.label} — day-by-day revenue by source`,
+      analysis.dailyRevenueSources.map((day) => day.operationalDateKey),
+      sources.map((source) => ({
+        label: source.fieldLabel,
+        values: analysis.dailyRevenueSources.map(
+          (day) => day.values[source.sourceKey],
+        ),
+      })),
+      formatAmount,
+    );
+  }).join("");
   const brunchRangeHtml = analysis.dailyBrunch.length > 0
-    ? `<section><h2>Brunch report</h2><div class="summary"><strong>Target:</strong> ${analysis.brunchAttendanceTarget} attendees per reported brunch day<br><strong>Reported brunch days:</strong> ${analysis.brunchReportDays} (days without an entry are excluded)<br><strong>Total brunch revenue:</strong> ${escapeHtml(formatAmount(analysis.totalBrunchRevenue))}<br><strong>Total attendees:</strong> ${analysis.totalBrunchAttendees} against ${analysis.brunchTargetAttendees} target attendees<br><strong>Days target met:</strong> ${analysis.brunchTargetDaysMet}</div>${lineChartMarkup("Brunch attendance against target", analysis.dailyBrunch.map((day) => day.operationalDateKey), [{ label: "Attendees", values: analysis.dailyBrunch.map((day) => day.attendees) }, { label: `${analysis.brunchAttendanceTarget} target`, values: analysis.dailyBrunch.map((day) => day.targetAttendees) }], (value) => String(value))}<table><thead><tr><th>Date</th><th>Brunch revenue</th><th>Attendees</th><th>Target</th><th>Variance</th></tr></thead><tbody>${dailyBrunchRows}</tbody></table></section>`
+    ? `<section><h2>Brunch report</h2><div class="summary"><strong>Target:</strong> ${analysis.brunchAttendanceTarget} attendees per reported brunch day<br><strong>Reported brunch days:</strong> ${analysis.brunchReportDays} (days without an entry are excluded)<br><strong>Total brunch revenue:</strong> ${escapeHtml(formatAmount(analysis.totalBrunchRevenue))}<br><strong>Total attendees:</strong> ${analysis.totalBrunchAttendees} against ${analysis.brunchTargetAttendees} target attendees<br><strong>Days target met:</strong> ${analysis.brunchTargetDaysMet}</div>${lineChartMarkup("Brunch day-by-day revenue", analysis.dailyBrunch.map((day) => day.operationalDateKey), [{ label: "Brunch revenue", values: analysis.dailyBrunch.map((day) => day.revenue) }], formatAmount)}${lineChartMarkup("Brunch attendance against target", analysis.dailyBrunch.map((day) => day.operationalDateKey), [{ label: "Attendees", values: analysis.dailyBrunch.map((day) => day.attendees) }, { label: `${analysis.brunchAttendanceTarget} target`, values: analysis.dailyBrunch.map((day) => day.targetAttendees) }], (value) => String(value))}<table><thead><tr><th>Date</th><th>Brunch revenue</th><th>Attendees</th><th>Target</th><th>Variance</th></tr></thead><tbody>${dailyBrunchRows}</tbody></table></section>`
     : "";
   const dailyReports = reports.map((report) => {
     const lineMarkup = buildNightDutyReportLines(
@@ -1284,42 +1341,64 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
   reportWindow.document.write(`
     <!doctype html><html><head><title>Sunshine Hotel Operations Report ${escapeHtml(rangeStart)} to ${escapeHtml(rangeEnd)}</title>
       <style>
-        @page { size: A4; margin: 12mm; }
-        body { color: #1f2937; font-family: Arial, sans-serif; margin: 0; }
-        h1 { border-bottom: 4px solid #a67c2e; color: #162338; font-size: 24px; margin: 0 0 8px; padding-bottom: 9px; }
-        h2 { background: #e8eef5; border-bottom: 2px solid #a67c2e; border-top: 1px solid #a67c2e; color: #162338; font-size: 18px; margin: 24px 0 10px; padding: 7px 9px; }
-        h3 { color: #162338; font-size: 13px; margin: 12px 0 8px; }
-        .summary { background: #f8f3e6; border: 1px solid #a67c2e; border-left: 5px solid #a67c2e; margin: 12px 0 20px; padding: 12px; }
-        .analysis-section { break-inside: avoid; margin: 16px 0; }
-        table { border-collapse: collapse; font-size: 9px; margin: 8px 0 16px; width: 100%; }
-        th { background: #162338; color: white; text-align: left; }
-        th, td { border: 1px solid #9fb0c2; padding: 6px; }
+        @page { size: A4; margin: 10mm 11mm 12mm; }
+        * { box-sizing: border-box; }
+        body { color: #263548; font-family: Calibri, Arial, sans-serif; font-size: 9.5px; line-height: 1.35; margin: 0; }
+        h1 { border-bottom: 3px solid #a67c2e; color: #162338; font-size: 22px; letter-spacing: .25px; margin: 0 0 4px; padding-bottom: 6px; }
+        .report-subtitle { color: #64748b; font-size: 9px; margin: 0 0 7px; text-transform: uppercase; }
+        h2 { background: #edf2f7; border-left: 4px solid #a67c2e; color: #162338; font-size: 14px; margin: 13px 0 6px; padding: 4px 7px; }
+        h3 { color: #162338; font-size: 10.5px; margin: 7px 0 4px; }
+        p { margin: 4px 0; }
+        .summary { background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #a67c2e; margin: 6px 0 9px; padding: 7px 8px; }
+        .executive-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 7px 0; }
+        .kpi { background: #f8fafc; border: 1px solid #cbd5e1; min-height: 46px; padding: 6px 7px; }
+        .kpi span { color: #64748b; display: block; font-size: 7.5px; font-weight: 700; letter-spacing: .35px; text-transform: uppercase; }
+        .kpi strong { color: #162338; display: block; font-size: 14px; line-height: 1.15; margin-top: 3px; }
+        .kpi small { color: #64748b; display: block; font-size: 7.5px; margin-top: 2px; }
+        .revenue-kpi { background: #162338; border-color: #162338; }
+        .revenue-kpi span, .revenue-kpi small { color: #d8e1eb; }
+        .revenue-kpi strong { color: #ffffff; }
+        .analysis-section { margin: 7px 0; }
+        section { break-inside: auto; }
+        table { border-collapse: collapse; font-size: 8px; margin: 4px 0 8px; width: 100%; }
+        th { background: #162338; color: white; font-weight: 700; text-align: left; }
+        th, td { border: 1px solid #aebdcb; padding: 3.5px 4px; vertical-align: top; }
         tbody tr:nth-child(even) td { background: #f4f7fa; }
-        .chart { background: linear-gradient(180deg, #ffffff, #f8fafc); border: 1px solid #dbe3ec; border-radius: 10px; break-inside: avoid; margin: 16px 0; padding: 10px 12px; }
-        .bar-row { align-items: center; display: grid; font-size: 9px; gap: 7px; grid-template-columns: 110px 1fr 85px; margin: 6px 0; }
+        .chart { background: #fbfcfe; border: 1px solid #d4dde7; break-inside: avoid; margin: 7px 0; padding: 6px 8px; }
+        .bar-row { align-items: center; display: grid; font-size: 8px; gap: 6px; grid-template-columns: 105px 1fr 82px; margin: 4px 0; }
         .bar-track { background: #e2e8f0; border-radius: 999px; height: 6px; overflow: hidden; }
         .bar-track i { background: #a67c2e; border-radius: 999px; display: block; height: 100%; }
         .bar-track i.bar-1 { background: #162338; } .bar-track i.bar-2 { background: #0f766e; } .bar-track i.bar-3 { background: #7c3aed; }
         .bar-row strong small { color: #64748b; display: block; font-size: 8px; font-weight: 600; }
         .line-chart svg { display: block; height: auto; width: 100%; }
-        .legend { display: flex; flex-wrap: wrap; gap: 7px; font-size: 8px; }
-        .legend span { align-items: center; background: #fff; border: 1px solid #dbe3ec; border-radius: 999px; display: inline-flex; gap: 5px; padding: 3px 7px; }
+        .legend { display: flex; flex-wrap: wrap; gap: 4px; font-size: 7px; }
+        .legend span { align-items: center; background: #fff; border: 1px solid #dbe3ec; display: inline-flex; gap: 4px; padding: 2px 5px; }
         .legend i { border-radius: 999px; display: inline-block; height: 2px; width: 16px; }
-        ol { font-size: 10px; line-height: 1.5; padding-left: 20px; }
-        article { break-before: page; }
-        article:first-of-type { break-before: auto; }
-        article div { font-size: 10.5px; line-height: 1.55; white-space: pre-wrap; }
+        ol { font-size: 8.5px; line-height: 1.35; margin: 4px 0; padding-left: 18px; }
+        ol li { margin: 2px 0; }
+        .appendix-heading { margin-top: 13px; }
+        article { border-top: 1px solid #94a3b8; break-inside: auto; margin: 7px 0 0; padding-top: 2px; }
+        article h2 { break-after: avoid; margin-top: 5px; }
+        article div { font-size: 8.5px; line-height: 1.3; white-space: pre-wrap; }
         .bold { font-weight: 800; }
-        .divider-before { border-top: 1px solid #94a3b8; margin-top: 9px; padding-top: 6px; }
-        .divider-after { border-bottom: 1px solid #94a3b8; margin-bottom: 6px; padding-bottom: 6px; }
-        .grand-total { border-bottom: 3px double #8a6923; border-top: 3px double #8a6923; color: #162338; font-size: 14px; font-weight: 900; margin: 10px 0; padding: 8px 0; }
-        .actual-total { color: #162338; font-size: 13px; font-weight: 800; margin-bottom: 10px; padding: 4px 0 8px; }
+        .divider-before { border-top: 1px solid #94a3b8; margin-top: 5px; padding-top: 3px; }
+        .divider-after { border-bottom: 1px solid #94a3b8; margin-bottom: 3px; padding-bottom: 3px; }
+        .grand-total { border-bottom: 3px double #8a6923; border-top: 3px double #8a6923; color: #162338; font-size: 12px; font-weight: 900; margin: 6px 0; padding: 5px 0; }
+        .actual-total { color: #162338; font-size: 11px; font-weight: 800; margin-bottom: 5px; padding: 2px 0 4px; }
       </style>
     </head><body>
       <h1>Sunshine Hotel Operations Report</h1>
-      <div class="summary"><strong>Date range:</strong> ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}<br><strong>Operations Report coverage:</strong> ${analysis.reportCount} report(s) from ${analysis.selectedDayCount} selected day(s)<br><strong>Occupancy coverage:</strong> ${analysis.occupancyReportCount} usable date(s) - ${analysis.frontOfficeOccupancyReportCount} Front Office and ${analysis.nightDutyFallbackCount} Night Duty fallback; ${analysis.missingOccupancyDateKeys.length} date(s) excluded<br><strong>Controlling Out of Order snapshot:</strong> ${escapeHtml(analysis.latestOutOfOrderRoomNumbers.join(", ") || "Nil")}${analysis.latestOutOfOrderDateKey ? ` (latest entry: ${escapeHtml(formatDateKey(analysis.latestOutOfOrderDateKey))})` : ""}<br><strong>Available rooms throughout range:</strong> ${analysis.hotelRoomCapacity} - ${analysis.latestOutOfOrderRooms} = ${analysis.rangeAvailableRooms}<br><strong>Unavailable room-nights:</strong> ${analysis.latestOutOfOrderRooms} x ${analysis.selectedDayCount} days = ${analysis.unavailableRoomNights}<br><strong>Total In-house (occupied-room nights):</strong> ${analysis.totalInHouse}<br><strong>Average occupancy:</strong> ${escapeHtml(formatAverage(analysis.averageOccupancy))} occupied of ${analysis.rangeAvailableRooms} available rooms (${escapeHtml(formatPercentage(analysis.averageOccupancyPercentage))})<br><strong>60% target:</strong> ${analysis.targetOccupiedRooms} occupied rooms per reported night; ${escapeHtml(formatTargetVariance(analysis.occupancyTargetVarianceRoomNights, "room-night"))} across reported dates<br><strong>Grand Revenue:</strong> ${escapeHtml(formatAmount(analysis.grandRevenueTotal))}<br><strong>Actual Revenue:</strong> ${escapeHtml(formatAmount(analysis.actualRevenueTotal))}</div>
+      <p class="report-subtitle">Executive operations and accounting analysis · ${escapeHtml(formatDateKey(rangeStart))} to ${escapeHtml(formatDateKey(rangeEnd))}</p>
+      <div class="executive-grid">
+        <div class="kpi revenue-kpi"><span>Grand Revenue</span><strong>${escapeHtml(formatAmount(analysis.grandRevenueTotal))}</strong><small>All revenue accounts</small></div>
+        <div class="kpi revenue-kpi"><span>Actual Revenue</span><strong>${escapeHtml(formatAmount(analysis.actualRevenueTotal))}</strong><small>Included operating revenue</small></div>
+        <div class="kpi"><span>Occupied-room nights</span><strong>${analysis.totalInHouse}</strong><small>${escapeHtml(formatPercentage(analysis.averageOccupancyPercentage))} average occupancy</small></div>
+        <div class="kpi"><span>Available rooms</span><strong>${analysis.rangeAvailableRooms}</strong><small>${analysis.latestOutOfOrderRooms} Out of Order</small></div>
+      </div>
+      <div class="summary"><strong>Report coverage:</strong> ${analysis.reportCount} stored report(s) across ${analysis.selectedDayCount} selected day(s); ${analysis.occupancyReportCount} usable occupancy date(s) (${analysis.frontOfficeOccupancyReportCount} Front Office, ${analysis.nightDutyFallbackCount} Night Duty fallback), ${analysis.missingOccupancyDateKeys.length} excluded.<br><strong>Controlling room position:</strong> Out of Order — ${escapeHtml(analysis.latestOutOfOrderRoomNumbers.join(", ") || "Nil")}${analysis.latestOutOfOrderDateKey ? `; latest entry ${escapeHtml(formatDateKey(analysis.latestOutOfOrderDateKey))}` : ""}. Available rooms: ${analysis.hotelRoomCapacity} - ${analysis.latestOutOfOrderRooms} = ${analysis.rangeAvailableRooms}; unavailable room-nights: ${analysis.unavailableRoomNights}.<br><strong>Target position:</strong> ${analysis.targetOccupiedRooms} occupied rooms per reported night at 60%; ${escapeHtml(formatTargetVariance(analysis.occupancyTargetVarianceRoomNights, "room-night"))} across reported dates.</div>
       <section class="analysis-section"><h2>Occupancy analysis by floor</h2><h3>Daily room availability and occupancy rate</h3><table><thead><tr><th>Date</th><th>Occupancy source</th><th>Available</th><th>Occupied</th><th>Rate</th><th>60% target</th><th>Vs target</th></tr></thead><tbody>${dailyRoomAvailabilityRows}</tbody></table><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }, { label: "60% target", values: analysis.dailyOccupancy.map(() => analysis.targetOccupancyPercentage) }], formatPercentage)}${guestSourceRangeHtml}</section>
-      <section class="analysis-section"><h2>Income totals by section</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
+      <section class="analysis-section"><h2>Revenue performance</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
+      <section class="analysis-section"><h2>Day-by-day revenue-source trends</h2><p>Each line represents a recorded revenue source within its operating outlet. Refunds remain outside revenue and are reported separately.</p>${revenueSourceChartsHtml}</section>
       <section><h2>Food and beverage analysis</h2><table><thead><tr><th>Account</th><th>Range total</th></tr></thead><tbody><tr><td>Food</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.food))}</td></tr><tr><td>Beverage</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.beverage))}</td></tr><tr><th>Combined</th><th>${escapeHtml(formatAmount(analysis.foodBeverageTotals.combined))}</th></tr></tbody></table>${lineChartMarkup("Daily food and beverage trend", analysis.dailyFoodBeverage.map((day) => day.operationalDateKey), [{ label: "Food", values: analysis.dailyFoodBeverage.map((day) => day.food) }, { label: "Beverage", values: analysis.dailyFoodBeverage.map((day) => day.beverage) }], formatAmount)}<table><thead><tr><th>Date</th><th>Food</th><th>Beverage</th><th>Combined</th></tr></thead><tbody>${dailyFoodBeverageRows}</tbody></table></section>
       ${brunchRangeHtml}
       <section><h2>Guest refund account</h2><div class="summary"><strong>Guest refunds:</strong> ${escapeHtml(formatAmount(analysis.guestRefundsTotal))} — separate account, excluded from all revenue totals.</div><table><thead><tr><th>Date</th><th>Guest refunds</th><th>Treatment</th></tr></thead><tbody>${dailyGuestRefundRows}</tbody></table></section>
@@ -1327,7 +1406,7 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd) {
       <section><h2>Day-by-day income analysis</h2><table><thead><tr><th>Date</th><th>Kenny's</th><th>Tropics</th><th>Restaurant</th><th>Front Office</th><th>Grand</th><th>Actual</th></tr></thead><tbody>${dailyIncomeRows}</tbody></table>${dailyRevenueSourceTables}</section>
       <section><h2>Departmental notes</h2>${notesMarkup}</section>
       <section><h2>Utilities and other indicators</h2><table><tbody>${analysis.gasAverages.map((gas) => `<tr><th>${escapeHtml(gas.label)} average</th><td>${escapeHtml(formatAverage(gas.average))} (${gas.recordedDays} recorded day(s))</td></tr>`).join("")}<tr><th>Average hot water temperature</th><td>${escapeHtml(formatAverage(analysis.averageHotWaterTemperature, " degrees C"))}</td></tr><tr><th>Total water supplied</th><td>${analysis.totalWaterSupplied} time(s)</td></tr><tr><th>Latest generator service reading</th><td>${latestGeneratorReading}</td></tr><tr><th>Power supply totals</th><td>${powerTotals}</td></tr><tr><th>Guest / employee incident days</th><td>${analysis.guestIncidentDays} / ${analysis.employeeIncidentDays}</td></tr><tr><th>Events / complaints</th><td>${analysis.totalEvents} / ${analysis.totalComplaints}</td></tr>${analysis.dailyBrunch.length > 0 ? `<tr><th>Brunch attendees</th><td>${analysis.totalBrunchAttendees} across ${analysis.brunchReportDays} reported brunch day(s)</td></tr>` : ""}</tbody></table></section>
-      <h2>Complete daily report appendix</h2>
+      <h2 class="appendix-heading">Complete daily report appendix</h2>
       ${dailyReports || "<p>No stored Operations Reports were found in this date range.</p>"}
     </body></html>
   `);
@@ -1418,25 +1497,39 @@ function printNightDutyReport(reportData) {
   reportWindow.document.write(`
     <!doctype html><html><head><title>Sunshine Hotel Operations Report ${escapeHtml(reportData.operationalDateKey)}</title>
       <style>
-        @page { size: A4; margin: 12mm; }
+        @page { size: A4; margin: 10mm 11mm 12mm; }
         * { box-sizing: border-box; }
-        body { color: #1f2937; font-family: Arial, sans-serif; margin: 0; }
-        h1 { color: #8a6923; font-size: 22px; margin: 0 0 8px; }
-        h2 { border-bottom: 2px solid #cbd5e1; border-top: 1px solid #cbd5e1; color: #162338; font-size: 17px; font-weight: 800; margin: 24px 0 8px; padding: 7px 0; }
-        h3 { color: #334155; font-size: 14px; font-weight: 700; margin: 16px 0 7px; }
-        p { font-size: 11px; line-height: 1.5; }
-        table { border-collapse: collapse; font-size: 10px; width: 100%; }
-        th, td { border: 1px solid #cbd5e1; padding: 6px; text-align: left; vertical-align: top; }
-        th { background: #f8f3e6; }
-        section { break-inside: avoid; }
-        .meta { color: #64748b; }
-        .grand-total { border-bottom: 3px double #8a6923; border-top: 3px double #8a6923; color: #162338; font-size: 16px; font-weight: 900; margin-top: 16px; padding: 10px 0; }
-        .actual-total { border-bottom: 1px solid #94a3b8; color: #162338; font-size: 14px; font-weight: 800; margin: 0 0 16px; padding: 8px 0; }
-        .signature { border-top: 1px solid #475569; margin-top: 38px; padding-top: 7px; width: 48%; }
+        body { color: #263548; font-family: Calibri, Arial, sans-serif; font-size: 9.5px; line-height: 1.35; margin: 0; }
+        h1 { border-bottom: 3px solid #a67c2e; color: #162338; font-size: 22px; margin: 0 0 4px; padding-bottom: 6px; }
+        h2 { background: #edf2f7; border-left: 4px solid #a67c2e; color: #162338; font-size: 14px; font-weight: 800; margin: 13px 0 6px; padding: 4px 7px; }
+        h3 { color: #334155; font-size: 10.5px; font-weight: 700; margin: 8px 0 4px; }
+        p { font-size: 9px; line-height: 1.35; margin: 4px 0; }
+        table { border-collapse: collapse; font-size: 8px; margin: 4px 0 8px; width: 100%; }
+        th, td { border: 1px solid #aebdcb; padding: 3.5px 4px; text-align: left; vertical-align: top; }
+        th { background: #162338; color: #fff; }
+        tbody tr:nth-child(even) td { background: #f4f7fa; }
+        section { break-inside: auto; }
+        .meta { color: #64748b; margin-bottom: 7px; text-transform: uppercase; }
+        .executive-grid { display: grid; gap: 5px; grid-template-columns: repeat(4, 1fr); margin: 7px 0 9px; }
+        .kpi { background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 7px; }
+        .kpi span { color: #64748b; display: block; font-size: 7px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+        .kpi strong { color: #162338; display: block; font-size: 13px; line-height: 1.15; margin-top: 2px; }
+        .kpi.revenue { background: #162338; border-color: #162338; }
+        .kpi.revenue span { color: #d8e1eb; }
+        .kpi.revenue strong { color: #fff; }
+        .grand-total { border-bottom: 3px double #8a6923; border-top: 3px double #8a6923; color: #162338; font-size: 12px; font-weight: 900; margin-top: 7px; padding: 5px 0; }
+        .actual-total { border-bottom: 1px solid #94a3b8; color: #162338; font-size: 11px; font-weight: 800; margin: 0 0 7px; padding: 3px 0; }
+        .signature { border-top: 1px solid #475569; margin-top: 18px; padding-top: 5px; width: 48%; }
       </style>
     </head><body>
       <h1>Sunshine Hotel Operations Report</h1>
       <p class="meta"><strong>Activity date:</strong> ${escapeHtml(formatDateKey(reportData.operationalDateKey))}<br>Generated: ${escapeHtml(formatFriendlyDate(reportData.generatedAt))}</p>
+      <div class="executive-grid">
+        <div class="kpi revenue"><span>Grand Revenue</span><strong>${escapeHtml(formatAmount(reportData.grandIncomeTotal))}</strong></div>
+        <div class="kpi revenue"><span>Actual Revenue</span><strong>${escapeHtml(formatAmount(reportData.actualRevenueTotal))}</strong></div>
+        <div class="kpi"><span>Occupied rooms</span><strong>${reportData.frontOfficeOccupancyReport.inHouse}</strong></div>
+        <div class="kpi"><span>Available rooms</span><strong>${reportData.frontOfficeOccupancyReport.availableRooms}</strong></div>
+      </div>
 
       <h2>Occupancy totals by floor</h2>
       <table><thead><tr><th>Floor</th><th>Night Duty total</th><th>Front Office reference</th></tr></thead><tbody>${occupancyRows}<tr><th>Total</th><th>${reportData.occupancyTotal}</th><th></th></tr></tbody></table>
@@ -1579,7 +1672,6 @@ export default function NightDutyPanel({
   const [rangeReportLoaded, setRangeReportLoaded] = useState(false);
   const [exportingRangeDocx, setExportingRangeDocx] = useState(false);
   const [rangeIncomeTab, setRangeIncomeTab] = useState("totals");
-  const [selectedRevenueSourceKey, setSelectedRevenueSourceKey] = useState("frontOffice.roomRevenue");
   const [savingSection, setSavingSection] = useState("");
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const selectedLoadRequest = useRef(0);
@@ -1870,9 +1962,6 @@ export default function NightDutyPanel({
     () => buildNightDutyRangeAnalytics(rangeReportData, rangeDateKeys),
     [rangeDateKeys, rangeReportData],
   );
-  const selectedRevenueSource = rangeAnalytics.revenueSources.find(
-    (source) => source.sourceKey === selectedRevenueSourceKey,
-  ) ?? rangeAnalytics.revenueSources[0] ?? null;
   const currentMonth = selectedReportDate.slice(0, 7);
   const currentDate = new Date(`${selectedReportDate}T12:00:00Z`);
   const weekStart = new Date(currentDate);
@@ -2612,8 +2701,34 @@ export default function NightDutyPanel({
 
                     {rangeIncomeTab === "daily" ? (
                       <div className="space-y-4">
-                        <label className="field max-w-xl"><span>Revenue source trend</span><select value={selectedRevenueSource?.sourceKey ?? ""} onChange={(event) => setSelectedRevenueSourceKey(event.target.value)}>{rangeAnalytics.revenueSources.map((source) => <option key={source.sourceKey} value={source.sourceKey}>{source.outletLabel} — {source.fieldLabel}</option>)}</select></label>
-                        {selectedRevenueSource ? <RangeLineChart title={`${selectedRevenueSource.outletLabel} — ${selectedRevenueSource.fieldLabel} daily trend`} labels={rangeAnalytics.dailyRevenueSources.map((day) => day.operationalDateKey)} series={[{ key: selectedRevenueSource.sourceKey, label: selectedRevenueSource.fieldLabel, color: "#a67c2e", values: rangeAnalytics.dailyRevenueSources.map((day) => day.values[selectedRevenueSource.sourceKey]) }]} /> : null}
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <h4 className="text-sm font-semibold text-[#162338]">Day-by-day revenue by source</h4>
+                          <p className="mt-1 text-xs text-slate-600">Every revenue source is charted under its operating outlet for direct trend comparison.</p>
+                        </div>
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          {nightDutyOutletConfig.map((outlet) => {
+                            const outletSources = rangeAnalytics.revenueSources.filter(
+                              (source) => source.outletKey === outlet.key,
+                            );
+                            if (outletSources.length === 0) return null;
+
+                            return (
+                              <RangeLineChart
+                                key={outlet.key}
+                                title={`${outlet.label} — daily revenue sources`}
+                                labels={rangeAnalytics.dailyRevenueSources.map((day) => day.operationalDateKey)}
+                                series={outletSources.map((source, index) => ({
+                                  key: source.sourceKey,
+                                  label: source.fieldLabel,
+                                  color: CHART_COLORS[index % CHART_COLORS.length],
+                                  values: rangeAnalytics.dailyRevenueSources.map(
+                                    (day) => day.values[source.sourceKey],
+                                  ),
+                                }))}
+                              />
+                            );
+                          })}
+                        </div>
                         <RangeLineChart title="Daily food and beverage trend" labels={rangeAnalytics.dailyFoodBeverage.map((day) => day.operationalDateKey)} series={[{ key: "food", label: "Food", color: "#0f766e", values: rangeAnalytics.dailyFoodBeverage.map((day) => day.food) }, { key: "beverage", label: "Beverage", color: "#7c3aed", values: rangeAnalytics.dailyFoodBeverage.map((day) => day.beverage) }]} />
                         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-max text-xs"><caption className="p-3 text-left text-sm font-semibold text-[#162338]">Day-by-day value of every revenue source</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="sticky left-0 bg-slate-50 px-3 py-2">Date</th>{rangeAnalytics.revenueSources.map((source) => <th key={source.sourceKey} className="min-w-32 px-3 py-2">{source.outletLabel}<br />{source.fieldLabel}</th>)}</tr></thead><tbody>{rangeAnalytics.dailyRevenueSources.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="sticky left-0 bg-white px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey, { month: "short", day: "numeric", year: "numeric" })}</td>{rangeAnalytics.revenueSources.map((source) => <td key={source.sourceKey} className="px-3 py-2">{formatAmount(day.values[source.sourceKey])}</td>)}</tr>)}</tbody></table></div>
                       </div>
@@ -2626,6 +2741,7 @@ export default function NightDutyPanel({
                           <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm">Guest refunds<br /><strong className="text-xl text-rose-800">{formatAmount(rangeAnalytics.guestRefundsTotal)}</strong><br /><span className="text-xs text-rose-700">Excluded from all revenue totals</span></div>
                         </div>
                         {rangeAnalytics.dailyBrunch.length > 0 ? <>
+                          <RangeLineChart title="Brunch day-by-day revenue" labels={rangeAnalytics.dailyBrunch.map((day) => day.operationalDateKey)} series={[{ key: "brunch-revenue", label: "Brunch revenue", color: "#a67c2e", values: rangeAnalytics.dailyBrunch.map((day) => day.revenue) }]} />
                           <RangeLineChart title="Brunch attendance against target" labels={rangeAnalytics.dailyBrunch.map((day) => day.operationalDateKey)} series={[{ key: "brunch-attendees", label: "Attendees", color: "#a67c2e", values: rangeAnalytics.dailyBrunch.map((day) => day.attendees) }, { key: "brunch-target", label: `${rangeAnalytics.brunchAttendanceTarget} target`, color: "#162338", values: rangeAnalytics.dailyBrunch.map((day) => day.targetAttendees) }]} />
                           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Brunch entries — unreported days excluded</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Revenue</th><th className="px-3 py-2">Attendees</th><th className="px-3 py-2">Target</th><th className="px-3 py-2">Variance</th></tr></thead><tbody>{rangeAnalytics.dailyBrunch.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{formatAmount(day.revenue)}</td><td className="px-3 py-2">{day.attendees}</td><td className="px-3 py-2">{day.targetAttendees}</td><td className={`px-3 py-2 font-semibold ${day.targetReached ? "text-emerald-700" : "text-amber-700"}`}>{formatTargetVarianceShort(day.attendeeVariance)}</td></tr>)}</tbody></table></div>
                         </> : null}
