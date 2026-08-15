@@ -1,4 +1,8 @@
-import { getRoomRecord, roomGroups } from "@/data/hotelRooms";
+import {
+  expandLinkedRoomNumbers,
+  getRoomRecord,
+  roomGroups,
+} from "@/data/hotelRooms";
 import { getOperationalDateKey } from "@/lib/hotelTime";
 
 export const housekeepingStatusOptions = [
@@ -36,23 +40,25 @@ function normalizeReportEntries(entries = []) {
 
   (Array.isArray(entries) ? entries : []).slice(0, 176).forEach((entry) => {
     const roomNumber = entry?.roomNumber ?? entry?.label ?? "";
-    const roomRecord = getRoomRecord(roomNumber);
     const status = entry?.status ?? "";
 
-    if (!roomRecord || !statusValues.has(status)) {
-      return;
-    }
+    if (!statusValues.has(status)) return;
 
-    entryMap.set(roomRecord.label, {
-      roomNumber: roomRecord.label,
-      floorKey: roomRecord.groupKey,
-      floorLabel: roomRecord.groupLabel,
-      status,
-      statusLabel: getHousekeepingStatusLabel(status),
-      updatedAt: entry?.updatedAt ?? "",
-      updatedByName: entry?.updatedByName ?? "",
-      updatedByDepartment: entry?.updatedByDepartment ?? "",
-      sortOrder: roomRecord.sortOrder,
+    expandLinkedRoomNumbers(roomNumber).forEach((expandedRoomNumber) => {
+      const roomRecord = getRoomRecord(expandedRoomNumber);
+      if (!roomRecord) return;
+
+      entryMap.set(roomRecord.label, {
+        roomNumber: roomRecord.label,
+        floorKey: roomRecord.groupKey,
+        floorLabel: roomRecord.groupLabel,
+        status,
+        statusLabel: getHousekeepingStatusLabel(status),
+        updatedAt: entry?.updatedAt ?? "",
+        updatedByName: entry?.updatedByName ?? "",
+        updatedByDepartment: entry?.updatedByDepartment ?? "",
+        sortOrder: roomRecord.sortOrder,
+      });
     });
   });
 

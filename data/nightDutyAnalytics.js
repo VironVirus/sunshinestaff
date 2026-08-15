@@ -10,6 +10,7 @@ import {
 } from "@/data/hotelRooms";
 
 const TARGET_OCCUPANCY_PERCENTAGE = 60;
+export const BRUNCH_ATTENDANCE_TARGET = 60;
 
 function asFiniteNumber(value) {
   if (value === "" || value === null || value === undefined) return null;
@@ -270,7 +271,15 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
       revenue: Number(report.income?.restaurant?.brunchRevenue) || 0,
       attendees: Number(report.income?.restaurant?.brunchAttendees) || 0,
     }))
-    .filter((day) => day.revenue > 0 || day.attendees > 0);
+    .filter((day) => day.revenue > 0 || day.attendees > 0)
+    .map((day) => ({
+      ...day,
+      targetAttendees: BRUNCH_ATTENDANCE_TARGET,
+      attendeeVariance: day.attendees - BRUNCH_ATTENDANCE_TARGET,
+      targetReached: day.attendees >= BRUNCH_ATTENDANCE_TARGET,
+    }));
+  const totalBrunchAttendees = sum(dailyBrunch.map((day) => day.attendees));
+  const brunchTargetAttendees = BRUNCH_ATTENDANCE_TARGET * dailyBrunch.length;
   const dailyGuestRefunds = orderedReports
     .map((report) => ({
       operationalDateKey: report.operationalDateKey,
@@ -375,6 +384,14 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     dailyFoodBeverage,
     dailyBrunch,
     totalBrunchRevenue: sum(dailyBrunch.map((day) => day.revenue)),
+    brunchAttendanceTarget: BRUNCH_ATTENDANCE_TARGET,
+    brunchReportDays: dailyBrunch.length,
+    brunchTargetAttendees,
+    brunchAttendeeVariance: totalBrunchAttendees - brunchTargetAttendees,
+    brunchTargetDaysMet: dailyBrunch.filter((day) => day.targetReached).length,
+    averageBrunchAttendees: dailyBrunch.length > 0
+      ? totalBrunchAttendees / dailyBrunch.length
+      : null,
     dailyGuestRefunds,
     guestRefundsTotal: sum(dailyGuestRefunds.map((day) => day.amount)),
     dailyOccupancyGuestMix,
@@ -407,6 +424,6 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     employeeIncidentDays: orderedReports.filter((report) => report.employeeIncident?.hasIncident).length,
     totalEvents: sum(orderedReports.map((report) => report.eventsSnapshot?.length)),
     totalComplaints: sum(orderedReports.map((report) => report.complaintsSnapshot?.length)),
-    totalBrunchAttendees: sum(dailyBrunch.map((day) => day.attendees)),
+    totalBrunchAttendees,
   };
 }

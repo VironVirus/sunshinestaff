@@ -74,16 +74,18 @@ remembering the full CLI commands.
 
 ```bash
 npm run firebase:check
+npm run firebase:login
 npm run firebase:rules
 npm run firebase:indexes
 npm run firebase:emulators
 ```
 
-The Firebase CLI is intentionally installed separately, rather than as a website dependency. This keeps deployment-only packages out of Hostinger production builds:
+The helper downloads a pinned Firebase CLI through `npx` only when it is needed. It is not added to the website dependencies or Hostinger production bundle:
 
 ```bash
-npm install -g firebase-tools
-firebase login
+npm install
+npm run firebase:login
+npm run firebase:rules
 ```
 
 ## Firebase project files

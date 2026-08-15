@@ -116,7 +116,7 @@ const allowedSellabilityStatusValues = new Set(
 
 // Starter values transcribed from the supplied ROOMS UPDATE report. These are
 // kept locally so every room can open with an editable report without creating
-// 88 Firestore documents. A saved room report always replaces these values.
+// one Firestore document per configured room. A saved room report always replaces these values.
 const defaultRoomPropertyStatusValues = {
   "Duvet Covers": { quantity: "1", status: "average", remark: "Worn out" },
   "Flat Sheets": { quantity: "1", status: "average", remark: "Worn out" },

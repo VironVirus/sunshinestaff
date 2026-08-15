@@ -8,6 +8,7 @@ import {
   guestRoomCount,
   guestRoomGroups,
   normalizeOccupiedRooms,
+  normalizeRoomNumbers,
   roomFloorOptions,
   statedHotelRoomCount,
   unlistedRoomCount,
@@ -325,9 +326,29 @@ function getOperationsSnapshotForDate(operations, targetDateKey) {
     };
   }
 
-  return (operations?.reportHistory ?? []).find(
+  const historyEntry = (operations?.reportHistory ?? []).find(
     (reportEntry) => reportEntry.dateKey === targetDateKey,
   ) ?? null;
+
+  if (!historyEntry) return null;
+
+  const occupiedRooms = normalizeOccupiedRooms(
+    historyEntry.occupiedRooms ?? historyEntry.occupiedRoomNumbers ?? [],
+    targetDateKey,
+  );
+  const hasOutOfOrderSnapshot = Array.isArray(historyEntry.outOfOrderRoomNumbers);
+  const outOfOrderRoomNumbers = normalizeRoomNumbers(historyEntry.outOfOrderRoomNumbers);
+
+  return {
+    ...historyEntry,
+    inHouse: occupiedRooms.length > 0 ? occupiedRooms.length : Number(historyEntry.inHouse) || 0,
+    occupiedRooms,
+    occupiedRoomNumbers: occupiedRooms.map((room) => room.roomNumber),
+    outOfOrderRoomNumbers,
+    availableRooms: hasOutOfOrderSnapshot
+      ? Math.max(guestRoomCount - outOfOrderRoomNumbers.length, 0)
+      : Math.min(Math.max(Number(historyEntry.availableRooms) || guestRoomCount, 0), guestRoomCount),
+  };
 }
 
 function buildEventReportLines(eventsBookings, targetDateKey) {

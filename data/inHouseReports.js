@@ -92,7 +92,7 @@ export function normalizeStoredInHouseReport(payload = {}, fallbackDateKey) {
         Math.max(Number(
           hasRoomNumberSnapshot ? floor.occupiedRooms : storedFloor?.occupiedRooms ?? floor.occupiedRooms,
         ) || 0, 0),
-        guestRoomGroups.find((group) => group.key === floor.floorKey)?.rooms.length ?? 88,
+        guestRoomGroups.find((group) => group.key === floor.floorKey)?.rooms.length ?? guestRoomCount,
       ),
       ...(hasCompleteRoomDetails
         ? {
@@ -117,7 +117,7 @@ export function normalizeStoredInHouseReport(payload = {}, fallbackDateKey) {
       : Math.min(Math.max(expectedRoomCount || 0, 0), guestRoomCount),
     breakfastEntitled: Math.min(
       Math.max(Number(payload.breakfastEntitled ?? normalized.breakfastEntitled) || 0, 0),
-      1760,
+      1880,
     ),
     availableRooms: Array.isArray(payload.outOfOrderRoomNumbers)
       ? normalized.availableRooms

@@ -49,8 +49,22 @@ async function loadProjectId() {
 
 const projectId = await loadProjectId();
 const loginLikeCommand = args[0] === "login";
-const firebaseCommand = process.platform === "win32" ? "firebase.cmd" : "firebase";
-const finalArgs = [...args, "--config", "firebase.json"];
+const firebaseExecutable = process.platform === "win32" ? "firebase.cmd" : "firebase";
+const localFirebaseCommand = path.join(root, "node_modules", ".bin", firebaseExecutable);
+const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
+let firebaseCommand = localFirebaseCommand;
+let commandPrefix = [];
+
+try {
+  await fs.access(localFirebaseCommand);
+} catch {
+  firebaseCommand = npxCommand;
+  commandPrefix = ["--yes", "--prefer-offline", "firebase-tools@15.27.0"];
+}
+
+const finalArgs = loginLikeCommand
+  ? [...args]
+  : [...args, "--config", "firebase.json"];
 
 if (projectId && !loginLikeCommand) {
   finalArgs.push("--project", projectId);
@@ -63,12 +77,12 @@ if (!projectId && !loginLikeCommand) {
 }
 
 const child = process.platform === "win32"
-  ? spawn("cmd.exe", ["/c", firebaseCommand, ...finalArgs], {
+  ? spawn("cmd.exe", ["/c", firebaseCommand, ...commandPrefix, ...finalArgs], {
       cwd: root,
       stdio: "inherit",
       shell: false,
     })
-  : spawn(firebaseCommand, finalArgs, {
+  : spawn(firebaseCommand, [...commandPrefix, ...finalArgs], {
       cwd: root,
       stdio: "inherit",
       shell: false,
@@ -76,8 +90,8 @@ const child = process.platform === "win32"
 
 child.on("error", (error) => {
   if (error?.code === "ENOENT") {
-    console.error("Firebase CLI is not installed in your terminal PATH.");
-    console.error("Install it separately with `npm install --global firebase-tools`, then retry.");
+    console.error("The project could not start Firebase CLI through npx.");
+    console.error("Confirm Node.js and npm are installed, then retry.");
     process.exit(1);
   }
 

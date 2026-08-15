@@ -1,4 +1,7 @@
-import { getRoomRecord } from "@/data/hotelRooms";
+import {
+  expandLinkedRoomNumbers,
+  getRoomRecord,
+} from "@/data/hotelRooms";
 
 const tankLevelOptions = [
   { value: "empty", label: "Empty" },
@@ -99,29 +102,30 @@ export function getRoomComplaintLabel(value) {
 
 export function normalizeRoomIssues(roomIssues = []) {
   return (Array.isArray(roomIssues) ? roomIssues : [])
-    .map((roomIssue) => {
+    .flatMap((roomIssue) => {
       const roomNumber = roomIssue?.roomNumber ?? roomIssue?.label ?? "";
-      const roomRecord = getRoomRecord(roomNumber);
+      if (roomIssue?.outOfOrder !== true) return [];
 
-      if (!roomRecord || roomIssue?.outOfOrder !== true) {
-        return null;
-      }
+      return expandLinkedRoomNumbers(roomNumber).map((expandedRoomNumber) => {
+        const roomRecord = getRoomRecord(expandedRoomNumber);
+        if (!roomRecord) return null;
 
-      return {
-        roomNumber: roomRecord.label,
-        floorKey: roomRecord.groupKey,
-        floorLabel: roomRecord.groupLabel,
-        outOfOrder: true,
-        issueNote: typeof roomIssue?.issueNote === "string" ? roomIssue.issueNote.trim().slice(0, 500) : "",
-        updatedByName: roomIssue?.updatedByName ?? "",
-        updatedByDepartment: roomIssue?.updatedByDepartment ?? "",
-        sortOrder: roomRecord.sortOrder,
-      };
+        return {
+          roomNumber: roomRecord.label,
+          floorKey: roomRecord.groupKey,
+          floorLabel: roomRecord.groupLabel,
+          outOfOrder: true,
+          issueNote: typeof roomIssue?.issueNote === "string" ? roomIssue.issueNote.trim().slice(0, 500) : "",
+          updatedByName: roomIssue?.updatedByName ?? "",
+          updatedByDepartment: roomIssue?.updatedByDepartment ?? "",
+          sortOrder: roomRecord.sortOrder,
+        };
+      });
     })
     .filter(Boolean)
     .sort((left, right) => left.sortOrder - right.sortOrder)
     .map(({ sortOrder, ...roomIssue }) => roomIssue)
-    .slice(0, 88);
+    .slice(0, 94);
 }
 
 function deriveRoomIssuesFromComplaints(roomComplaints = []) {
@@ -158,29 +162,35 @@ export function normalizeRoomComplaints(roomComplaints = []) {
   const seenIds = new Set();
 
   return (Array.isArray(roomComplaints) ? roomComplaints : [])
-    .map((complaintEntry) => {
+    .flatMap((complaintEntry) => {
       const roomNumber = complaintEntry?.roomNumber ?? complaintEntry?.label ?? "";
-      const roomRecord = getRoomRecord(roomNumber);
+      const expandedRoomNumbers = expandLinkedRoomNumbers(roomNumber);
 
-      if (!roomRecord || !roomComplaintOptions.some((option) => option.value === complaintEntry?.complaintType)) {
-        return null;
+      if (!roomComplaintOptions.some((option) => option.value === complaintEntry?.complaintType)) {
+        return [];
       }
 
-      return {
-        id: complaintEntry?.id ?? `${roomRecord.label}-${complaintEntry.complaintType}`,
-        roomNumber: roomRecord.label,
-        floorKey: roomRecord.groupKey,
-        floorLabel: roomRecord.groupLabel,
-        complaintType: complaintEntry.complaintType,
-        complaintNote: typeof complaintEntry?.complaintNote === "string"
-          ? complaintEntry.complaintNote.trim().slice(0, 500)
-          : "",
-        reportedAt: complaintEntry?.reportedAt ?? "",
-        resolvedAt: complaintEntry?.resolvedAt ?? "",
-        updatedByName: complaintEntry?.updatedByName ?? "",
-        updatedByDepartment: complaintEntry?.updatedByDepartment ?? "",
-        sortOrder: roomRecord.sortOrder,
-      };
+      return expandedRoomNumbers.map((expandedRoomNumber) => {
+        const roomRecord = getRoomRecord(expandedRoomNumber);
+        if (!roomRecord) return null;
+        const baseId = complaintEntry?.id ?? `${roomNumber}-${complaintEntry.complaintType}`;
+
+        return {
+          id: expandedRoomNumbers.length > 1 ? `${baseId}-${roomRecord.label}` : baseId,
+          roomNumber: roomRecord.label,
+          floorKey: roomRecord.groupKey,
+          floorLabel: roomRecord.groupLabel,
+          complaintType: complaintEntry.complaintType,
+          complaintNote: typeof complaintEntry?.complaintNote === "string"
+            ? complaintEntry.complaintNote.trim().slice(0, 500)
+            : "",
+          reportedAt: complaintEntry?.reportedAt ?? "",
+          resolvedAt: complaintEntry?.resolvedAt ?? "",
+          updatedByName: complaintEntry?.updatedByName ?? "",
+          updatedByDepartment: complaintEntry?.updatedByDepartment ?? "",
+          sortOrder: roomRecord.sortOrder,
+        };
+      });
     })
     .filter(Boolean)
     .sort((left, right) => left.sortOrder - right.sortOrder)

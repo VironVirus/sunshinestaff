@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "node:setup": "node scripts/bootstrap-project-node.mjs",
     "firebase:check": "node scripts/check-firebase-config.mjs",
+    "firebase:login": "node scripts/firebase-cli.mjs login",
     "firebase:rules": "node scripts/firebase-cli.mjs deploy --only firestore:rules",
     "firebase:indexes": "node scripts/firebase-cli.mjs deploy --only firestore:indexes",
     "firebase:emulators": "node scripts/firebase-cli.mjs emulators:start --only auth,firestore",
@@ -45,7 +46,7 @@
   },
   "overrides": {
     "@types/node": "22.19.20",
-    "nanoid": "3.3.17",
+    "nanoid": "3.3.18",
     "postcss": "8.5.23"
   }
 }

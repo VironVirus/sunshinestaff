@@ -1,8 +1,9 @@
 import { getOperationalDateKey } from "@/lib/hotelTime";
 
 const mainFloorRoomPattern = [
-  "01/03",
+  "01",
   "02",
+  "03",
   "04",
   "05",
   "06",
@@ -25,10 +26,6 @@ const ordinalFloorLabels = [
 ];
 
 function buildMainFloorLabel(floorNumber, suffix) {
-  if (suffix === "01/03") {
-    return `${floorNumber}01/${floorNumber}03`;
-  }
-
   return `${floorNumber}${suffix}`;
 }
 
@@ -51,8 +48,19 @@ function buildAnnexGroup(floorNumber) {
   };
 }
 
-export const statedHotelRoomCount = 88;
+export const statedHotelRoomCount = 94;
 export const eventSpaceRoomNumbers = ["105"];
+export const linkedRoomPairs = Array.from({ length: 6 }, (_, index) => {
+  const floorNumber = index + 1;
+  return {
+    combinedLabel: `${floorNumber}01/${floorNumber}03`,
+    roomNumbers: [`${floorNumber}01`, `${floorNumber}03`],
+  };
+});
+
+const linkedRoomPairMap = new Map(
+  linkedRoomPairs.map((pair) => [pair.combinedLabel, pair.roomNumbers]),
+);
 
 export const roomGroups = [
   ...Array.from({ length: 6 }, (_, index) => buildMainFloorGroup(index + 1)),
@@ -106,8 +114,30 @@ const roomMap = new Map(
   hotelRooms.map((room) => [room.label, room]),
 );
 
+linkedRoomPairs.forEach((pair) => {
+  const firstRoom = roomMap.get(pair.roomNumbers[0]);
+  if (firstRoom) {
+    roomMap.set(pair.combinedLabel, {
+      ...firstRoom,
+      id: pair.combinedLabel,
+      label: pair.combinedLabel,
+      linkedRoomNumbers: pair.roomNumbers,
+      legacyCombinedRoom: true,
+    });
+  }
+});
+
+export function expandLinkedRoomNumbers(roomLabel) {
+  if (typeof roomLabel !== "string") return [];
+  return linkedRoomPairMap.get(roomLabel) ?? [roomLabel];
+}
+
 export function normalizeRoomNumbers(roomNumbers = []) {
-  return [...new Set((Array.isArray(roomNumbers) ? roomNumbers : []).filter(Boolean))]
+  return [...new Set(
+    (Array.isArray(roomNumbers) ? roomNumbers : [])
+      .filter(Boolean)
+      .flatMap(expandLinkedRoomNumbers),
+  )]
     .filter((roomLabel) => roomOrderMap.has(roomLabel) && !eventSpaceRoomSet.has(roomLabel))
     .sort((left, right) => roomOrderMap.get(left) - roomOrderMap.get(right));
 }
@@ -152,13 +182,9 @@ export function normalizeOccupiedRooms(
   operationalDateKey = getOperationalDateKey(),
 ) {
   const normalizedRooms = (Array.isArray(occupiedRooms) ? occupiedRooms : [])
-    .map((roomEntry) => {
+    .flatMap((roomEntry) => {
       const roomNumber = roomEntry?.roomNumber ?? roomEntry?.label ?? roomEntry;
-      const roomRecord = getRoomRecord(roomNumber);
-
-      if (!roomRecord || eventSpaceRoomSet.has(roomRecord.label)) {
-        return null;
-      }
+      const expandedRoomNumbers = expandLinkedRoomNumbers(roomNumber);
 
       const bookedDays = Math.min(Math.max(
         Number(
@@ -174,27 +200,35 @@ export function normalizeOccupiedRooms(
         roomEntry?.bookingDateKey ??
         operationalDateKey;
 
-      return {
-        roomNumber: roomRecord.label,
-        floorKey: roomRecord.groupKey,
-        floorLabel: roomRecord.groupLabel,
-        breakfastIncluded: Boolean(roomEntry?.breakfastIncluded),
-        breakfastCount: Boolean(roomEntry?.breakfastIncluded)
-          ? Math.min(Math.max(Number(roomEntry?.breakfastCount) || 0, 0), 20)
-          : 0,
-        bookedDays,
-        bookedOnDateKey,
-        remainingDays: bookedDays,
-        guestType: ["walk_in", "corporate"].includes(roomEntry?.guestType)
-          ? roomEntry.guestType
-          : "walk_in",
-        checkInCategory: typeof roomEntry?.checkInCategory === "string"
-          ? roomEntry.checkInCategory.slice(0, 40)
-          : "normal_check_in",
-        lastCheckoutCategory: typeof roomEntry?.lastCheckoutCategory === "string"
-          ? roomEntry.lastCheckoutCategory.slice(0, 40)
-          : "",
-      };
+      return expandedRoomNumbers.map((expandedRoomNumber) => {
+        const roomRecord = getRoomRecord(expandedRoomNumber);
+
+        if (!roomRecord || eventSpaceRoomSet.has(roomRecord.label)) {
+          return null;
+        }
+
+        return {
+          roomNumber: roomRecord.label,
+          floorKey: roomRecord.groupKey,
+          floorLabel: roomRecord.groupLabel,
+          breakfastIncluded: Boolean(roomEntry?.breakfastIncluded),
+          breakfastCount: Boolean(roomEntry?.breakfastIncluded)
+            ? Math.min(Math.max(Number(roomEntry?.breakfastCount) || 0, 0), 20)
+            : 0,
+          bookedDays,
+          bookedOnDateKey,
+          remainingDays: bookedDays,
+          guestType: ["walk_in", "corporate"].includes(roomEntry?.guestType)
+            ? roomEntry.guestType
+            : "walk_in",
+          checkInCategory: typeof roomEntry?.checkInCategory === "string"
+            ? roomEntry.checkInCategory.slice(0, 40)
+            : "normal_check_in",
+          lastCheckoutCategory: typeof roomEntry?.lastCheckoutCategory === "string"
+            ? roomEntry.lastCheckoutCategory.slice(0, 40)
+            : "",
+        };
+      });
     })
     .filter(Boolean)
     .sort(
