@@ -1507,6 +1507,16 @@ export function usePortalData(profile) {
           updatedByDepartment: persistedReport.updatedByDepartment,
         }
       : persistedReport;
+    const buildLegacyCompatibleNightDutyReport = (report) => {
+      const {
+        frontOfficeOccupancyReport: _frontOfficeOccupancyReport,
+        outOfOrderRoomNumbers: _outOfOrderRoomNumbers,
+        ...legacyReport
+      } = report;
+      return legacyReport;
+    };
+    const legacyDatedReportData = buildLegacyCompatibleNightDutyReport(datedReportData);
+    const legacyPersistedReport = buildLegacyCompatibleNightDutyReport(persistedReport);
     const datedReportWrite = {
       ref: doc(db, "nightDutyReports", nextNightDutyData.operationalDateKey),
       data: datedReportData,
@@ -1520,7 +1530,29 @@ export function usePortalData(profile) {
 
     try {
       await commitTrackedWrite({ writes: [datedReportWrite] });
-    } catch (error) {
+    } catch (initialError) {
+      const initialPermissionDenied = initialError?.code === "permission-denied" ||
+        initialError?.code === "firestore/permission-denied";
+      let error = initialError;
+
+      if (initialPermissionDenied) {
+        try {
+          await commitTrackedWrite({
+            writes: [{
+              ...datedReportWrite,
+              data: legacyDatedReportData,
+            }],
+          });
+          warning = `${warning} Firebase accepted the compatibility report shape. Publish the latest Firestore rules when convenient to retain the Out-of-Order snapshot inside Night Duty documents; the dated In-house report remains the occupancy source.`.trim();
+          error = null;
+        } catch (compatibilityError) {
+          error = compatibilityError;
+        }
+      }
+
+      if (!error) {
+        // The established report shape was accepted by the currently deployed rules.
+      } else {
       const permissionDenied = error?.code === "permission-denied" ||
         error?.code === "firestore/permission-denied";
 
@@ -1562,6 +1594,7 @@ export function usePortalData(profile) {
       const diagnosedError = new Error(message);
       diagnosedError.code = error.code;
       throw diagnosedError;
+      }
     }
 
     if (shouldUpdateCurrentBoard) {
@@ -1574,8 +1607,26 @@ export function usePortalData(profile) {
           }],
         });
       } catch (error) {
-        warning = `${warning} The dated report was saved, but Firestore rejected the current Night Duty dashboard copy.`.trim();
-        console.error("Night Duty dated report saved without current dashboard copy", error);
+        const permissionDenied = error?.code === "permission-denied" ||
+          error?.code === "firestore/permission-denied";
+
+        if (permissionDenied) {
+          try {
+            await commitTrackedWrite({
+              writes: [{
+                ref: doc(db, "portal", "nightDuty"),
+                data: legacyPersistedReport,
+                options: { merge: false },
+              }],
+            });
+          } catch (compatibilityError) {
+            warning = `${warning} The dated report was saved, but Firestore rejected the current Night Duty dashboard copy.`.trim();
+            console.error("Night Duty dashboard compatibility copy was rejected", compatibilityError);
+          }
+        } else {
+          warning = `${warning} The dated report was saved, but Firestore rejected the current Night Duty dashboard copy.`.trim();
+          console.error("Night Duty dated report saved without current dashboard copy", error);
+        }
       }
     }
 
