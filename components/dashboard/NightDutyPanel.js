@@ -42,7 +42,7 @@ import {
 } from "@/lib/hotelTime";
 import { downloadTextPdf } from "@/lib/pdf";
 import { downloadNightDutyRangeDocx } from "@/lib/nightDutyDocx";
-import { canManageOperationsTargets, getNightDutyAccess } from "@/lib/roles";
+import { canManageOperationsTargets, getNightDutyAccess, isSuperAdmin } from "@/lib/roles";
 
 const TARGET_OCCUPANCY_PERCENTAGE = 60;
 
@@ -136,7 +136,7 @@ function SectionButton({ active, label, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-4 py-3 text-sm font-semibold transition ${
+      className={`rounded-full px-4 py-3 text-base font-semibold transition ${
         active
           ? "bg-[#162338] text-white"
           : "border border-slate-200 bg-white text-slate-600 hover:text-[#162338]"
@@ -169,7 +169,7 @@ function RangeBarChart({ title, items, formatValue = (value) => String(value), s
 
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/70 p-5 shadow-sm">
-      <h4 className="flex items-center gap-2 text-sm font-semibold text-[#162338]"><i className="h-1.5 w-1.5 rounded-full bg-[#a67c2e]" />{title}</h4>
+      <h4 className="flex items-center gap-2 text-base font-semibold text-[#162338]"><i className="h-2 w-2 rounded-full bg-[#a67c2e]" />{title}</h4>
       <div className="mt-4 space-y-3">
         {items.map((item) => {
           const value = Math.max(Number(item.value) || 0, 0);
@@ -177,7 +177,7 @@ function RangeBarChart({ title, items, formatValue = (value) => String(value), s
           const percentage = item.percentage ?? (total > 0 ? (value / total) * 100 : 0);
 
           return (
-            <div key={item.key ?? item.label} className="grid grid-cols-[7rem_1fr] gap-3 text-xs sm:grid-cols-[9rem_1fr_6rem] sm:items-center">
+            <div key={item.key ?? item.label} className="grid grid-cols-[8rem_1fr] gap-3 text-sm sm:grid-cols-[10rem_1fr_8rem] sm:items-center">
               <span className="truncate font-medium text-slate-600" title={item.label}>{item.label}</span>
               <div className="h-2 overflow-hidden rounded-full bg-slate-200/70" role="img" aria-label={`${item.label}: ${formatValue(value)}`}>
                 <div className="h-full rounded-full bg-gradient-to-r from-[#c49a48] to-[#8b6723]" style={{ width: `${width}%` }} />
@@ -219,7 +219,7 @@ function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
 
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/70 p-5 shadow-sm">
-      <h4 className="flex items-center gap-2 text-sm font-semibold text-[#162338]"><i className="h-1.5 w-1.5 rounded-full bg-[#a67c2e]" />{title}</h4>
+      <h4 className="flex items-center gap-2 text-base font-semibold text-[#162338]"><i className="h-2 w-2 rounded-full bg-[#a67c2e]" />{title}</h4>
       <div className="mt-3 overflow-x-auto">
         <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[620px] w-full" role="img" aria-label={title}>
           <defs>
@@ -230,9 +230,9 @@ function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
           </defs>
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
             const y = padding.top + plotHeight - ratio * plotHeight;
-            return <g key={ratio}><line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#dbe3ec" strokeWidth="0.75" strokeDasharray="3 5" /><text x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">{`${Math.round(maximum * ratio)}${valueSuffix}`}</text></g>;
+            return <g key={ratio}><line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#dbe3ec" strokeWidth="0.75" strokeDasharray="3 5" /><text x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="12" fill="#475569">{`${Math.round(maximum * ratio)}${valueSuffix}`}</text></g>;
           })}
-          {labels.map((label, index) => index % labelStep === 0 || index === labels.length - 1 ? <text key={`${label}-${index}`} x={pointX(index)} y={height - 13} textAnchor="middle" fontSize="9" fill="#64748b">{label.slice(5)}</text> : null)}
+          {labels.map((label, index) => index % labelStep === 0 || index === labels.length - 1 ? <text key={`${label}-${index}`} x={pointX(index)} y={height - 13} textAnchor="middle" fontSize="11" fill="#475569">{label.slice(5)}</text> : null)}
           {series.map((entry, seriesIndex) => {
             const color = entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length];
             const points = entry.values.map((value, index) => `${pointX(index)},${pointY(value)}`).join(" ");
@@ -242,49 +242,51 @@ function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
           })}
         </svg>
       </div>
-      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">{series.map((entry, index) => <span key={entry.key ?? entry.label} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1"><i className="h-0.5 w-5 rounded-full" style={{ backgroundColor: entry.color ?? CHART_COLORS[index % CHART_COLORS.length] }} />{entry.label}</span>)}</div>
+      <div className="mt-3 flex flex-wrap gap-2 text-sm text-slate-700">{series.map((entry, index) => <span key={entry.key ?? entry.label} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5"><i className="h-0.5 w-5 rounded-full" style={{ backgroundColor: entry.color ?? CHART_COLORS[index % CHART_COLORS.length] }} />{entry.label}</span>)}</div>
     </div>
   );
 }
 
-function RangeGroupedBarChart({ title, labels, series, formatValue = formatAmount }) {
-  const width = Math.max(760, labels.length * 72);
-  const height = 280;
-  const padding = { left: 62, right: 18, top: 24, bottom: 52 };
+function RangeStackedBarChart({ title, labels, series, formatValue = formatAmount }) {
+  const width = Math.max(760, labels.length * 58);
+  const height = 320;
+  const padding = { left: 72, right: 18, top: 30, bottom: 58 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const maximum = Math.max(
-    ...series.flatMap((entry) => entry.values.map((value) => Number(value) || 0)),
+    ...labels.map((_, labelIndex) => series.reduce(
+      (total, entry) => total + Math.max(Number(entry.values[labelIndex]) || 0, 0),
+      0,
+    )),
     1,
   );
   const groupWidth = plotWidth / Math.max(labels.length, 1);
-  const barGap = 2;
-  const barWidth = Math.max(
-    Math.min((groupWidth * 0.78) / Math.max(series.length, 1) - barGap, 18),
-    2,
-  );
+  const barWidth = Math.max(Math.min(groupWidth * 0.62, 34), 8);
   const labelStep = Math.max(Math.ceil(labels.length / 12), 1);
 
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/70 p-5 shadow-sm">
-      <h4 className="flex items-center gap-2 text-sm font-semibold text-[#162338]"><i className="h-1.5 w-1.5 rounded-full bg-[#a67c2e]" />{title}</h4>
+      <h4 className="flex items-center gap-2 text-base font-semibold text-[#162338]"><i className="h-2 w-2 rounded-full bg-[#a67c2e]" />{title}</h4>
       <div className="mt-3 overflow-x-auto">
         <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[720px]" style={{ width: `${width}px`, maxWidth: "none" }} role="img" aria-label={title}>
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
             const y = padding.top + plotHeight - ratio * plotHeight;
-            return <g key={ratio}><line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#dbe3ec" strokeWidth="0.75" strokeDasharray="3 5" /><text x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">{Math.round(maximum * ratio).toLocaleString("en-US")}</text></g>;
+            return <g key={ratio}><line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#dbe3ec" strokeWidth="0.75" strokeDasharray="3 5" /><text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="12" fill="#475569">{Math.round(maximum * ratio).toLocaleString("en-US")}</text></g>;
           })}
           {labels.map((label, labelIndex) => {
-            const groupStart = padding.left + labelIndex * groupWidth + groupWidth * 0.11;
+            const x = padding.left + labelIndex * groupWidth + (groupWidth - barWidth) / 2;
+            let cumulativeValue = 0;
             return <g key={`${label}-${labelIndex}`}>{series.map((entry, seriesIndex) => {
               const value = Number(entry.values[labelIndex]) || 0;
               const barHeight = (value / maximum) * plotHeight;
-              return <rect key={entry.key ?? entry.label} x={groupStart + seriesIndex * (barWidth + barGap)} y={padding.top + plotHeight - barHeight} width={barWidth} height={barHeight} rx="1.5" fill={entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length]}><title>{`${label} · ${entry.label}: ${formatValue(value)}`}</title></rect>;
-            })}{labelIndex % labelStep === 0 || labelIndex === labels.length - 1 ? <text x={padding.left + labelIndex * groupWidth + groupWidth / 2} y={height - 17} textAnchor="middle" fontSize="9" fill="#64748b">{label.slice(5)}</text> : null}</g>;
+              const y = padding.top + plotHeight - ((cumulativeValue + value) / maximum) * plotHeight;
+              cumulativeValue += value;
+              return <rect key={entry.key ?? entry.label} x={x} y={y} width={barWidth} height={barHeight} rx="1" fill={entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length]}><title>{`${label} · ${entry.label}: ${formatValue(value)} · Total: ${formatValue(series.reduce((sum, item) => sum + (Number(item.values[labelIndex]) || 0), 0))}`}</title></rect>;
+            })}{labelIndex % labelStep === 0 || labelIndex === labels.length - 1 ? <text x={padding.left + labelIndex * groupWidth + groupWidth / 2} y={height - 19} textAnchor="middle" fontSize="11" fill="#475569">{label.slice(5)}</text> : null}</g>;
           })}
         </svg>
       </div>
-      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">{series.map((entry, index) => <span key={entry.key ?? entry.label} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1"><i className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: entry.color ?? CHART_COLORS[index % CHART_COLORS.length] }} />{entry.label}</span>)}</div>
+      <div className="mt-3 flex flex-wrap gap-2 text-sm text-slate-700">{series.map((entry, index) => <span key={entry.key ?? entry.label} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5"><i className="h-3 w-3 rounded-sm" style={{ backgroundColor: entry.color ?? CHART_COLORS[index % CHART_COLORS.length] }} />{entry.label}</span>)}</div>
     </div>
   );
 }
@@ -844,19 +846,21 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
   lines.push({
     type: "table",
     title: "Daily room availability and occupancy rate",
-    headers: ["Date", "Occupancy source", "Out of Order", "Available", "Occupied", "Rate", "60% target", "Vs target"],
-    widths: [1, 1.35, 1.25, 0.7, 0.7, 0.7, 0.75, 0.7],
+    headers: ["Date", "Source", "Total rooms", "OOO count", "OOO rooms", "Available", "Occupied", "Rate", "60% target", "Vs target"],
+    widths: [0.95, 1.05, 0.72, 0.65, 1.3, 0.7, 0.68, 0.68, 0.72, 0.72],
     rows: analysis.dailyOccupancy.map((day) => [
       day.operationalDateKey,
       formatOccupancySource(day.occupancySource),
-      `${day.outOfOrderRooms}: ${day.outOfOrderRoomNumbers.join(", ") || "Nil"}`,
+      String(analysis.hotelRoomCapacity),
+      String(day.outOfOrderRooms),
+      day.outOfOrderRoomNumbers.join(", ") || "Nil",
       String(day.availableRooms),
       String(day.occupiedRooms),
       formatPercentage(day.occupancyPercentage),
       String(day.targetOccupiedRooms),
       formatTargetVarianceShort(day.targetVarianceRooms),
     ]),
-    fontSize: 7,
+    fontSize: 9,
     chunkSize: 20,
   });
   lines.push({
@@ -943,8 +947,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
   }
   lines.push(sectionHeading("Revenue performance"));
   lines.push({
-    type: "groupedBarChart",
-    title: "Day-by-day revenue by operating outlet",
+    type: "stackedBarChart",
+    title: "Day-by-day stacked revenue by operating outlet",
     labels: analysis.dailyIncome.map((day) => day.operationalDateKey),
     series: nightDutyOutletConfig.map((outlet, index) => ({
       key: outlet.key,
@@ -956,8 +960,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
     spaceAfter: 8,
   });
   lines.push({
-    type: "groupedBarChart",
-    title: "Front Office versus food and beverage revenue by day",
+    type: "stackedBarChart",
+    title: "Daily Front Office and food & beverage revenue composition",
     labels: analysis.dailyDepartmentRevenue.map((day) => day.operationalDateKey),
     series: [
       { key: "front-office", label: "Front Office", color: "#162338", values: analysis.dailyDepartmentRevenue.map((day) => day.frontOfficeRevenue) },
@@ -1351,9 +1355,9 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
   `).join("");
   const dailyRoomAvailabilityRows = analysis.dailyOccupancy.length > 0
     ? analysis.dailyOccupancy.map((day) => `
-        <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatOccupancySource(day.occupancySource))}</td><td>${escapeHtml(`${day.outOfOrderRooms}: ${day.outOfOrderRoomNumbers.join(", ") || "Nil"}`)}</td><td>${day.availableRooms}</td><td>${day.occupiedRooms}</td><td>${escapeHtml(formatPercentage(day.occupancyPercentage))}</td><td>${day.targetOccupiedRooms}</td><td>${escapeHtml(formatTargetVarianceShort(day.targetVarianceRooms))}</td></tr>
+        <tr><td>${escapeHtml(day.operationalDateKey)}</td><td>${escapeHtml(formatOccupancySource(day.occupancySource))}</td><td>${analysis.hotelRoomCapacity}</td><td>${day.outOfOrderRooms}</td><td>${escapeHtml(day.outOfOrderRoomNumbers.join(", ") || "Nil")}</td><td>${day.availableRooms}</td><td>${day.occupiedRooms}</td><td>${escapeHtml(formatPercentage(day.occupancyPercentage))}</td><td>${day.targetOccupiedRooms}</td><td>${escapeHtml(formatTargetVarianceShort(day.targetVarianceRooms))}</td></tr>
       `).join("")
-    : "<tr><td colspan='8'>No Front Office or Night Duty occupancy totals in this range.</td></tr>";
+    : "<tr><td colspan='10'>No Front Office or Night Duty occupancy totals in this range.</td></tr>";
   const sectionRevenueRows = analysis.incomeByOutlet.map((outlet) => `
     <tr><td>${escapeHtml(outlet.label)}</td><td>${escapeHtml(formatAmount(outlet.grandRevenueTotal))}</td><td>${escapeHtml(formatAmount(outlet.actualRevenueTotal))}</td></tr>
   `).join("");
@@ -1428,20 +1432,19 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
     const legend = series.map((entry, index) => `<span><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(entry.label)} (${escapeHtml(formatter(entry.values[entry.values.length - 1] ?? 0))} latest)</span>`).join("");
     return `<section class="chart line-chart"><h3>${escapeHtml(title)}</h3><svg viewBox="0 0 ${width} ${height}"><rect x="0" y="0" width="${width}" height="${height}" rx="10" fill="#fbfcfe" />${grid}${paths}${axisLabels}</svg><div class="legend">${legend}</div></section>`;
   };
-  const groupedBarChartMarkup = (title, labels, series) => {
+  const stackedBarChartMarkup = (title, labels, series) => {
     const width = 720;
     const height = 220;
     const left = 48;
     const top = 18;
     const plotWidth = 650;
     const plotHeight = 156;
-    const maximum = Math.max(...series.flatMap((entry) => entry.values.map((value) => Number(value) || 0)), 1);
+    const maximum = Math.max(...labels.map((_, labelIndex) => series.reduce((total, entry) => total + Math.max(Number(entry.values[labelIndex]) || 0, 0), 0)), 1);
     const groupWidth = plotWidth / Math.max(labels.length, 1);
-    const gap = 1.5;
-    const barWidth = Math.max(Math.min((groupWidth * 0.78) / Math.max(series.length, 1) - gap, 16), 1.5);
+    const barWidth = Math.max(Math.min(groupWidth * 0.62, 30), 5);
     const labelStep = Math.max(Math.ceil(labels.length / 8), 1);
     const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => `<line x1="${left}" y1="${top + plotHeight - ratio * plotHeight}" x2="${left + plotWidth}" y2="${top + plotHeight - ratio * plotHeight}" stroke="#dbe3ec" stroke-width="0.7" stroke-dasharray="3 5" />`).join("");
-    const bars = labels.map((label, labelIndex) => { const groupStart = left + labelIndex * groupWidth + groupWidth * 0.11; return `${series.map((entry, seriesIndex) => { const value = Number(entry.values[labelIndex]) || 0; const barHeight = (value / maximum) * plotHeight; return `<rect x="${groupStart + seriesIndex * (barWidth + gap)}" y="${top + plotHeight - barHeight}" width="${barWidth}" height="${barHeight}" rx="1" fill="${entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length]}" />`; }).join("")}${labelIndex % labelStep === 0 || labelIndex === labels.length - 1 ? `<text x="${left + labelIndex * groupWidth + groupWidth / 2}" y="205" text-anchor="middle" font-size="9" fill="#64748b">${escapeHtml(label.slice(5))}</text>` : ""}`; }).join("");
+    const bars = labels.map((label, labelIndex) => { const x = left + labelIndex * groupWidth + (groupWidth - barWidth) / 2; let cumulative = 0; return `${series.map((entry, seriesIndex) => { const value = Math.max(Number(entry.values[labelIndex]) || 0, 0); const barHeight = (value / maximum) * plotHeight; const y = top + plotHeight - ((cumulative + value) / maximum) * plotHeight; cumulative += value; return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="1" fill="${entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length]}" />`; }).join("")}${labelIndex % labelStep === 0 || labelIndex === labels.length - 1 ? `<text x="${left + labelIndex * groupWidth + groupWidth / 2}" y="205" text-anchor="middle" font-size="10" fill="#475569">${escapeHtml(label.slice(5))}</text>` : ""}`; }).join("");
     const legend = series.map((entry, index) => `<span><i style="height:8px;width:8px;background:${entry.color ?? CHART_COLORS[index % CHART_COLORS.length]}"></i>${escapeHtml(entry.label)}</span>`).join("");
     return `<section class="chart line-chart"><h3>${escapeHtml(title)}</h3><svg viewBox="0 0 ${width} ${height}">${grid}${bars}</svg><div class="legend">${legend}</div></section>`;
   };
@@ -1494,11 +1497,11 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
       <style>
         @page { size: A4; margin: 10mm 11mm 12mm; }
         * { box-sizing: border-box; }
-        body { color: #263548; font-family: Calibri, Arial, sans-serif; font-size: 11px; line-height: 1.42; margin: 0; }
+        body { color: #263548; font-family: Calibri, Arial, sans-serif; font-size: 12.5px; line-height: 1.45; margin: 0; }
         h1 { border-bottom: 3px solid #a67c2e; color: #162338; font-size: 24px; letter-spacing: .25px; margin: 0 0 4px; padding-bottom: 6px; }
-        .report-subtitle { color: #64748b; font-size: 10px; margin: 0 0 7px; text-transform: uppercase; }
-        h2 { background: #edf2f7; border-left: 4px solid #a67c2e; color: #162338; font-size: 15px; margin: 13px 0 6px; padding: 4px 7px; }
-        h3 { color: #162338; font-size: 12px; margin: 7px 0 4px; }
+        .report-subtitle { color: #64748b; font-size: 11px; margin: 0 0 7px; text-transform: uppercase; }
+        h2 { background: #edf2f7; border-left: 4px solid #a67c2e; color: #162338; font-size: 17px; margin: 13px 0 6px; padding: 5px 8px; }
+        h3 { color: #162338; font-size: 14px; margin: 7px 0 4px; }
         p { margin: 4px 0; }
         .summary { background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #a67c2e; margin: 6px 0 9px; padding: 7px 8px; }
         .executive-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 7px 0; }
@@ -1511,18 +1514,18 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
         .revenue-kpi strong { color: #ffffff; }
         .analysis-section { margin: 7px 0; }
         section { break-inside: auto; }
-        table { border-collapse: collapse; font-size: 9.5px; margin: 4px 0 8px; width: 100%; }
+        table { border-collapse: collapse; font-size: 10.5px; margin: 4px 0 8px; width: 100%; }
         th { background: #162338; color: white; font-weight: 700; text-align: left; }
         th, td { border: 1px solid #aebdcb; padding: 3.5px 4px; vertical-align: top; }
         tbody tr:nth-child(even) td { background: #f4f7fa; }
         .chart { background: #fbfcfe; border: 1px solid #d4dde7; break-inside: avoid; margin: 7px 0; padding: 6px 8px; }
-        .bar-row { align-items: center; display: grid; font-size: 9px; gap: 6px; grid-template-columns: 105px 1fr 82px; margin: 4px 0; }
+        .bar-row { align-items: center; display: grid; font-size: 10.5px; gap: 6px; grid-template-columns: 115px 1fr 90px; margin: 4px 0; }
         .bar-track { background: #e2e8f0; border-radius: 999px; height: 6px; overflow: hidden; }
         .bar-track i { background: #a67c2e; border-radius: 999px; display: block; height: 100%; }
         .bar-track i.bar-1 { background: #162338; } .bar-track i.bar-2 { background: #0f766e; } .bar-track i.bar-3 { background: #7c3aed; }
         .bar-row strong small { color: #64748b; display: block; font-size: 9px; font-weight: 600; }
         .line-chart svg { display: block; height: auto; width: 100%; }
-        .legend { display: flex; flex-wrap: wrap; gap: 4px; font-size: 9px; }
+        .legend { display: flex; flex-wrap: wrap; gap: 5px; font-size: 10.5px; }
         .legend span { align-items: center; background: #fff; border: 1px solid #dbe3ec; display: inline-flex; gap: 4px; padding: 2px 5px; }
         .legend i { border-radius: 999px; display: inline-block; height: 2px; width: 16px; }
         ol { font-size: 9.5px; line-height: 1.4; margin: 4px 0; padding-left: 18px; }
@@ -1547,8 +1550,8 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
         <div class="kpi"><span>Available rooms</span><strong>${analysis.rangeAvailableRooms}</strong><small>${analysis.latestOutOfOrderRooms} Out of Order</small></div>
       </div>
       <div class="summary"><strong>Report coverage:</strong> ${analysis.reportCount} stored report(s) across ${analysis.selectedDayCount} selected day(s); ${analysis.occupancyReportCount} usable occupancy date(s) (${analysis.frontOfficeOccupancyReportCount} Front Office, ${analysis.nightDutyFallbackCount} Night Duty fallback), ${analysis.missingOccupancyDateKeys.length} excluded.<br><strong>Controlling room position:</strong> Out of Order — ${escapeHtml(analysis.latestOutOfOrderRoomNumbers.join(", ") || "Nil")}${analysis.latestOutOfOrderDateKey ? `; latest entry ${escapeHtml(formatDateKey(analysis.latestOutOfOrderDateKey))}` : ""}. Available rooms: ${analysis.hotelRoomCapacity} - ${analysis.latestOutOfOrderRooms} = ${analysis.rangeAvailableRooms}; unavailable room-nights: ${analysis.unavailableRoomNights}.<br><strong>Target position:</strong> ${analysis.targetOccupiedRooms} occupied rooms per reported night at 60%; ${escapeHtml(formatTargetVariance(analysis.occupancyTargetVarianceRoomNights, "room-night"))} across reported dates.</div>
-      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><h3>Daily room availability and occupancy rate</h3><table><thead><tr><th>Date</th><th>Occupancy source</th><th>Out of Order</th><th>Available</th><th>Occupied</th><th>Rate</th><th>60% target</th><th>Vs target</th></tr></thead><tbody>${dailyRoomAvailabilityRows}</tbody></table><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }, { label: "60% target", values: analysis.dailyOccupancy.map(() => analysis.targetOccupancyPercentage) }], formatPercentage)}${guestSourceRangeHtml}</section>
-      <section class="analysis-section"><h2>Revenue performance</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${groupedBarChartMarkup("Day-by-day revenue by operating outlet", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet, index) => ({ label: outlet.label, color: CHART_COLORS[index % CHART_COLORS.length], values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })))}${groupedBarChartMarkup("Front Office versus food and beverage revenue by day", analysis.dailyDepartmentRevenue.map((day) => day.operationalDateKey), [{ label: "Front Office", color: "#162338", values: analysis.dailyDepartmentRevenue.map((day) => day.frontOfficeRevenue) }, { label: "Food & Beverage", color: "#a67c2e", values: analysis.dailyDepartmentRevenue.map((day) => day.foodBeverageRevenue) }])}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
+      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><h3>Daily room availability and occupancy rate</h3><table><thead><tr><th>Date</th><th>Source</th><th>Total rooms</th><th>OOO count</th><th>OOO room numbers</th><th>Available</th><th>Occupied</th><th>Rate</th><th>60% target</th><th>Vs target</th></tr></thead><tbody>${dailyRoomAvailabilityRows}</tbody></table><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }, { label: "60% target", values: analysis.dailyOccupancy.map(() => analysis.targetOccupancyPercentage) }], formatPercentage)}${guestSourceRangeHtml}</section>
+      <section class="analysis-section"><h2>Revenue performance</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${stackedBarChartMarkup("Day-by-day stacked revenue by operating outlet", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet, index) => ({ label: outlet.label, color: CHART_COLORS[index % CHART_COLORS.length], values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })))}${stackedBarChartMarkup("Daily Front Office and food & beverage revenue composition", analysis.dailyDepartmentRevenue.map((day) => day.operationalDateKey), [{ label: "Front Office", color: "#162338", values: analysis.dailyDepartmentRevenue.map((day) => day.frontOfficeRevenue) }, { label: "Food & Beverage", color: "#a67c2e", values: analysis.dailyDepartmentRevenue.map((day) => day.foodBeverageRevenue) }])}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
       ${revenueTargetHtml}
       ${hospitalityAccountingHtml}
       <section class="analysis-section"><h2>Day-by-day revenue-source trends</h2><p>Each line represents a recorded revenue source within its operating outlet. Refunds remain outside revenue and are reported separately.</p>${revenueSourceChartsHtml}</section>
@@ -1777,7 +1780,7 @@ export default function NightDutyPanel({
 }) {
   const access = getNightDutyAccess(profile);
   const canEditTargets = canManageOperationsTargets(profile);
-  const [activeSection, setActiveSection] = useState("report");
+  const [activeSection, setActiveSection] = useState(() => isSuperAdmin(profile) ? "archive" : "report");
   const [occupancyByFloor, setOccupancyByFloor] = useState([]);
   const [occupancyQuery, setOccupancyQuery] = useState({ hasDiscrepancy: false, note: "" });
   const [incomeForm, setIncomeForm] = useState(buildDefaultNightDutyData().income);
@@ -2596,7 +2599,7 @@ export default function NightDutyPanel({
           ["duty", "On Duty"],
           ["utilities", "Utilities"],
           ["incidents", "Incidents & Sign-off"],
-          ["archive", "Reports by Date / Range"],
+          ["archive", "Reports & Management Analysis"],
         ].map(([key, label]) => (
           <SectionButton key={key} label={label} active={activeSection === key} onClick={() => setActiveSection(key)} />
         ))}
@@ -2768,6 +2771,11 @@ export default function NightDutyPanel({
 
       {activeSection === "archive" ? (
         <div className="mt-6 space-y-6">
+          <div className="rounded-2xl border border-[#a67c2e]/35 bg-gradient-to-r from-[#162338] to-[#243955] p-5 text-white shadow-sm">
+            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#e8cf98]">Management analysis</p>
+            <h3 className="mt-2 text-2xl font-semibold">Operations, occupancy and revenue performance</h3>
+            <p className="mt-2 max-w-4xl text-base leading-7 text-slate-200">Select a reporting period below to display room-nights, Out-of-Order controls, ADR, RevPAR, TRevPAR, F&amp;B performance, target comparisons, and stacked day-by-day revenue charts. Super Admin opens on this page by default.</p>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2"><div className="subpanel"><p className="metric-label">Last 7 days room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(weeklyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div><div className="subpanel"><p className="metric-label">{formatDateKey(`${currentMonth}-01`, { month: "long", year: "numeric" })} room revenue</p><p className="mt-3 text-3xl font-semibold text-[#162338]">{formatAmount(monthlyRoomRevenue)}</p><p className="mt-2 text-xs text-slate-500">Room revenue only; advance payments are excluded.</p></div></div>
           <div className="subpanel">
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_auto_auto_auto] xl:items-end"><label className="field"><span>Stored activity date</span><input type="date" value={selectedHistoryDate} max={latestNightDutyReportDateKey} onChange={(event) => selectHistoryDate(event.target.value)} /></label><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport || loadingHistoryInHouseReport} onClick={() => selectedHistoryReportData && printNightDutyReport(selectedHistoryReportData)}>Print selected report</button><button type="button" className="button-secondary" disabled={!selectedHistoryReportData || loadingHistoryReport || loadingHistoryInHouseReport} onClick={() => selectedHistoryReportData && handleDownload(selectedHistoryReportData)}>Download selected PDF</button><button type="button" className="button-secondary" disabled={!hasCloudflareArchiveConfig || !selectedHistoryDate || loadingArchiveRevisions} onClick={loadRevisionHistory}>{loadingArchiveRevisions ? "Loading history..." : "View D1 revisions"}</button></div>
@@ -2776,8 +2784,8 @@ export default function NightDutyPanel({
           </div>
           <div className="subpanel">
             <div>
-              <p className="metric-label">Full report by date range</p>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="text-lg font-semibold text-[#162338]">Full Operations Report and management analysis by date range</p>
+              <p className="mt-2 text-base leading-7 text-slate-600">
                 Choose up to 120 activity dates. The app retrieves every stored daily record in the range and combines all operational details into one printable or downloadable Operations Report.
               </p>
               <p className={`mt-2 text-xs font-semibold ${hasCloudflareArchiveConfig ? "text-emerald-700" : "text-amber-700"}`}>
@@ -2789,14 +2797,14 @@ export default function NightDutyPanel({
             <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto_auto] xl:items-end">
               <label className="field"><span>Start date</span><input type="date" value={rangeStartDate} max={latestNightDutyReportDateKey} onChange={(event) => { setRangeStartDate(event.target.value); setRangeReportLoaded(false); }} /></label>
               <label className="field"><span>End date</span><input type="date" value={rangeEndDate} max={latestNightDutyReportDateKey} onChange={(event) => { setRangeEndDate(event.target.value); setRangeReportLoaded(false); }} /></label>
-              <button type="button" className="button-primary" onClick={loadReportRange} disabled={loadingRangeReports}>{loadingRangeReports ? "Loading full report..." : "Pull full report"}</button>
+              <button type="button" className="button-primary" onClick={loadReportRange} disabled={loadingRangeReports}>{loadingRangeReports ? "Loading analysis..." : "Run management analysis"}</button>
               <button type="button" className="button-secondary" onClick={loadMonthToDateAnalysis} disabled={loadingRangeReports || !rangeEndDate}>{loadingRangeReports ? "Loading..." : "Get month-to-date analysis"}</button>
             </div>
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <h4 className="font-semibold text-[#162338]">Monthly room and food &amp; beverage revenue targets</h4>
-                  <p className="mt-1 text-xs text-slate-600">The monthly target is divided by the exact number of calendar days. Operations reports compare daily, weekly, selected-period, monthly and month-to-date performance.</p>
+                  <h4 className="text-lg font-semibold text-[#162338]">Monthly room and food &amp; beverage revenue targets</h4>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">The monthly target is divided by the exact number of calendar days. Operations reports compare daily, weekly, selected-period, monthly and month-to-date performance.</p>
                 </div>
                 {!canEditTargets ? <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-500">Read only</span> : null}
               </div>
@@ -2806,26 +2814,28 @@ export default function NightDutyPanel({
                 <label className="field"><span>Monthly F&amp;B revenue target</span><input type="number" min="0" step="0.01" value={targetForm.foodBeverageRevenueTarget} onChange={(event) => setTargetForm((current) => ({ ...current, foodBeverageRevenueTarget: event.target.value }))} disabled={!canEditTargets} /></label>
                 {canEditTargets ? <button type="button" className="button-primary" onClick={saveMonthlyTargets} disabled={savingTarget || !targetMonth}>{savingTarget ? "Saving..." : "Save monthly targets"}</button> : null}
               </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-sm">
-                <div className="rounded-xl border border-slate-200 bg-white p-3">Daily room target<br /><strong className="text-lg text-[#162338]">{formatAmount(dailyRoomTargetPreview)}</strong></div>
-                <div className="rounded-xl border border-slate-200 bg-white p-3">Daily F&amp;B target<br /><strong className="text-lg text-[#162338]">{formatAmount(dailyFoodBeverageTargetPreview)}</strong></div>
-                <div className="rounded-xl border border-slate-200 bg-white p-3">Calendar basis<br /><strong className="text-lg text-[#162338]">{targetDaysInMonth || 0} days</strong></div>
-                <div className="rounded-xl border border-slate-200 bg-white p-3">Last updated<br /><strong className="text-sm text-[#162338]">{selectedTarget.updatedByName || "Not set"}</strong></div>
+              <div className="mt-3 grid gap-3 text-base sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-4">Daily room target<br /><strong className="text-xl text-[#162338]">{formatAmount(dailyRoomTargetPreview)}</strong></div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4">Daily F&amp;B target<br /><strong className="text-xl text-[#162338]">{formatAmount(dailyFoodBeverageTargetPreview)}</strong></div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4">Calendar basis<br /><strong className="text-xl text-[#162338]">{targetDaysInMonth || 0} days</strong></div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4">Last updated<br /><strong className="text-base text-[#162338]">{selectedTarget.updatedByName || "Not set"}</strong></div>
               </div>
             </div>
+            {!rangeReportLoaded ? <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-base leading-7 text-blue-900">Choose a start and end date, then select <strong>Run management analysis</strong>. The stacked charts and management indicators will appear here.</div> : null}
             {rangeReportLoaded ? (
               <div className="mt-5">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Reports found<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.reportCount} / {rangeAnalytics.selectedDayCount}</strong></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Occupancy dates used<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.occupancyReportCount}</strong><br /><span className="text-xs text-slate-500">{rangeAnalytics.frontOfficeOccupancyReportCount} Front Office · {rangeAnalytics.nightDutyFallbackCount} Night Duty fallback</span></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Total In-house<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.totalInHouse}</strong><br /><span className="text-xs text-slate-500">occupied-room nights</span></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Average occupancy<br /><strong className="text-xl text-[#162338]">{formatAverage(rangeAnalytics.averageOccupancy)}</strong><br /><span className="text-xs text-slate-500">{formatPercentage(rangeAnalytics.averageOccupancyPercentage)} across recorded occupancy days</span></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Latest Out of Order<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.latestOutOfOrderRooms}</strong><br /><span className="text-xs text-slate-500">{rangeAnalytics.latestOutOfOrderDateKey ? `from ${formatDateKey(rangeAnalytics.latestOutOfOrderDateKey)}` : "no snapshot"}</span></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Available rooms<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.rangeAvailableRooms}</strong><br /><span className="text-xs text-slate-500">effective at range end</span></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">60% occupancy target<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.targetOccupiedRooms} rooms</strong><br /><span className="text-xs text-slate-500">per reported night</span></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Unavailable room-nights<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.unavailableRoomNights}</strong><br /><span className="text-xs text-slate-500">effective dated OOO positions</span></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Grand Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeAnalytics.grandRevenueTotal)}</strong></div>
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">Actual Revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeAnalytics.actualRevenueTotal)}</strong></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Reports found<br /><strong className="text-2xl text-[#162338]">{rangeAnalytics.reportCount} / {rangeAnalytics.selectedDayCount}</strong></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Occupancy dates used<br /><strong className="text-2xl text-[#162338]">{rangeAnalytics.occupancyReportCount}</strong><br /><span className="text-sm text-slate-500">{rangeAnalytics.frontOfficeOccupancyReportCount} Front Office · {rangeAnalytics.nightDutyFallbackCount} Night Duty fallback</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Occupied room-nights<br /><strong className="text-2xl text-[#162338]">{rangeAnalytics.totalInHouse}</strong><br /><span className="text-sm text-slate-500">total for the selected period</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Average occupancy<br /><strong className="text-2xl text-[#162338]">{formatAverage(rangeAnalytics.averageOccupancy)}</strong><br /><span className="text-sm text-slate-500">{formatPercentage(rangeAnalytics.averageOccupancyPercentage)} across recorded occupancy days</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Total hotel rooms<br /><strong className="text-2xl text-[#162338]">{rangeAnalytics.hotelRoomCapacity}</strong><br /><span className="text-sm text-slate-500">Room 105 event space excluded</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Latest Out of Order<br /><strong className="text-2xl text-[#162338]">{rangeAnalytics.latestOutOfOrderRooms}</strong><br /><span className="text-sm text-slate-500">{rangeAnalytics.latestOutOfOrderDateKey ? `from ${formatDateKey(rangeAnalytics.latestOutOfOrderDateKey)}` : "no snapshot"}</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Available rooms<br /><strong className="text-2xl text-[#162338]">{rangeAnalytics.rangeAvailableRooms}</strong><br /><span className="text-sm text-slate-500">effective at range end</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">60% occupancy target<br /><strong className="text-2xl text-[#162338]">{rangeAnalytics.targetOccupiedRooms} rooms</strong><br /><span className="text-sm text-slate-500">per reported night</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Unavailable room-nights<br /><strong className="text-2xl text-[#162338]">{rangeAnalytics.unavailableRoomNights}</strong><br /><span className="text-sm text-slate-500">effective dated OOO positions</span></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Grand Revenue<br /><strong className="text-2xl text-[#162338]">{formatAmount(rangeAnalytics.grandRevenueTotal)}</strong></div>
+                  <div className="rounded-xl bg-slate-50 p-4 text-base">Actual Revenue<br /><strong className="text-2xl text-[#162338]">{formatAmount(rangeAnalytics.actualRevenueTotal)}</strong></div>
                 </div>
                 {rangeAnalytics.missingDateKeys.length > 0 ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">No stored report for: {rangeAnalytics.missingDateKeys.join(", ")}. These dates are excluded from totals and averages.</p> : null}
                 {rangeAnalytics.missingOccupancyDateKeys.length > 0 ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">No Front Office or Night Duty occupancy total for: {rangeAnalytics.missingOccupancyDateKeys.join(", ")}. Only these dates are excluded from occupancy totals and rates.</p> : null}
@@ -2847,7 +2857,7 @@ export default function NightDutyPanel({
                 {rangeReportData.length > 0 ? (
                   <div className="mt-6 space-y-6">
                     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                      <table className="min-w-[1120px] text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Daily room availability and occupancy rate</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Occupancy source</th><th className="px-3 py-2">Out of Order rooms</th><th className="px-3 py-2">Available rooms</th><th className="px-3 py-2">Occupied</th><th className="px-3 py-2">Occupancy rate</th><th className="px-3 py-2">60% target</th><th className="px-3 py-2">Variance</th></tr></thead><tbody>{rangeAnalytics.dailyOccupancy.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{formatOccupancySource(day.occupancySource)}</td><td className="px-3 py-2">{day.outOfOrderRoomNumbers.join(", ") || "Nil"} <span className="text-slate-400">({day.outOfOrderRooms})</span></td><td className="px-3 py-2">{day.availableRooms}</td><td className="px-3 py-2">{day.occupiedRooms}</td><td className="px-3 py-2 font-semibold">{formatPercentage(day.occupancyPercentage)}</td><td className="px-3 py-2">{day.targetOccupiedRooms}</td><td className="px-3 py-2">{formatTargetVariance(day.targetVarianceRooms)}</td></tr>)}</tbody></table>
+                      <table className="min-w-[1420px] text-base"><caption className="p-4 text-left text-lg font-semibold text-[#162338]">Daily room availability and occupancy rate</caption><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-3 py-3">Date</th><th className="px-3 py-3">Occupancy source</th><th className="px-3 py-3">Total rooms</th><th className="px-3 py-3">Out of Order count</th><th className="px-3 py-3">Out of Order room numbers</th><th className="px-3 py-3">Available rooms</th><th className="px-3 py-3">Occupied</th><th className="px-3 py-3">Occupancy rate</th><th className="px-3 py-3">60% target</th><th className="px-3 py-3">Variance</th></tr></thead><tbody>{rangeAnalytics.dailyOccupancy.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-3 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-3">{formatOccupancySource(day.occupancySource)}</td><td className="px-3 py-3 font-semibold">{rangeAnalytics.hotelRoomCapacity}</td><td className="px-3 py-3 font-semibold text-amber-700">{day.outOfOrderRooms}</td><td className="px-3 py-3">{day.outOfOrderRoomNumbers.join(", ") || "Nil"}</td><td className="px-3 py-3">{day.availableRooms}</td><td className="px-3 py-3">{day.occupiedRooms}</td><td className="px-3 py-3 font-semibold">{formatPercentage(day.occupancyPercentage)}</td><td className="px-3 py-3">{day.targetOccupiedRooms}</td><td className="px-3 py-3">{formatTargetVariance(day.targetVarianceRooms)}</td></tr>)}</tbody></table>
                     </div>
                     <div className="grid gap-4 xl:grid-cols-2">
                       <RangeBarChart
@@ -2861,13 +2871,13 @@ export default function NightDutyPanel({
                       />
                     </div>
 
-                    <RangeGroupedBarChart
-                      title="Day-by-day revenue by operating outlet"
+                    <RangeStackedBarChart
+                      title="Day-by-day stacked revenue by operating outlet"
                       labels={rangeAnalytics.dailyIncome.map((day) => day.operationalDateKey)}
                       series={nightDutyOutletConfig.map((outlet, index) => ({ key: outlet.key, label: outlet.label, color: CHART_COLORS[index % CHART_COLORS.length], values: rangeAnalytics.dailyIncome.map((day) => day.outlets[outlet.key]) }))}
                     />
-                    <RangeGroupedBarChart
-                      title="Front Office versus food and beverage revenue by day"
+                    <RangeStackedBarChart
+                      title="Daily Front Office and food & beverage revenue composition"
                       labels={rangeAnalytics.dailyDepartmentRevenue.map((day) => day.operationalDateKey)}
                       series={[
                         { key: "front-office", label: "Front Office", color: "#162338", values: rangeAnalytics.dailyDepartmentRevenue.map((day) => day.frontOfficeRevenue) },
@@ -2875,22 +2885,22 @@ export default function NightDutyPanel({
                       ]}
                     />
 
-                    {rangeAnalytics.hasRevenueTargets ? <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
-                      <div><h4 className="font-semibold text-[#162338]">Revenue target performance</h4><p className="mt-1 text-xs text-slate-500">Actual results compared with the calendar-day share of each saved monthly target.</p></div>
-                      <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[900px] text-sm"><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Period</th><th className="px-3 py-2">Room actual / target</th><th className="px-3 py-2">Room attainment</th><th className="px-3 py-2">F&amp;B actual / target</th><th className="px-3 py-2">F&amp;B attainment</th></tr></thead><tbody>{[
+                    {rangeAnalytics.hasRevenueTargets ? <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+                      <div><h4 className="text-lg font-semibold text-[#162338]">Revenue target performance</h4><p className="mt-1 text-sm text-slate-600">Actual results compared with the calendar-day share of each saved monthly target.</p></div>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[900px] text-base"><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-3 py-3">Period</th><th className="px-3 py-3">Room actual / target</th><th className="px-3 py-3">Room attainment</th><th className="px-3 py-3">F&amp;B actual / target</th><th className="px-3 py-3">F&amp;B attainment</th></tr></thead><tbody>{[
                         { label: "Selected range", ...rangeAnalytics.selectedPeriodTargetAnalysis },
                         { label: "Latest month-to-date", ...rangeAnalytics.monthToDateTargetAnalysis },
                       ].map((entry) => <tr key={entry.label} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{entry.label}</td><td className="px-3 py-2">{formatAmount(entry.roomActual)} / {formatAmount(entry.roomTarget)}</td><td className="px-3 py-2 font-semibold">{formatPercentage(entry.roomAttainmentPercentage)}</td><td className="px-3 py-2">{formatAmount(entry.foodBeverageActual)} / {formatAmount(entry.foodBeverageTarget)}</td><td className="px-3 py-2 font-semibold">{formatPercentage(entry.foodBeverageAttainmentPercentage)}</td></tr>)}</tbody></table></div>
-                      <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[900px] text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Weekly target analysis</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Week starting</th><th className="px-3 py-2">Room actual / target</th><th className="px-3 py-2">Room attainment</th><th className="px-3 py-2">F&amp;B actual / target</th><th className="px-3 py-2">F&amp;B attainment</th></tr></thead><tbody>{rangeAnalytics.weeklyTargetAnalysis.map((week) => <tr key={week.key} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(week.key)}</td><td className="px-3 py-2">{formatAmount(week.roomActual)} / {formatAmount(week.roomTarget)}</td><td className="px-3 py-2">{formatPercentage(week.roomAttainmentPercentage)}</td><td className="px-3 py-2">{formatAmount(week.foodBeverageActual)} / {formatAmount(week.foodBeverageTarget)}</td><td className="px-3 py-2">{formatPercentage(week.foodBeverageAttainmentPercentage)}</td></tr>)}</tbody></table></div>
-                    </div> : null}
+                      <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[900px] text-base"><caption className="p-4 text-left text-lg font-semibold text-[#162338]">Weekly target analysis</caption><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-3 py-3">Week starting</th><th className="px-3 py-3">Room actual / target</th><th className="px-3 py-3">Room attainment</th><th className="px-3 py-3">F&amp;B actual / target</th><th className="px-3 py-3">F&amp;B attainment</th></tr></thead><tbody>{rangeAnalytics.weeklyTargetAnalysis.map((week) => <tr key={week.key} className="border-t border-slate-100"><td className="px-3 py-3 font-semibold">{formatDateKey(week.key)}</td><td className="px-3 py-3">{formatAmount(week.roomActual)} / {formatAmount(week.roomTarget)}</td><td className="px-3 py-3">{formatPercentage(week.roomAttainmentPercentage)}</td><td className="px-3 py-3">{formatAmount(week.foodBeverageActual)} / {formatAmount(week.foodBeverageTarget)}</td><td className="px-3 py-3">{formatPercentage(week.foodBeverageAttainmentPercentage)}</td></tr>)}</tbody></table></div>
+                    </div> : <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-base leading-7 text-amber-900"><strong>Revenue target analysis is ready.</strong> Save the room and F&amp;B monthly targets above for the selected month to activate daily, weekly, selected-range, month-to-date and monthly comparisons.</div>}
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4"><h4 className="font-semibold text-[#162338]">Hospitality accounting summary</h4><div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-sm">{[
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5"><h4 className="text-lg font-semibold text-[#162338]">Hospitality accounting summary</h4><p className="mt-1 text-sm text-slate-600">Executive room, revenue, occupancy and F&amp;B performance indicators for the selected period.</p><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-base">{[
                       ["ADR", rangeAnalytics.hospitalityAccounting.averageDailyRoomRate, "Room revenue per occupied room-night"],
                       ["RevPAR", rangeAnalytics.hospitalityAccounting.revPar, "Room revenue per available room-night"],
                       ["TRevPAR", rangeAnalytics.hospitalityAccounting.trevPar, "Actual revenue per available room-night"],
                       ["F&B per occupied room", rangeAnalytics.hospitalityAccounting.foodBeverageRevenuePerOccupiedRoom, "F&B capture per occupied room-night"],
                       ["Average daily actual revenue", rangeAnalytics.hospitalityAccounting.averageDailyActualRevenue, "Recorded report days"],
-                    ].map(([label, value, note]) => <div key={label} className="rounded-xl bg-slate-50 p-3">{label}<br /><strong className="text-lg text-[#162338]">{formatAmount(value)}</strong><br /><span className="text-xs text-slate-500">{note}</span></div>)}</div></div>
+                    ].map(([label, value, note]) => <div key={label} className="rounded-xl bg-slate-50 p-4">{label}<br /><strong className="text-xl text-[#162338]">{formatAmount(value)}</strong><br /><span className="text-sm text-slate-500">{note}</span></div>)}<div className="rounded-xl bg-slate-50 p-4">Occupied room-nights<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.totalInHouse}</strong><br /><span className="text-sm text-slate-500">Across reported occupancy days</span></div><div className="rounded-xl bg-slate-50 p-4">Combined F&amp;B revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeAnalytics.foodBeverageTotals.combined)}</strong><br /><span className="text-sm text-slate-500">Food and beverage total</span></div><div className="rounded-xl bg-slate-50 p-4">Report coverage<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.reportCount} / {rangeAnalytics.selectedDayCount}</strong><br /><span className="text-sm text-slate-500">Saved reports / selected dates</span></div></div></div>
 
                     <div className="grid gap-4 xl:grid-cols-2">
                       <RangeLineChart

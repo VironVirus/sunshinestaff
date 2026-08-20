@@ -249,6 +249,13 @@ export default function DashboardPage() {
     : tabOptions[0].key;
 
   useEffect(() => {
+    if (profile?.isSuperAdmin) {
+      setActiveTab("work");
+      setActiveWorkSection("night-duty");
+    }
+  }, [profile?.isSuperAdmin]);
+
+  useEffect(() => {
     if (!profile?.uid || typeof window === "undefined") {
       return;
     }

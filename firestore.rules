@@ -388,6 +388,41 @@ service cloud.firestore {
         request.resource.data.updatedByDepartment.size() <= 80;
     }
 
+    // Retains the Night Duty role, actor, key and size boundaries while allowing
+    // older and newer application payloads to coexist during schema migrations.
+    function validNightDutyCompatiblePayload() {
+      return request.resource.data.keys().hasOnly([
+          "storageMode", "operationalDateKey", "occupancyByFloor",
+          "frontOfficeOccupancyByFloor", "frontOfficeOccupancyReport",
+          "outOfOrderRoomNumbers", "occupancyQuery", "occupancyGuestMix",
+          "income", "onDutyStaff", "departmentNotes", "gasLevels",
+          "hotWaterTemperature", "generatorServices", "powerSupplies",
+          "waterSupplyCount", "guestIncident", "employeeIncident",
+          "nightDutySupervisorSignature", "utilitiesSnapshot", "eventsSnapshot",
+          "complaintsSnapshot", "updatedAt", "updatedAtIso", "updatedByUid",
+          "updatedByName", "updatedByDepartment"
+        ]) &&
+        request.resource.data.operationalDateKey is string &&
+        request.resource.data.operationalDateKey.size() == 10 &&
+        (!request.resource.data.keys().hasAny(["storageMode"]) ||
+          request.resource.data.storageMode == "d1-full") &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        request.resource.data.updatedByName is string &&
+        request.resource.data.updatedByName.size() <= 80 &&
+        matchesActorName(request.resource.data.updatedByName) &&
+        request.resource.data.updatedByDepartment is string &&
+        request.resource.data.updatedByDepartment.size() <= 80 &&
+        matchesActorDepartment(request.resource.data.updatedByDepartment) &&
+        optionalListWithin(request.resource.data, "occupancyByFloor", 8) &&
+        optionalListWithin(request.resource.data, "frontOfficeOccupancyByFloor", 8) &&
+        optionalListWithin(request.resource.data, "outOfOrderRoomNumbers", 94) &&
+        optionalListWithin(request.resource.data, "onDutyStaff", 200) &&
+        optionalListWithin(request.resource.data, "generatorServices", 20) &&
+        optionalListWithin(request.resource.data, "powerSupplies", 20) &&
+        optionalListWithin(request.resource.data, "eventsSnapshot", 100) &&
+        optionalListWithin(request.resource.data, "complaintsSnapshot", 100);
+    }
+
     function validInHouseReport() {
       return request.resource.data.keys().hasOnly([
           "storageMode", "operationalDateKey", "occupiedRooms", "occupiedRoomNumbers",
@@ -577,14 +612,16 @@ service cloud.firestore {
 
     match /portal/nightDuty {
       allow read: if isSuperAdmin() || isLead();
-      allow write: if validNightDutyReport() && (isSuperAdmin() || isNightDutyManager());
+      allow write: if validNightDutyCompatiblePayload() &&
+        (isSuperAdmin() || isNightDutyManager());
     }
 
     match /nightDutyReports/{reportDate} {
       allow read: if isSuperAdmin() || isLead();
       allow create, update: if (
           (request.resource.data.keys().hasAny(["storageMode"]) && validNightDutySummary()) ||
-          (!request.resource.data.keys().hasAny(["storageMode"]) && validNightDutyReport())
+          (!request.resource.data.keys().hasAny(["storageMode"]) && validNightDutyReport()) ||
+          validNightDutyCompatiblePayload()
         ) &&
         request.resource.data.operationalDateKey == reportDate &&
         (isSuperAdmin() || isNightDutyManager());
