@@ -36,6 +36,11 @@ service cloud.firestore {
       return belongsTo("front_office") && isLead();
     }
 
+    function isOperationsManager() {
+      return isLead() && userData().keys().hasAny(["staffTitle"]) &&
+        userData().staffTitle == "Operations Manager";
+    }
+
     function isHousekeepingManager() {
       return belongsTo("housekeeping") && isLead();
     }
@@ -289,6 +294,7 @@ service cloud.firestore {
     function validNightDutyReport() {
       return request.resource.data.keys().hasOnly([
           "operationalDateKey", "occupancyByFloor", "frontOfficeOccupancyByFloor",
+          "frontOfficeOccupancyReport", "outOfOrderRoomNumbers",
           "occupancyQuery", "occupancyGuestMix", "income", "onDutyStaff", "departmentNotes",
           "gasLevels", "hotWaterTemperature", "generatorServices",
           "powerSupplies", "waterSupplyCount",
@@ -302,6 +308,10 @@ service cloud.firestore {
         optionalListWithin(request.resource.data, "occupancyByFloor", 8) &&
         request.resource.data.frontOfficeOccupancyByFloor is list &&
         optionalListWithin(request.resource.data, "frontOfficeOccupancyByFloor", 8) &&
+        (request.resource.data.frontOfficeOccupancyReport == null ||
+          request.resource.data.frontOfficeOccupancyReport is map) &&
+        request.resource.data.outOfOrderRoomNumbers is list &&
+        optionalListWithin(request.resource.data, "outOfOrderRoomNumbers", 94) &&
         request.resource.data.occupancyQuery is map &&
         request.resource.data.occupancyGuestMix is map &&
         request.resource.data.income is map &&
@@ -342,6 +352,7 @@ service cloud.firestore {
     function validNightDutySummary() {
       return request.resource.data.keys().hasOnly([
           "storageMode", "operationalDateKey", "occupancyByFloor", "occupancyGuestMix", "income",
+          "frontOfficeOccupancyReport", "outOfOrderRoomNumbers",
           "gasLevels", "hotWaterTemperature", "waterSupplyCount",
           "nightDutySupervisorSignature", "updatedAt", "updatedAtIso",
           "updatedByUid", "updatedByName", "updatedByDepartment"
@@ -351,6 +362,10 @@ service cloud.firestore {
         request.resource.data.operationalDateKey.size() == 10 &&
         request.resource.data.occupancyByFloor is list &&
         optionalListWithin(request.resource.data, "occupancyByFloor", 8) &&
+        (request.resource.data.frontOfficeOccupancyReport == null ||
+          request.resource.data.frontOfficeOccupancyReport is map) &&
+        request.resource.data.outOfOrderRoomNumbers is list &&
+        optionalListWithin(request.resource.data, "outOfOrderRoomNumbers", 94) &&
         request.resource.data.occupancyGuestMix is map &&
         request.resource.data.income is map &&
         request.resource.data.gasLevels is map &&
@@ -507,6 +522,23 @@ service cloud.firestore {
         (isSuperAdmin() || frontOfficeCanCreate() || housekeepingCanCreateFrontOffice());
       allow update: if validFrontOfficeSize() &&
         (isSuperAdmin() || frontOfficeCanUpdate() || housekeepingCanUpdateFrontOffice());
+    }
+
+    match /portal/operationsTargets {
+      allow read: if isSuperAdmin() || isLead();
+      allow create, update: if (isSuperAdmin() || isFrontOfficeManager() || isOperationsManager()) &&
+        request.resource.data.keys().hasOnly([
+          "monthlyTargets", "updatedAt", "updatedAtIso", "updatedByUid", "updatedByName"
+        ]) &&
+        request.resource.data.monthlyTargets is map &&
+        request.resource.data.monthlyTargets.size() <= 120 &&
+        request.resource.data.updatedAt is timestamp &&
+        request.resource.data.updatedAtIso is string &&
+        request.resource.data.updatedAtIso.size() <= 40 &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        request.resource.data.updatedByName is string &&
+        request.resource.data.updatedByName.size() <= 80 &&
+        matchesActorName(request.resource.data.updatedByName);
     }
 
     match /portal/maintenance {

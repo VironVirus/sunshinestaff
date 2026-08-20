@@ -156,6 +156,7 @@ export default function DashboardPage() {
     storeInventory,
     nightDutyData,
     nightDutyReportHistory,
+    operationsTargets,
     siteContent,
     notifications,
     activityLogs,
@@ -183,6 +184,7 @@ export default function DashboardPage() {
     backupNightDutyReportsInRange,
     loadNightDutyReportRevisions,
     saveNightDutyData,
+    saveOperationsTarget,
     loadInHouseReport,
     loadInHouseReportsInRange,
     saveInHouseReport,
@@ -447,6 +449,7 @@ export default function DashboardPage() {
                   propertyStatus={propertyStatus}
                   nightDutyData={nightDutyData}
                   reportHistory={nightDutyReportHistory}
+                  operationsTargets={operationsTargets}
                   onLoadNightDutyReport={loadNightDutyReport}
                   onLoadNightDutyReportsInRange={loadNightDutyReportsInRange}
                   onBackupNightDutyReportsInRange={backupNightDutyReportsInRange}
@@ -454,6 +457,7 @@ export default function DashboardPage() {
                   onLoadInHouseReport={loadInHouseReport}
                   onLoadInHouseReportsInRange={loadInHouseReportsInRange}
                   onSaveNightDuty={saveNightDutyData}
+                  onSaveOperationsTarget={saveOperationsTarget}
                   onSaveUtilities={saveUtilities}
                 />
               ),

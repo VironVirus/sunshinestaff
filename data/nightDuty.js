@@ -120,6 +120,8 @@ export function buildDefaultNightDutyData(operationalDateKey = getNightDutyRepor
     operationalDateKey,
     occupancyByFloor: buildDefaultOccupancyByFloor(),
     frontOfficeOccupancyByFloor: buildDefaultOccupancyByFloor(),
+    frontOfficeOccupancyReport: null,
+    outOfOrderRoomNumbers: [],
     occupancyQuery: { hasDiscrepancy: false, note: "" },
     occupancyGuestMix: { walkInGuests: 0, corporateGuests: 0 },
     income: buildDefaultIncome(),
@@ -445,6 +447,30 @@ export function normalizeStoredNightDutyReport(payload = {}) {
     frontOfficeOccupancyByFloor: normalizeOccupancyByFloor(
       payload.frontOfficeOccupancyByFloor,
     ),
+    frontOfficeOccupancyReport:
+      payload.frontOfficeOccupancyReport && typeof payload.frontOfficeOccupancyReport === "object"
+        ? {
+            ...payload.frontOfficeOccupancyReport,
+            hasReport: payload.frontOfficeOccupancyReport.hasReport === true,
+            inHouse: normalizeCount(payload.frontOfficeOccupancyReport.inHouse, 94),
+            outOfOrderRoomNumbers: (Array.isArray(
+              payload.frontOfficeOccupancyReport.outOfOrderRoomNumbers,
+            ) ? payload.frontOfficeOccupancyReport.outOfOrderRoomNumbers : [])
+              .map((roomNumber) => normalizeShortText(roomNumber, 12))
+              .filter(Boolean)
+              .slice(0, 94),
+            availableRooms: normalizeCount(
+              payload.frontOfficeOccupancyReport.availableRooms,
+              94,
+            ),
+          }
+        : null,
+    outOfOrderRoomNumbers: (Array.isArray(payload.outOfOrderRoomNumbers)
+      ? payload.outOfOrderRoomNumbers
+      : [])
+      .map((roomNumber) => normalizeShortText(roomNumber, 12))
+      .filter(Boolean)
+      .slice(0, 94),
     occupancyQuery: {
       hasDiscrepancy: payload?.occupancyQuery?.hasDiscrepancy === true,
       note: normalizeShortText(payload?.occupancyQuery?.note, 1500),

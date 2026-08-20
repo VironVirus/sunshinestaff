@@ -31,6 +31,25 @@ function averageRecorded(values) {
   };
 }
 
+function getDaysInMonth(monthKey) {
+  const [year, month] = String(monthKey ?? "").split("-").map(Number);
+  return year > 0 && month >= 1 && month <= 12
+    ? new Date(Date.UTC(year, month, 0)).getUTCDate()
+    : 0;
+}
+
+function getWeekStartDateKey(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return dateKey;
+  const daysFromMonday = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - daysFromMonday);
+  return date.toISOString().slice(0, 10);
+}
+
+function safePercentage(actual, target) {
+  return Number(target) > 0 ? (Number(actual || 0) / Number(target)) * 100 : null;
+}
+
 function durationToMinutes(hours, minutes) {
   return Math.max(Math.trunc(Number(hours) || 0), 0) * 60 +
     Math.min(Math.max(Math.trunc(Number(minutes) || 0), 0), 59);
@@ -77,7 +96,11 @@ function getFrontOfficeGuestMix(report = {}) {
   };
 }
 
-export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []) {
+export function buildNightDutyRangeAnalytics(
+  reports = [],
+  expectedDateKeys = [],
+  monthlyTargets = {},
+) {
   const orderedReports = [...reports].sort((left, right) =>
     String(left.operationalDateKey ?? "").localeCompare(
       String(right.operationalDateKey ?? ""),
@@ -90,7 +113,7 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
   const embeddedFrontOfficeReports = Array.isArray(orderedReports[0]?.rangeOccupancyReports)
     ? orderedReports[0].rangeOccupancyReports
     : [];
-  const frontOfficeOccupancyReports = (embeddedFrontOfficeReports.length > 0
+  const allFrontOfficeOccupancyReports = (embeddedFrontOfficeReports.length > 0
     ? embeddedFrontOfficeReports
     : orderedReports.filter(
         (report) =>
@@ -100,6 +123,10 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
   ).sort((left, right) => String(left.operationalDateKey ?? "").localeCompare(
     String(right.operationalDateKey ?? ""),
   ));
+  const expectedDateSet = new Set(expectedDateKeys);
+  const frontOfficeOccupancyReports = allFrontOfficeOccupancyReports.filter((report) =>
+    expectedDateSet.size === 0 || expectedDateSet.has(report.operationalDateKey),
+  );
   const frontOfficeOccupancyByDate = new Map(
     frontOfficeOccupancyReports.map((report) => [report.operationalDateKey, {
       ...report,
@@ -115,7 +142,10 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
       frontOfficeOccupancyReport: {
         hasReport: true,
         inHouse: Number(report.occupancyTotal) || 0,
-        outOfOrderRoomNumbers: [],
+        outOfOrderRoomNumbers: normalizeRoomNumbers(
+          report.frontOfficeOccupancyReport?.outOfOrderRoomNumbers ??
+            report.outOfOrderRoomNumbers,
+        ),
       },
     }));
   const occupancyReports = [
@@ -130,11 +160,24 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
   const missingOccupancyDateKeys = expectedDateKeys.filter(
     (dateKey) => !occupancyReportDateKeys.has(dateKey),
   );
-  const latestOccupancyReport = frontOfficeOccupancyReports.at(-1) ?? null;
-  const latestOutOfOrderRoomNumbers = normalizeRoomNumbers(
-    latestOccupancyReport?.frontOfficeOccupancyReport?.outOfOrderRoomNumbers,
-  );
-  const latestOutOfOrderDateKey = latestOccupancyReport?.operationalDateKey ?? "";
+  const outOfOrderTimelineByDate = new Map();
+  [...allFrontOfficeOccupancyReports, ...orderedReports].forEach((report) => {
+    const dateKey = report?.operationalDateKey;
+    const rawRooms = report?.frontOfficeOccupancyReport?.outOfOrderRoomNumbers ??
+      report?.outOfOrderRoomNumbers;
+    if (!dateKey || !Array.isArray(rawRooms)) return;
+    outOfOrderTimelineByDate.set(dateKey, normalizeRoomNumbers(rawRooms));
+  });
+  const outOfOrderTimeline = [...outOfOrderTimelineByDate.entries()]
+    .map(([operationalDateKey, roomNumbers]) => ({ operationalDateKey, roomNumbers }))
+    .sort((left, right) => left.operationalDateKey.localeCompare(right.operationalDateKey));
+  const getOutOfOrderPosition = (dateKey) => [...outOfOrderTimeline]
+    .reverse()
+    .find((entry) => entry.operationalDateKey <= dateKey) ?? null;
+  const rangeEndDateKey = expectedDateKeys.at(-1) ?? occupancyReports.at(-1)?.operationalDateKey ?? "";
+  const latestOutOfOrderPosition = getOutOfOrderPosition(rangeEndDateKey);
+  const latestOutOfOrderRoomNumbers = latestOutOfOrderPosition?.roomNumbers ?? [];
+  const latestOutOfOrderDateKey = latestOutOfOrderPosition?.operationalDateKey ?? "";
   const latestOutOfOrderRooms = latestOutOfOrderRoomNumbers.length;
   const rangeAvailableRooms = Math.max(
     guestRoomCount - latestOutOfOrderRooms,
@@ -145,23 +188,31 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
   );
   const dailyOccupancy = occupancyReports.map((report) => {
     const snapshot = report.frontOfficeOccupancyReport;
+    const effectiveOutOfOrder = getOutOfOrderPosition(report.operationalDateKey);
+    const outOfOrderRoomNumbers = effectiveOutOfOrder?.roomNumbers ?? [];
+    const outOfOrderRooms = outOfOrderRoomNumbers.length;
+    const availableRooms = Math.max(guestRoomCount - outOfOrderRooms, 0);
+    const dailyTargetOccupiedRooms = Math.ceil(
+      availableRooms * (TARGET_OCCUPANCY_PERCENTAGE / 100),
+    );
     const occupiedRooms = Math.min(
       Math.max(Number(snapshot.inHouse) || 0, 0),
-      rangeAvailableRooms,
+      availableRooms,
     );
 
     return {
       operationalDateKey: report.operationalDateKey,
       occupancySource: report.occupancySource ?? "front_office",
       occupiedRooms,
-      outOfOrderRoomNumbers: latestOutOfOrderRoomNumbers,
-      outOfOrderRooms: latestOutOfOrderRooms,
-      availableRooms: rangeAvailableRooms,
+      outOfOrderRoomNumbers,
+      outOfOrderRooms,
+      outOfOrderEffectiveDateKey: effectiveOutOfOrder?.operationalDateKey ?? "",
+      availableRooms,
       targetOccupancyPercentage: TARGET_OCCUPANCY_PERCENTAGE,
-      targetOccupiedRooms,
-      targetVarianceRooms: occupiedRooms - targetOccupiedRooms,
-      occupancyPercentage: rangeAvailableRooms > 0
-        ? (occupiedRooms / rangeAvailableRooms) * 100
+      targetOccupiedRooms: dailyTargetOccupiedRooms,
+      targetVarianceRooms: occupiedRooms - dailyTargetOccupiedRooms,
+      occupancyPercentage: availableRooms > 0
+        ? (occupiedRooms / availableRooms) * 100
         : 0,
     };
   });
@@ -265,6 +316,9 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     beverage: sum(dailyFoodBeverage.map((day) => day.beverage)),
     combined: sum(dailyFoodBeverage.map((day) => day.combined)),
   };
+  const foodBeverageReportedDays = dailyFoodBeverage.filter((day) => day.combined > 0);
+  const bestFoodBeverageDay = [...foodBeverageReportedDays]
+    .sort((left, right) => right.combined - left.combined)[0] ?? null;
   const dailyBrunch = orderedReports
     .map((report) => ({
       operationalDateKey: report.operationalDateKey,
@@ -342,6 +396,124 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
       : 0,
   }));
 
+  const fnbOutletKeys = new Set(["kennysBar", "tropicsBar", "restaurant"]);
+  const dailyDepartmentRevenue = orderedReports.map((report) => {
+    const frontOfficeRevenue = Number(
+      report.incomeSections?.find((section) => section.key === "frontOffice")
+        ?.actualRevenueTotal,
+    ) || 0;
+    const foodBeverageRevenue = sum(
+      (report.incomeSections ?? [])
+        .filter((section) => fnbOutletKeys.has(section.key))
+        .map((section) => section.actualRevenueTotal),
+    );
+    return {
+      operationalDateKey: report.operationalDateKey,
+      frontOfficeRevenue,
+      foodBeverageRevenue,
+    };
+  });
+
+  const reportsByDate = new Map(
+    orderedReports.map((report) => [report.operationalDateKey, report]),
+  );
+  const targetDateKeys = expectedDateKeys.length > 0
+    ? expectedDateKeys
+    : orderedReports.map((report) => report.operationalDateKey);
+  const dailyTargetAnalysis = targetDateKeys.map((dateKey) => {
+    const report = reportsByDate.get(dateKey);
+    const monthKey = dateKey.slice(0, 7);
+    const target = monthlyTargets?.[monthKey] ?? {};
+    const daysInMonth = getDaysInMonth(monthKey);
+    const roomTarget = daysInMonth > 0
+      ? (Number(target.roomRevenueTarget) || 0) / daysInMonth
+      : 0;
+    const foodBeverageTarget = daysInMonth > 0
+      ? (Number(target.foodBeverageRevenueTarget) || 0) / daysInMonth
+      : 0;
+    const roomActual = Number(report?.income?.frontOffice?.roomRevenue) || 0;
+    const departmentRevenue = dailyDepartmentRevenue.find(
+      (day) => day.operationalDateKey === dateKey,
+    );
+    const foodBeverageActual = departmentRevenue?.foodBeverageRevenue ?? 0;
+    return {
+      operationalDateKey: dateKey,
+      roomActual,
+      roomTarget,
+      roomVariance: roomActual - roomTarget,
+      roomAttainmentPercentage: safePercentage(roomActual, roomTarget),
+      foodBeverageActual,
+      foodBeverageTarget,
+      foodBeverageVariance: foodBeverageActual - foodBeverageTarget,
+      foodBeverageAttainmentPercentage: safePercentage(
+        foodBeverageActual,
+        foodBeverageTarget,
+      ),
+    };
+  });
+  const aggregateTargets = (entries) => ({
+    roomActual: sum(entries.map((entry) => entry.roomActual)),
+    roomTarget: sum(entries.map((entry) => entry.roomTarget)),
+    foodBeverageActual: sum(entries.map((entry) => entry.foodBeverageActual)),
+    foodBeverageTarget: sum(entries.map((entry) => entry.foodBeverageTarget)),
+  });
+  const buildTargetPosition = (key, entries) => {
+    const totals = aggregateTargets(entries);
+    return {
+      key,
+      ...totals,
+      roomVariance: totals.roomActual - totals.roomTarget,
+      roomAttainmentPercentage: safePercentage(totals.roomActual, totals.roomTarget),
+      foodBeverageVariance: totals.foodBeverageActual - totals.foodBeverageTarget,
+      foodBeverageAttainmentPercentage: safePercentage(
+        totals.foodBeverageActual,
+        totals.foodBeverageTarget,
+      ),
+    };
+  };
+  const weeklyTargetGroups = new Map();
+  const monthlyTargetGroups = new Map();
+  dailyTargetAnalysis.forEach((entry) => {
+    const weekKey = getWeekStartDateKey(entry.operationalDateKey);
+    weeklyTargetGroups.set(weekKey, [...(weeklyTargetGroups.get(weekKey) ?? []), entry]);
+    const monthKey = entry.operationalDateKey.slice(0, 7);
+    monthlyTargetGroups.set(monthKey, [...(monthlyTargetGroups.get(monthKey) ?? []), entry]);
+  });
+  const weeklyTargetAnalysis = [...weeklyTargetGroups.entries()].map(([key, entries]) =>
+    buildTargetPosition(key, entries),
+  );
+  const monthlyTargetAnalysis = [...monthlyTargetGroups.entries()].map(([key, entries]) =>
+    buildTargetPosition(key, entries),
+  );
+  const selectedPeriodTargetAnalysis = buildTargetPosition("selected-period", dailyTargetAnalysis);
+  const latestMonthKey = (expectedDateKeys.at(-1) ??
+    orderedReports.at(-1)?.operationalDateKey ?? "").slice(0, 7);
+  const monthToDateTargetAnalysis = monthlyTargetAnalysis.find(
+    (entry) => entry.key === latestMonthKey,
+  ) ?? buildTargetPosition(latestMonthKey, []);
+
+  const totalAvailableRoomNights = sum(dailyOccupancy.map((day) => day.availableRooms));
+  const roomRevenueTotal = sum(dailyIncome.map((day) => day.roomRevenue));
+  const hospitalityAccounting = {
+    averageDailyRoomRate: totalInHouse > 0 ? roomRevenueTotal / totalInHouse : 0,
+    revPar: totalAvailableRoomNights > 0 ? roomRevenueTotal / totalAvailableRoomNights : 0,
+    trevPar: totalAvailableRoomNights > 0 ? actualRevenueTotal / totalAvailableRoomNights : 0,
+    foodBeverageRevenuePerOccupiedRoom:
+      totalInHouse > 0 ? foodBeverageTotals.combined / totalInHouse : 0,
+    averageDailyActualRevenue:
+      orderedReports.length > 0 ? actualRevenueTotal / orderedReports.length : 0,
+    roomRevenueSharePercentage:
+      actualRevenueTotal > 0 ? (roomRevenueTotal / actualRevenueTotal) * 100 : 0,
+    foodBeverageRevenueSharePercentage:
+      actualRevenueTotal > 0
+        ? (sum(dailyDepartmentRevenue.map((day) => day.foodBeverageRevenue)) /
+          actualRevenueTotal) * 100
+        : 0,
+    reportCoveragePercentage:
+      expectedDateKeys.length > 0 ? (orderedReports.length / expectedDateKeys.length) * 100 : 0,
+    occupiedRoomNights: totalInHouse,
+  };
+
   return {
     reportCount: orderedReports.length,
     selectedDayCount: expectedDateKeys.length,
@@ -358,12 +530,16 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     rangeAvailableRooms,
     targetOccupancyPercentage: TARGET_OCCUPANCY_PERCENTAGE,
     targetOccupiedRooms,
-    targetOccupiedRoomNights: targetOccupiedRooms * occupancyReports.length,
+    targetOccupiedRoomNights: sum(dailyOccupancy.map((day) => day.targetOccupiedRooms)),
     occupancyTargetVarianceRoomNights:
-      totalInHouse - targetOccupiedRooms * occupancyReports.length,
-    unavailableRoomNights: latestOutOfOrderRooms * expectedDateKeys.length,
+      totalInHouse - sum(dailyOccupancy.map((day) => day.targetOccupiedRooms)),
+    unavailableRoomNights: sum(expectedDateKeys.map(
+      (dateKey) => getOutOfOrderPosition(dateKey)?.roomNumbers?.length ?? 0,
+    )),
     totalInventoryRoomNights: guestRoomCount * expectedDateKeys.length,
-    availableRoomNights: rangeAvailableRooms * expectedDateKeys.length,
+    availableRoomNights: sum(expectedDateKeys.map((dateKey) =>
+      Math.max(guestRoomCount - (getOutOfOrderPosition(dateKey)?.roomNumbers?.length ?? 0), 0),
+    )),
     dailyOccupancy,
     averageOccupancy: occupancyReports.length > 0
       ? totalInHouse / occupancyReports.length
@@ -372,7 +548,9 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
       ? sum(dailyOccupancy.map((day) => day.occupancyPercentage)) / dailyOccupancy.length
       : 0,
     availableRooms: rangeAvailableRooms,
-    totalOutOfOrderRoomNights: latestOutOfOrderRooms * expectedDateKeys.length,
+    totalOutOfOrderRoomNights: sum(expectedDateKeys.map(
+      (dateKey) => getOutOfOrderPosition(dateKey)?.roomNumbers?.length ?? 0,
+    )),
     highestOccupancy: occupancyTotals.length > 0 ? Math.max(...occupancyTotals) : 0,
     lowestOccupancy: occupancyTotals.length > 0 ? Math.min(...occupancyTotals) : 0,
     occupancyByFloor,
@@ -381,7 +559,34 @@ export function buildNightDutyRangeAnalytics(reports = [], expectedDateKeys = []
     revenueSources,
     dailyRevenueSources,
     foodBeverageTotals,
+    foodBeverageSummary: {
+      ...foodBeverageTotals,
+      reportedDays: foodBeverageReportedDays.length,
+      averagePerReportedDay: foodBeverageReportedDays.length > 0
+        ? foodBeverageTotals.combined / foodBeverageReportedDays.length
+        : 0,
+      bestDay: bestFoodBeverageDay,
+      foodSharePercentage: foodBeverageTotals.combined > 0
+        ? (foodBeverageTotals.food / foodBeverageTotals.combined) * 100
+        : 0,
+      beverageSharePercentage: foodBeverageTotals.combined > 0
+        ? (foodBeverageTotals.beverage / foodBeverageTotals.combined) * 100
+        : 0,
+    },
     dailyFoodBeverage,
+    dailyDepartmentRevenue,
+    dailyTargetAnalysis,
+    weeklyTargetAnalysis,
+    monthlyTargetAnalysis,
+    selectedPeriodTargetAnalysis,
+    monthToDateTargetAnalysis,
+    hasRevenueTargets: [...new Set(targetDateKeys.map((dateKey) => dateKey.slice(0, 7)))]
+      .some((monthKey) => {
+        const target = monthlyTargets?.[monthKey];
+        return Number(target?.roomRevenueTarget) > 0 ||
+          Number(target?.foodBeverageRevenueTarget) > 0;
+      }),
+    hospitalityAccounting,
     dailyBrunch,
     totalBrunchRevenue: sum(dailyBrunch.map((day) => day.revenue)),
     brunchAttendanceTarget: BRUNCH_ATTENDANCE_TARGET,

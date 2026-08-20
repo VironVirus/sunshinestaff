@@ -69,6 +69,7 @@ import {
   getPropertyAccess,
   getRoomPropertyStatusAccess,
   getStoreAccess,
+  canManageOperationsTargets,
   isSuperAdmin,
 } from "@/lib/roles";
 
@@ -82,6 +83,7 @@ const defaultPortalState = {
   storeInventory: mergeStoreInventory(defaultStoreInventory),
   nightDutyData: mergeNightDutyData(defaultNightDutyData),
   nightDutyReportHistory: [],
+  operationsTargets: { monthlyTargets: {} },
   siteContent: defaultSiteContent,
   notifications: [],
   activityLogs: [],
@@ -412,6 +414,7 @@ export function usePortalData(profile) {
   const roomPropertyStatusAccess = getRoomPropertyStatusAccess(profile);
   const storeAccess = getStoreAccess(profile);
   const nightDutyAccess = getNightDutyAccess(profile);
+  const canEditOperationsTargets = canManageOperationsTargets(profile);
   const auditLogAccess = getAuditLogAccess(profile);
   const profileIsSuperAdmin = isSuperAdmin(profile);
   const canLoadAllStaff = managerWorkspaceAccess.canManageStaff || auditLogAccess.canViewPanel;
@@ -453,7 +456,7 @@ export function usePortalData(profile) {
       (managerWorkspaceAccess.canViewEvents ? 1 : 0) +
       (housekeepingReportAccess.canViewPanel ? 1 : 0) +
       (storeAccess.canViewPanel ? 1 : 0) +
-      (nightDutyAccess.canViewPanel ? 2 : 0) +
+      (nightDutyAccess.canViewPanel ? 3 : 0) +
       (auditLogAccess.canViewPanel ? 1 : 0);
 
     const markResolved = () => {
@@ -672,6 +675,25 @@ export function usePortalData(profile) {
         : []),
       ...(nightDutyAccess.canViewPanel
         ? [
+            onSnapshot(
+              doc(db, "portal", "operationsTargets"),
+              (snapshot) => {
+                const monthlyTargets = snapshot.exists() &&
+                  snapshot.data()?.monthlyTargets &&
+                  typeof snapshot.data().monthlyTargets === "object"
+                  ? snapshot.data().monthlyTargets
+                  : {};
+                setPortalState((current) => ({
+                  ...current,
+                  operationsTargets: { monthlyTargets },
+                }));
+                markResolved();
+              },
+              (snapshotError) => {
+                setError(snapshotError.message);
+                markResolved();
+              },
+            ),
             onSnapshot(
               doc(db, "portal", "nightDuty"),
               (snapshot) => {
@@ -1421,6 +1443,8 @@ export function usePortalData(profile) {
       operationalDateKey: nextNightDutyData.operationalDateKey,
       occupancyByFloor: nextNightDutyData.occupancyByFloor,
       frontOfficeOccupancyByFloor: nextNightDutyData.frontOfficeOccupancyByFloor,
+      frontOfficeOccupancyReport: nextNightDutyData.frontOfficeOccupancyReport,
+      outOfOrderRoomNumbers: nextNightDutyData.outOfOrderRoomNumbers,
       occupancyQuery: nextNightDutyData.occupancyQuery,
       occupancyGuestMix: nextNightDutyData.occupancyGuestMix,
       income: nextNightDutyData.income,
@@ -1468,6 +1492,8 @@ export function usePortalData(profile) {
           storageMode: "d1-full",
           operationalDateKey: persistedReport.operationalDateKey,
           occupancyByFloor: persistedReport.occupancyByFloor,
+          frontOfficeOccupancyReport: persistedReport.frontOfficeOccupancyReport,
+          outOfOrderRoomNumbers: persistedReport.outOfOrderRoomNumbers,
           occupancyGuestMix: persistedReport.occupancyGuestMix,
           income: persistedReport.income,
           gasLevels: persistedReport.gasLevels,
@@ -1573,6 +1599,58 @@ export function usePortalData(profile) {
     }
 
     return { warning };
+  }
+
+  async function saveOperationsTarget(monthKey, values = {}) {
+    if (!db) {
+      throw new Error("Firebase is not configured yet. Add your NEXT_PUBLIC_FIREBASE variables first.");
+    }
+    if (!canEditOperationsTargets) {
+      throw new Error("Only the Operations Manager, Front Office Manager, or Super Admin can change revenue targets.");
+    }
+    if (!/^\d{4}-\d{2}$/.test(monthKey ?? "")) {
+      throw new Error("Select a valid target month.");
+    }
+
+    const normalizeTarget = (value) => {
+      const amount = Number(value);
+      return Number.isFinite(amount) ? Math.min(Math.max(amount, 0), 1000000000000) : 0;
+    };
+    const target = {
+      monthKey,
+      roomRevenueTarget: normalizeTarget(values.roomRevenueTarget),
+      foodBeverageRevenueTarget: normalizeTarget(values.foodBeverageRevenueTarget),
+      updatedAtIso: new Date().toISOString(),
+      updatedByUid: profile?.uid ?? "",
+      updatedByName: profile?.fullName ?? "",
+    };
+    const targetRef = doc(db, "portal", "operationsTargets");
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(targetRef);
+      const existingTargets = snapshot.exists() &&
+        snapshot.data()?.monthlyTargets &&
+        typeof snapshot.data().monthlyTargets === "object"
+        ? snapshot.data().monthlyTargets
+        : {};
+      const nextMonthlyTargets = {
+        ...existingTargets,
+        [monthKey]: target,
+      };
+      const oldestMonthKeys = Object.keys(nextMonthlyTargets)
+        .sort()
+        .slice(0, Math.max(Object.keys(nextMonthlyTargets).length - 120, 0));
+      oldestMonthKeys.forEach((oldestMonthKey) => delete nextMonthlyTargets[oldestMonthKey]);
+
+      transaction.set(targetRef, {
+        monthlyTargets: nextMonthlyTargets,
+        updatedAt: serverTimestamp(),
+        updatedAtIso: target.updatedAtIso,
+        updatedByUid: target.updatedByUid,
+        updatedByName: target.updatedByName,
+      });
+    });
+
+    return target;
   }
 
   const fetchFirestoreNightDutyRange = useCallback(async (rangeStart, rangeEnd) => {
@@ -1902,13 +1980,21 @@ export function usePortalData(profile) {
       }
     }
 
-    const snapshot = await getDocs(query(
-      collection(db, "inHouseReports"),
-      where("operationalDateKey", ">=", rangeStart),
-      where("operationalDateKey", "<=", rangeEnd),
-      orderBy("operationalDateKey", "asc"),
-      limit(MAX_REPORT_HISTORY_DAYS),
-    ));
+    const [snapshot, priorSnapshot] = await Promise.all([
+      getDocs(query(
+        collection(db, "inHouseReports"),
+        where("operationalDateKey", ">=", rangeStart),
+        where("operationalDateKey", "<=", rangeEnd),
+        orderBy("operationalDateKey", "asc"),
+        limit(MAX_REPORT_HISTORY_DAYS),
+      )),
+      getDocs(query(
+        collection(db, "inHouseReports"),
+        where("operationalDateKey", "<", rangeStart),
+        orderBy("operationalDateKey", "desc"),
+        limit(1),
+      )),
+    ]);
     const reportsByDate = new Map(
       snapshot.docs.map((reportDocument) => {
         const payload = reportDocument.data();
@@ -1928,6 +2014,14 @@ export function usePortalData(profile) {
       if (!firestoreEntry || (!firestoreEntry.complete && archivedEntry.complete)) {
         reportsByDate.set(dateKey, archivedEntry);
       }
+    });
+
+    priorSnapshot.docs.forEach((reportDocument) => {
+      const payload = reportDocument.data();
+      reportsByDate.set(reportDocument.id, {
+        complete: hasCompleteClassifiedRoomData(payload),
+        report: normalizeStoredInHouseReport(payload, reportDocument.id),
+      });
     });
 
     return [...reportsByDate.values()].map((entry) => entry.report).sort((left, right) =>
@@ -2232,6 +2326,7 @@ export function usePortalData(profile) {
     backupNightDutyReportsInRange,
     loadNightDutyReportRevisions,
     saveNightDutyData,
+    saveOperationsTarget,
     loadInHouseReport,
     loadInHouseReportsInRange,
     saveInHouseReport,
