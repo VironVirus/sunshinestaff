@@ -163,7 +163,7 @@ function ActionButton({ label, onClick, tone = "default" }) {
   );
 }
 
-function RangeBarChart({ title, items, formatValue = (value) => String(value), showShare = true }) {
+function RangeBarChart({ title, items, formatValue = (value) => String(value), showShare = true, xAxisLabel = "Value", yAxisLabel = "Category" }) {
   const maximum = Math.max(...items.map((item) => Number(item.value) || 0), 1);
   const total = items.reduce((sum, item) => sum + Math.max(Number(item.value) || 0, 0), 0);
 
@@ -189,6 +189,7 @@ function RangeBarChart({ title, items, formatValue = (value) => String(value), s
           );
         })}
       </div>
+      <p className="mt-4 text-center text-sm font-medium text-slate-500">X-axis: {xAxisLabel} · Y-axis: {yAxisLabel}</p>
     </div>
   );
 }
@@ -204,11 +205,16 @@ const CHART_COLORS = [
   "#4d7c0f",
 ];
 
-function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
+function formatChartAxisLabel(value) {
+  const label = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(label) ? label.slice(5) : label;
+}
+
+function RangeLineChart({ title, labels, series, valueSuffix = "", xAxisLabel = "Activity date", yAxisLabel = "Value" }) {
   const chartId = useId().replaceAll(":", "");
   const width = 760;
-  const height = 250;
-  const padding = { left: 58, right: 22, top: 24, bottom: 42 };
+  const height = 290;
+  const padding = { left: 72, right: 22, top: 24, bottom: 62 };
   const values = series.flatMap((entry) => entry.values.map((value) => Number(value) || 0));
   const maximum = Math.max(...values, 1);
   const plotWidth = width - padding.left - padding.right;
@@ -232,7 +238,7 @@ function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
             const y = padding.top + plotHeight - ratio * plotHeight;
             return <g key={ratio}><line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#dbe3ec" strokeWidth="0.75" strokeDasharray="3 5" /><text x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="12" fill="#475569">{`${Math.round(maximum * ratio)}${valueSuffix}`}</text></g>;
           })}
-          {labels.map((label, index) => index % labelStep === 0 || index === labels.length - 1 ? <text key={`${label}-${index}`} x={pointX(index)} y={height - 13} textAnchor="middle" fontSize="11" fill="#475569">{label.slice(5)}</text> : null)}
+          {labels.map((label, index) => index % labelStep === 0 || index === labels.length - 1 ? <text key={`${label}-${index}`} x={pointX(index)} y={height - 13} textAnchor="middle" fontSize="11" fill="#475569">{formatChartAxisLabel(label)}</text> : null)}
           {series.map((entry, seriesIndex) => {
             const color = entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length];
             const points = entry.values.map((value, index) => `${pointX(index)},${pointY(value)}`).join(" ");
@@ -240,6 +246,8 @@ function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
             const areaPoints = `${pointX(0)},${baseline} ${points} ${pointX(Math.max(entry.values.length - 1, 0))},${baseline}`;
             return <g key={entry.key ?? entry.label}>{seriesIndex === 0 && entry.values.length > 0 ? <polygon points={areaPoints} fill={`url(#${chartId}-fill-${seriesIndex})`} /> : null}<polyline points={points} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" />{entry.values.map((value, index) => <circle key={`${entry.key}-${index}`} cx={pointX(index)} cy={pointY(value)} r="2.5" fill="white" stroke={color} strokeWidth="1.35"><title>{`${labels[index]} · ${entry.label}: ${value}${valueSuffix}`}</title></circle>)}</g>;
           })}
+          <text x={width / 2} y={height - 5} textAnchor="middle" fontSize="12" fontWeight="600" fill="#475569">{xAxisLabel}</text>
+          <text x="17" y={height / 2} textAnchor="middle" fontSize="12" fontWeight="600" fill="#475569" transform={`rotate(-90 17 ${height / 2})`}>{yAxisLabel}</text>
         </svg>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-sm text-slate-700">{series.map((entry, index) => <span key={entry.key ?? entry.label} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5"><i className="h-0.5 w-5 rounded-full" style={{ backgroundColor: entry.color ?? CHART_COLORS[index % CHART_COLORS.length] }} />{entry.label}</span>)}</div>
@@ -247,10 +255,10 @@ function RangeLineChart({ title, labels, series, valueSuffix = "" }) {
   );
 }
 
-function RangeStackedBarChart({ title, labels, series, formatValue = formatAmount }) {
+function RangeStackedBarChart({ title, labels, series, formatValue = formatAmount, xAxisLabel = "Activity date", yAxisLabel = "Revenue amount" }) {
   const width = Math.max(760, labels.length * 58);
-  const height = 320;
-  const padding = { left: 72, right: 18, top: 30, bottom: 58 };
+  const height = 350;
+  const padding = { left: 86, right: 18, top: 30, bottom: 78 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const maximum = Math.max(
@@ -276,14 +284,18 @@ function RangeStackedBarChart({ title, labels, series, formatValue = formatAmoun
           {labels.map((label, labelIndex) => {
             const x = padding.left + labelIndex * groupWidth + (groupWidth - barWidth) / 2;
             let cumulativeValue = 0;
+            const dayTotal = series.reduce((sum, item) => sum + (Number(item.values[labelIndex]) || 0), 0);
             return <g key={`${label}-${labelIndex}`}>{series.map((entry, seriesIndex) => {
               const value = Number(entry.values[labelIndex]) || 0;
               const barHeight = (value / maximum) * plotHeight;
               const y = padding.top + plotHeight - ((cumulativeValue + value) / maximum) * plotHeight;
+              const percentage = dayTotal > 0 ? (value / dayTotal) * 100 : 0;
               cumulativeValue += value;
-              return <rect key={entry.key ?? entry.label} x={x} y={y} width={barWidth} height={barHeight} rx="1" fill={entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length]}><title>{`${label} · ${entry.label}: ${formatValue(value)} · Total: ${formatValue(series.reduce((sum, item) => sum + (Number(item.values[labelIndex]) || 0), 0))}`}</title></rect>;
-            })}{labelIndex % labelStep === 0 || labelIndex === labels.length - 1 ? <text x={padding.left + labelIndex * groupWidth + groupWidth / 2} y={height - 19} textAnchor="middle" fontSize="11" fill="#475569">{label.slice(5)}</text> : null}</g>;
+              return <g key={entry.key ?? entry.label}><rect x={x} y={y} width={barWidth} height={barHeight} rx="1" fill={entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length]}><title>{`${label} · ${entry.label}: ${formatValue(value)} (${percentage.toFixed(1)}%) · Total: ${formatValue(dayTotal)}`}</title></rect>{percentage >= 6 && barHeight >= 15 ? <text x={x + barWidth / 2} y={y + barHeight / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="white">{`${Math.round(percentage)}%`}</text> : null}</g>;
+            })}{labelIndex % labelStep === 0 || labelIndex === labels.length - 1 ? <text x={padding.left + labelIndex * groupWidth + groupWidth / 2} y={height - 38} textAnchor="middle" fontSize="11" fill="#475569">{formatChartAxisLabel(label)}</text> : null}</g>;
           })}
+          <text x={width / 2} y={height - 5} textAnchor="middle" fontSize="12" fontWeight="600" fill="#475569">{xAxisLabel}</text>
+          <text x="17" y={height / 2} textAnchor="middle" fontSize="12" fontWeight="600" fill="#475569" transform={`rotate(-90 17 ${height / 2})`}>{yAxisLabel}</text>
         </svg>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-sm text-slate-700">{series.map((entry, index) => <span key={entry.key ?? entry.label} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5"><i className="h-3 w-3 rounded-sm" style={{ backgroundColor: entry.color ?? CHART_COLORS[index % CHART_COLORS.length] }} />{entry.label}</span>)}</div>
@@ -891,6 +903,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
   lines.push({
     type: "lineChart",
     title: "Daily occupancy trend",
+    xAxisLabel: "Activity date",
+    yAxisLabel: "Occupancy rate (%)",
     labels: analysis.dailyOccupancy.map((day) => day.operationalDateKey),
     series: [
       {
@@ -907,6 +921,21 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
       },
     ],
     valueSuffix: "%",
+    spaceBefore: 8,
+    spaceAfter: 8,
+  });
+  lines.push({
+    type: "lineChart",
+    title: "Daily Out-of-Order room trend",
+    xAxisLabel: "Activity date",
+    yAxisLabel: "Out-of-Order rooms",
+    labels: analysis.dailyOutOfOrder.map((day) => day.operationalDateKey),
+    series: [{
+      key: "outOfOrderRooms",
+      label: "Out-of-Order rooms",
+      color: "#b45309",
+      values: analysis.dailyOutOfOrder.map((day) => day.outOfOrderRooms),
+    }],
     spaceBefore: 8,
     spaceAfter: 8,
   });
@@ -949,6 +978,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
   lines.push({
     type: "stackedBarChart",
     title: "Day-by-day stacked revenue by operating outlet",
+    xAxisLabel: "Activity date",
+    yAxisLabel: "Revenue amount",
     labels: analysis.dailyIncome.map((day) => day.operationalDateKey),
     series: nightDutyOutletConfig.map((outlet, index) => ({
       key: outlet.key,
@@ -962,6 +993,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
   lines.push({
     type: "stackedBarChart",
     title: "Daily Front Office and food & beverage revenue composition",
+    xAxisLabel: "Activity date",
+    yAxisLabel: "Revenue amount",
     labels: analysis.dailyDepartmentRevenue.map((day) => day.operationalDateKey),
     series: [
       { key: "front-office", label: "Front Office", color: "#162338", values: analysis.dailyDepartmentRevenue.map((day) => day.frontOfficeRevenue) },
@@ -997,6 +1030,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
   lines.push({
     type: "lineChart",
     title: "Daily revenue analysis",
+    xAxisLabel: "Activity date",
+    yAxisLabel: "Revenue amount",
     labels: analysis.dailyIncome.map((day) => day.operationalDateKey),
     series: [
       {
@@ -1024,6 +1059,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
   lines.push({
     type: "lineChart",
     title: "Daily outlet revenue trends",
+    xAxisLabel: "Activity date",
+    yAxisLabel: "Revenue amount",
     labels: analysis.dailyIncome.map((day) => day.operationalDateKey),
     series: nightDutyOutletConfig.map((outlet) => ({
       key: outlet.key,
@@ -1043,6 +1080,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
     lines.push({
       type: "lineChart",
       title: `${outlet.label} — day-by-day revenue by source`,
+      xAxisLabel: "Activity date",
+      yAxisLabel: "Revenue amount",
       labels: analysis.dailyRevenueSources.map((day) => day.operationalDateKey),
       series: sources.map((source, index) => ({
         key: source.sourceKey,
@@ -1100,8 +1139,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
       ["Best F&B day", analysis.foodBeverageSummary.bestDay?.operationalDateKey ?? "Nil", "Best-day value", formatAmount(analysis.foodBeverageSummary.bestDay?.combined ?? 0)],
     ],
   });
+  lines.push(sectionHeading("Revenue target performance"));
   if (analysis.hasRevenueTargets) {
-    lines.push(sectionHeading("Revenue target performance"));
     lines.push({
       type: "table",
       title: "Selected-period and month-to-date target position",
@@ -1127,6 +1166,25 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
         formatPercentage(week.foodBeverageAttainmentPercentage),
       ]),
     });
+    lines.push({
+      type: "table",
+      title: "Monthly target analysis",
+      headers: ["Month", "Room actual / target", "Room attainment", "F&B actual / target", "F&B attainment"],
+      widths: [1.05, 1.55, 1.05, 1.55, 1.05],
+      rows: analysis.monthlyTargetAnalysis.map((month) => [
+        month.key,
+        `${formatAmount(month.roomActual)} / ${formatAmount(month.roomTarget)}`,
+        formatPercentage(month.roomAttainmentPercentage),
+        `${formatAmount(month.foodBeverageActual)} / ${formatAmount(month.foodBeverageTarget)}`,
+        formatPercentage(month.foodBeverageAttainmentPercentage),
+      ]),
+    });
+  } else {
+    lines.push({
+      text: "No monthly room or food and beverage revenue target is saved for the selected reporting month(s).",
+      bold: true,
+      spaceAfter: 5,
+    });
   }
   lines.push(sectionHeading("Hospitality accounting indicators"));
   lines.push({
@@ -1137,12 +1195,47 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
       ["ADR", formatAmount(analysis.hospitalityAccounting.averageDailyRoomRate), "Room revenue per occupied room-night"],
       ["RevPAR", formatAmount(analysis.hospitalityAccounting.revPar), "Room revenue per available room-night"],
       ["TRevPAR", formatAmount(analysis.hospitalityAccounting.trevPar), "Actual operating revenue per available room-night"],
+      ["Occupied room-nights", String(analysis.hospitalityAccounting.occupiedRoomNights), "Total occupied rooms across the usable activity dates"],
+      ["Food & Beverage total", formatAmount(analysis.foodBeverageTotals.combined), "Combined food and beverage revenue for the selected period"],
       ["F&B per occupied room", formatAmount(analysis.hospitalityAccounting.foodBeverageRevenuePerOccupiedRoom), "Food and beverage capture against occupied-room nights"],
       ["Average daily actual revenue", formatAmount(analysis.hospitalityAccounting.averageDailyActualRevenue), "Average actual revenue for recorded report days"],
       ["Room / F&B revenue mix", `${formatPercentage(analysis.hospitalityAccounting.roomRevenueSharePercentage)} / ${formatPercentage(analysis.hospitalityAccounting.foodBeverageRevenueSharePercentage)}`, "Contribution to actual operating revenue"],
       ["Report coverage", formatPercentage(analysis.hospitalityAccounting.reportCoveragePercentage), "Stored reports compared with selected calendar dates"],
     ],
   });
+  if (analysis.hasMonthToMonthAnalysis) {
+    lines.push(sectionHeading("Month-to-month management analysis"));
+    lines.push({
+      type: "table",
+      title: "Monthly operations and revenue comparison",
+      headers: ["Month", "Report days", "Room-nights", "Occupancy", "Room revenue", "F&B revenue", "Actual revenue"],
+      widths: [0.9, 0.75, 0.9, 0.85, 1.2, 1.2, 1.2],
+      rows: analysis.monthlyPerformanceAnalysis.map((month) => [
+        month.monthKey,
+        String(month.reportDays),
+        String(month.occupiedRoomNights),
+        formatPercentage(month.averageOccupancyPercentage),
+        formatAmount(month.roomRevenue),
+        formatAmount(month.foodBeverageRevenue),
+        formatAmount(month.actualRevenue),
+      ]),
+      fontSize: 9,
+    });
+    lines.push({
+      type: "lineChart",
+      title: "Month-to-month revenue trend",
+      xAxisLabel: "Month",
+      yAxisLabel: "Revenue amount",
+      labels: analysis.monthlyPerformanceAnalysis.map((month) => `${month.monthKey}-01`),
+      series: [
+        { key: "room", label: "Room revenue", color: "#162338", values: analysis.monthlyPerformanceAnalysis.map((month) => month.roomRevenue) },
+        { key: "fnb", label: "Food & Beverage", color: "#a67c2e", values: analysis.monthlyPerformanceAnalysis.map((month) => month.foodBeverageRevenue) },
+        { key: "actual", label: "Actual revenue", color: "#0f766e", values: analysis.monthlyPerformanceAnalysis.map((month) => month.actualRevenue) },
+      ],
+      spaceBefore: 8,
+      spaceAfter: 8,
+    });
+  }
   if (analysis.dailyBrunch.length > 0) {
     lines.push({
       text: `Brunch target: ${analysis.brunchAttendanceTarget} attendees for each of the ${analysis.brunchReportDays} reported brunch day(s); days without a brunch entry are excluded.`,
@@ -1170,6 +1263,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
     lines.push({
       type: "lineChart",
       title: "Brunch day-by-day revenue",
+      xAxisLabel: "Activity date",
+      yAxisLabel: "Brunch revenue",
       labels: analysis.dailyBrunch.map((day) => day.operationalDateKey),
       series: [{
         key: "brunchRevenue",
@@ -1183,6 +1278,8 @@ function buildNightDutyRangeReportLines(reports, rangeStart, rangeEnd, monthlyTa
     lines.push({
       type: "lineChart",
       title: "Brunch attendance against target",
+      xAxisLabel: "Activity date",
+      yAxisLabel: "Attendees",
       labels: analysis.dailyBrunch.map((day) => day.operationalDateKey),
       series: [
         {
@@ -1406,9 +1503,9 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
   const guestSourceRangeHtml = analysis.dailyOccupancyGuestMix.length > 0
     ? `<h3>Front Office room occupancy by guest source</h3><div class="summary"><strong>Walk-in occupied-room nights:</strong> ${analysis.guestMixTotals.walkInGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.walkInPercentage))})<br><strong>Corporate occupied-room nights:</strong> ${analysis.guestMixTotals.corporateGuests} (${escapeHtml(formatPercentage(analysis.guestMixTotals.corporatePercentage))})</div>${chartMarkup("Front Office walk-in versus corporate occupancy", [{ label: "Walk-in", value: analysis.guestMixTotals.walkInGuests, percentage: analysis.guestMixTotals.walkInPercentage }, { label: "Corporate", value: analysis.guestMixTotals.corporateGuests, percentage: analysis.guestMixTotals.corporatePercentage }], (value) => String(value))}<table><thead><tr><th>Date</th><th>Walk-in rooms</th><th>Corporate rooms</th><th>Categorized rooms</th></tr></thead><tbody>${dailyOccupancyGuestMixRows}</tbody></table>`
     : `<p><strong>Front Office guest source:</strong> No complete walk-in/corporate snapshot is stored in this range.</p>`;
-  const lineChartMarkup = (title, labels, series, formatter) => {
+  const lineChartMarkup = (title, labels, series, formatter, xAxisLabel = "Activity date", yAxisLabel = "Value") => {
     const width = 720;
-    const height = 206;
+    const height = 230;
     const left = 48;
     const top = 18;
     const plotWidth = 650;
@@ -1428,9 +1525,9 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
       return `${area}<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />${entry.values.map((value, index) => `<circle cx="${x(index)}" cy="${y(value)}" r="2.2" fill="#ffffff" stroke="${color}" stroke-width="1.2" />`).join("")}`;
     }).join("");
     const step = Math.max(Math.ceil(labels.length / 6), 1);
-    const axisLabels = labels.map((label, index) => index % step === 0 || index === labels.length - 1 ? `<text x="${x(index)}" y="194" text-anchor="middle" font-size="8" fill="#64748b">${escapeHtml(label.slice(5))}</text>` : "").join("");
+    const axisLabels = labels.map((label, index) => index % step === 0 || index === labels.length - 1 ? `<text x="${x(index)}" y="194" text-anchor="middle" font-size="9" fill="#64748b">${escapeHtml(label.slice(5))}</text>` : "").join("");
     const legend = series.map((entry, index) => `<span><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(entry.label)} (${escapeHtml(formatter(entry.values[entry.values.length - 1] ?? 0))} latest)</span>`).join("");
-    return `<section class="chart line-chart"><h3>${escapeHtml(title)}</h3><svg viewBox="0 0 ${width} ${height}"><rect x="0" y="0" width="${width}" height="${height}" rx="10" fill="#fbfcfe" />${grid}${paths}${axisLabels}</svg><div class="legend">${legend}</div></section>`;
+    return `<section class="chart line-chart"><h3>${escapeHtml(title)}</h3><svg viewBox="0 0 ${width} ${height}"><rect x="0" y="0" width="${width}" height="${height}" rx="10" fill="#fbfcfe" />${grid}${paths}${axisLabels}<text x="360" y="224" text-anchor="middle" font-size="10" font-weight="700" fill="#475569">${escapeHtml(xAxisLabel)}</text><text x="12" y="100" text-anchor="middle" font-size="10" font-weight="700" fill="#475569" transform="rotate(-90 12 100)">${escapeHtml(yAxisLabel)}</text></svg><div class="legend">${legend}</div></section>`;
   };
   const stackedBarChartMarkup = (title, labels, series) => {
     const width = 720;
@@ -1444,9 +1541,9 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
     const barWidth = Math.max(Math.min(groupWidth * 0.62, 30), 5);
     const labelStep = Math.max(Math.ceil(labels.length / 8), 1);
     const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => `<line x1="${left}" y1="${top + plotHeight - ratio * plotHeight}" x2="${left + plotWidth}" y2="${top + plotHeight - ratio * plotHeight}" stroke="#dbe3ec" stroke-width="0.7" stroke-dasharray="3 5" />`).join("");
-    const bars = labels.map((label, labelIndex) => { const x = left + labelIndex * groupWidth + (groupWidth - barWidth) / 2; let cumulative = 0; return `${series.map((entry, seriesIndex) => { const value = Math.max(Number(entry.values[labelIndex]) || 0, 0); const barHeight = (value / maximum) * plotHeight; const y = top + plotHeight - ((cumulative + value) / maximum) * plotHeight; cumulative += value; return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="1" fill="${entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length]}" />`; }).join("")}${labelIndex % labelStep === 0 || labelIndex === labels.length - 1 ? `<text x="${left + labelIndex * groupWidth + groupWidth / 2}" y="205" text-anchor="middle" font-size="10" fill="#475569">${escapeHtml(label.slice(5))}</text>` : ""}`; }).join("");
+    const bars = labels.map((label, labelIndex) => { const x = left + labelIndex * groupWidth + (groupWidth - barWidth) / 2; let cumulative = 0; const dayTotal = series.reduce((sum, entry) => sum + Math.max(Number(entry.values[labelIndex]) || 0, 0), 0); return `${series.map((entry, seriesIndex) => { const value = Math.max(Number(entry.values[labelIndex]) || 0, 0); const barHeight = (value / maximum) * plotHeight; const y = top + plotHeight - ((cumulative + value) / maximum) * plotHeight; const percentage = dayTotal > 0 ? (value / dayTotal) * 100 : 0; cumulative += value; return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="1" fill="${entry.color ?? CHART_COLORS[seriesIndex % CHART_COLORS.length]}" />${percentage >= 6 && barHeight >= 13 ? `<text x="${x + barWidth / 2}" y="${y + barHeight / 2 + 3}" text-anchor="middle" font-size="8" font-weight="700" fill="#ffffff">${Math.round(percentage)}%</text>` : ""}`; }).join("")}${labelIndex % labelStep === 0 || labelIndex === labels.length - 1 ? `<text x="${left + labelIndex * groupWidth + groupWidth / 2}" y="205" text-anchor="middle" font-size="10" fill="#475569">${escapeHtml(label.slice(5))}</text>` : ""}`; }).join("");
     const legend = series.map((entry, index) => `<span><i style="height:8px;width:8px;background:${entry.color ?? CHART_COLORS[index % CHART_COLORS.length]}"></i>${escapeHtml(entry.label)}</span>`).join("");
-    return `<section class="chart line-chart"><h3>${escapeHtml(title)}</h3><svg viewBox="0 0 ${width} ${height}">${grid}${bars}</svg><div class="legend">${legend}</div></section>`;
+    return `<section class="chart line-chart"><h3>${escapeHtml(title)}</h3><svg viewBox="0 0 ${width} 238">${grid}${bars}<text x="360" y="232" text-anchor="middle" font-size="10" font-weight="700" fill="#475569">Activity date</text><text x="12" y="100" text-anchor="middle" font-size="10" font-weight="700" fill="#475569" transform="rotate(-90 12 100)">Revenue amount</text></svg><div class="legend">${legend}</div></section>`;
   };
   const revenueSourceChartsHtml = nightDutyOutletConfig.map((outlet) => {
     const sources = analysis.revenueSources.filter(
@@ -1467,9 +1564,12 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
     );
   }).join("");
   const revenueTargetHtml = analysis.hasRevenueTargets
-    ? `<section><h2>Revenue target performance</h2><table><thead><tr><th>Period</th><th>Account</th><th>Actual</th><th>Target</th><th>Variance</th><th>Attainment</th></tr></thead><tbody><tr><td>Selected range</td><td>Room revenue</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.roomActual))}</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.roomTarget))}</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.roomVariance))}</td><td>${escapeHtml(formatPercentage(analysis.selectedPeriodTargetAnalysis.roomAttainmentPercentage))}</td></tr><tr><td>Selected range</td><td>Food &amp; Beverage</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.foodBeverageActual))}</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.foodBeverageTarget))}</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.foodBeverageVariance))}</td><td>${escapeHtml(formatPercentage(analysis.selectedPeriodTargetAnalysis.foodBeverageAttainmentPercentage))}</td></tr></tbody></table><h3>Weekly target position</h3><table><thead><tr><th>Week starting</th><th>Room actual / target</th><th>Room attainment</th><th>F&amp;B actual / target</th><th>F&amp;B attainment</th></tr></thead><tbody>${analysis.weeklyTargetAnalysis.map((week) => `<tr><td>${escapeHtml(week.key)}</td><td>${escapeHtml(formatAmount(week.roomActual))} / ${escapeHtml(formatAmount(week.roomTarget))}</td><td>${escapeHtml(formatPercentage(week.roomAttainmentPercentage))}</td><td>${escapeHtml(formatAmount(week.foodBeverageActual))} / ${escapeHtml(formatAmount(week.foodBeverageTarget))}</td><td>${escapeHtml(formatPercentage(week.foodBeverageAttainmentPercentage))}</td></tr>`).join("")}</tbody></table></section>`
+    ? `<section><h2>Revenue target performance</h2><table><thead><tr><th>Period</th><th>Account</th><th>Actual</th><th>Target</th><th>Variance</th><th>Attainment</th></tr></thead><tbody><tr><td>Selected range</td><td>Room revenue</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.roomActual))}</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.roomTarget))}</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.roomVariance))}</td><td>${escapeHtml(formatPercentage(analysis.selectedPeriodTargetAnalysis.roomAttainmentPercentage))}</td></tr><tr><td>Selected range</td><td>Food &amp; Beverage</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.foodBeverageActual))}</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.foodBeverageTarget))}</td><td>${escapeHtml(formatAmount(analysis.selectedPeriodTargetAnalysis.foodBeverageVariance))}</td><td>${escapeHtml(formatPercentage(analysis.selectedPeriodTargetAnalysis.foodBeverageAttainmentPercentage))}</td></tr><tr><td>Latest MTD</td><td>Room revenue</td><td>${escapeHtml(formatAmount(analysis.monthToDateTargetAnalysis.roomActual))}</td><td>${escapeHtml(formatAmount(analysis.monthToDateTargetAnalysis.roomTarget))}</td><td>${escapeHtml(formatAmount(analysis.monthToDateTargetAnalysis.roomVariance))}</td><td>${escapeHtml(formatPercentage(analysis.monthToDateTargetAnalysis.roomAttainmentPercentage))}</td></tr><tr><td>Latest MTD</td><td>Food &amp; Beverage</td><td>${escapeHtml(formatAmount(analysis.monthToDateTargetAnalysis.foodBeverageActual))}</td><td>${escapeHtml(formatAmount(analysis.monthToDateTargetAnalysis.foodBeverageTarget))}</td><td>${escapeHtml(formatAmount(analysis.monthToDateTargetAnalysis.foodBeverageVariance))}</td><td>${escapeHtml(formatPercentage(analysis.monthToDateTargetAnalysis.foodBeverageAttainmentPercentage))}</td></tr></tbody></table><h3>Weekly target position</h3><table><thead><tr><th>Week starting</th><th>Room actual / target</th><th>Room attainment</th><th>F&amp;B actual / target</th><th>F&amp;B attainment</th></tr></thead><tbody>${analysis.weeklyTargetAnalysis.map((week) => `<tr><td>${escapeHtml(week.key)}</td><td>${escapeHtml(formatAmount(week.roomActual))} / ${escapeHtml(formatAmount(week.roomTarget))}</td><td>${escapeHtml(formatPercentage(week.roomAttainmentPercentage))}</td><td>${escapeHtml(formatAmount(week.foodBeverageActual))} / ${escapeHtml(formatAmount(week.foodBeverageTarget))}</td><td>${escapeHtml(formatPercentage(week.foodBeverageAttainmentPercentage))}</td></tr>`).join("")}</tbody></table><h3>Monthly target position</h3><table><thead><tr><th>Month</th><th>Room actual / target</th><th>Room attainment</th><th>F&amp;B actual / target</th><th>F&amp;B attainment</th></tr></thead><tbody>${analysis.monthlyTargetAnalysis.map((month) => `<tr><td>${escapeHtml(month.key)}</td><td>${escapeHtml(formatAmount(month.roomActual))} / ${escapeHtml(formatAmount(month.roomTarget))}</td><td>${escapeHtml(formatPercentage(month.roomAttainmentPercentage))}</td><td>${escapeHtml(formatAmount(month.foodBeverageActual))} / ${escapeHtml(formatAmount(month.foodBeverageTarget))}</td><td>${escapeHtml(formatPercentage(month.foodBeverageAttainmentPercentage))}</td></tr>`).join("")}</tbody></table></section>`
+    : `<section><h2>Revenue target performance</h2><div class="summary"><strong>No monthly target is saved for the selected reporting month(s).</strong></div></section>`;
+  const hospitalityAccountingHtml = `<section><h2>Hospitality accounting summary</h2><table><thead><tr><th>Indicator</th><th>Result</th><th>Management use</th></tr></thead><tbody><tr><td>ADR</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.averageDailyRoomRate))}</td><td>Room revenue per occupied room-night</td></tr><tr><td>RevPAR</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.revPar))}</td><td>Room revenue per available room-night</td></tr><tr><td>TRevPAR</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.trevPar))}</td><td>Actual operating revenue per available room-night</td></tr><tr><td>Occupied room-nights</td><td>${analysis.hospitalityAccounting.occupiedRoomNights}</td><td>Total occupied rooms across usable activity dates</td></tr><tr><td>Food &amp; Beverage total</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.combined))}</td><td>Combined F&amp;B revenue for the selected period</td></tr><tr><td>F&amp;B per occupied room</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.foodBeverageRevenuePerOccupiedRoom))}</td><td>Food and beverage capture per occupied room-night</td></tr><tr><td>Average daily actual revenue</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.averageDailyActualRevenue))}</td><td>Average across stored report days</td></tr><tr><td>Report coverage</td><td>${escapeHtml(formatPercentage(analysis.hospitalityAccounting.reportCoveragePercentage))}</td><td>Stored reports compared with selected calendar dates</td></tr></tbody></table></section>`;
+  const monthToMonthHtml = analysis.hasMonthToMonthAnalysis
+    ? `<section><h2>Month-to-month management analysis</h2><table><thead><tr><th>Month</th><th>Report days</th><th>Room-nights</th><th>Occupancy</th><th>Room revenue</th><th>F&amp;B revenue</th><th>Actual revenue</th><th>Change</th></tr></thead><tbody>${analysis.monthlyPerformanceAnalysis.map((month) => `<tr><td>${escapeHtml(month.monthKey)}</td><td>${month.reportDays}</td><td>${month.occupiedRoomNights}</td><td>${escapeHtml(formatPercentage(month.averageOccupancyPercentage))}</td><td>${escapeHtml(formatAmount(month.roomRevenue))}</td><td>${escapeHtml(formatAmount(month.foodBeverageRevenue))}</td><td>${escapeHtml(formatAmount(month.actualRevenue))}</td><td>${month.actualRevenueChangePercentage === null ? "Baseline" : escapeHtml(formatPercentage(month.actualRevenueChangePercentage))}</td></tr>`).join("")}</tbody></table>${lineChartMarkup("Month-to-month revenue trend", analysis.monthlyPerformanceAnalysis.map((month) => `${month.monthKey}-01`), [{ label: "Room revenue", values: analysis.monthlyPerformanceAnalysis.map((month) => month.roomRevenue) }, { label: "Food & Beverage", values: analysis.monthlyPerformanceAnalysis.map((month) => month.foodBeverageRevenue) }, { label: "Actual revenue", values: analysis.monthlyPerformanceAnalysis.map((month) => month.actualRevenue) }], formatAmount, "Month", "Revenue amount")}</section>`
     : "";
-  const hospitalityAccountingHtml = `<section><h2>Hospitality accounting summary</h2><table><thead><tr><th>Indicator</th><th>Result</th><th>Management use</th></tr></thead><tbody><tr><td>ADR</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.averageDailyRoomRate))}</td><td>Room revenue per occupied room-night</td></tr><tr><td>RevPAR</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.revPar))}</td><td>Room revenue per available room-night</td></tr><tr><td>TRevPAR</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.trevPar))}</td><td>Actual operating revenue per available room-night</td></tr><tr><td>F&amp;B per occupied room</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.foodBeverageRevenuePerOccupiedRoom))}</td><td>Food and beverage capture per occupied room-night</td></tr><tr><td>Average daily actual revenue</td><td>${escapeHtml(formatAmount(analysis.hospitalityAccounting.averageDailyActualRevenue))}</td><td>Average across stored report days</td></tr><tr><td>Report coverage</td><td>${escapeHtml(formatPercentage(analysis.hospitalityAccounting.reportCoveragePercentage))}</td><td>Stored reports compared with selected calendar dates</td></tr></tbody></table></section>`;
   const brunchRangeHtml = analysis.dailyBrunch.length > 0
     ? `<section><h2>Brunch report</h2><div class="summary"><strong>Target:</strong> ${analysis.brunchAttendanceTarget} attendees per reported brunch day<br><strong>Reported brunch days:</strong> ${analysis.brunchReportDays} (days without an entry are excluded)<br><strong>Total brunch revenue:</strong> ${escapeHtml(formatAmount(analysis.totalBrunchRevenue))}<br><strong>Total attendees:</strong> ${analysis.totalBrunchAttendees} against ${analysis.brunchTargetAttendees} target attendees<br><strong>Days target met:</strong> ${analysis.brunchTargetDaysMet}</div>${lineChartMarkup("Brunch day-by-day revenue", analysis.dailyBrunch.map((day) => day.operationalDateKey), [{ label: "Brunch revenue", values: analysis.dailyBrunch.map((day) => day.revenue) }], formatAmount)}${lineChartMarkup("Brunch attendance against target", analysis.dailyBrunch.map((day) => day.operationalDateKey), [{ label: "Attendees", values: analysis.dailyBrunch.map((day) => day.attendees) }, { label: `${analysis.brunchAttendanceTarget} target`, values: analysis.dailyBrunch.map((day) => day.targetAttendees) }], (value) => String(value))}<table><thead><tr><th>Date</th><th>Brunch revenue</th><th>Attendees</th><th>Target</th><th>Variance</th></tr></thead><tbody>${dailyBrunchRows}</tbody></table></section>`
     : "";
@@ -1550,10 +1650,11 @@ function printNightDutyRangeReport(reports, rangeStart, rangeEnd, monthlyTargets
         <div class="kpi"><span>Available rooms</span><strong>${analysis.rangeAvailableRooms}</strong><small>${analysis.latestOutOfOrderRooms} Out of Order</small></div>
       </div>
       <div class="summary"><strong>Report coverage:</strong> ${analysis.reportCount} stored report(s) across ${analysis.selectedDayCount} selected day(s); ${analysis.occupancyReportCount} usable occupancy date(s) (${analysis.frontOfficeOccupancyReportCount} Front Office, ${analysis.nightDutyFallbackCount} Night Duty fallback), ${analysis.missingOccupancyDateKeys.length} excluded.<br><strong>Controlling room position:</strong> Out of Order — ${escapeHtml(analysis.latestOutOfOrderRoomNumbers.join(", ") || "Nil")}${analysis.latestOutOfOrderDateKey ? `; latest entry ${escapeHtml(formatDateKey(analysis.latestOutOfOrderDateKey))}` : ""}. Available rooms: ${analysis.hotelRoomCapacity} - ${analysis.latestOutOfOrderRooms} = ${analysis.rangeAvailableRooms}; unavailable room-nights: ${analysis.unavailableRoomNights}.<br><strong>Target position:</strong> ${analysis.targetOccupiedRooms} occupied rooms per reported night at 60%; ${escapeHtml(formatTargetVariance(analysis.occupancyTargetVarianceRoomNights, "room-night"))} across reported dates.</div>
-      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><h3>Daily room availability and occupancy rate</h3><table><thead><tr><th>Date</th><th>Source</th><th>Total rooms</th><th>OOO count</th><th>OOO room numbers</th><th>Available</th><th>Occupied</th><th>Rate</th><th>60% target</th><th>Vs target</th></tr></thead><tbody>${dailyRoomAvailabilityRows}</tbody></table><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }, { label: "60% target", values: analysis.dailyOccupancy.map(() => analysis.targetOccupancyPercentage) }], formatPercentage)}${guestSourceRangeHtml}</section>
+      <section class="analysis-section"><h2>Occupancy analysis by floor</h2><h3>Daily room availability and occupancy rate</h3><table><thead><tr><th>Date</th><th>Source</th><th>Total rooms</th><th>OOO count</th><th>OOO room numbers</th><th>Available</th><th>Occupied</th><th>Rate</th><th>60% target</th><th>Vs target</th></tr></thead><tbody>${dailyRoomAvailabilityRows}</tbody></table><table><thead><tr><th>Floor</th><th>Total occupants</th><th>Nightly average</th><th>Highest night</th></tr></thead><tbody>${occupancyRows}</tbody></table>${chartMarkup("Total occupants by floor", analysis.occupancyByFloor.map((floor) => ({ label: floor.floorLabel, value: floor.totalOccupants })), (value) => String(value))}${lineChartMarkup("Daily occupancy rate", analysis.dailyOccupancy.map((day) => day.operationalDateKey), [{ label: "Occupancy rate", values: analysis.dailyOccupancy.map((day) => day.occupancyPercentage) }, { label: "60% target", values: analysis.dailyOccupancy.map(() => analysis.targetOccupancyPercentage) }], formatPercentage, "Activity date", "Occupancy rate (%)")}${lineChartMarkup("Daily Out-of-Order room trend", analysis.dailyOutOfOrder.map((day) => day.operationalDateKey), [{ label: "Out-of-Order rooms", values: analysis.dailyOutOfOrder.map((day) => day.outOfOrderRooms) }], (value) => String(value), "Activity date", "Out-of-Order rooms")}${guestSourceRangeHtml}</section>
       <section class="analysis-section"><h2>Revenue performance</h2><table><thead><tr><th>Revenue section</th><th>Grand Revenue</th><th>Actual Revenue</th></tr></thead><tbody>${sectionRevenueRows}</tbody></table>${chartMarkup("Grand Revenue by section", analysis.incomeByOutlet.map((outlet) => ({ label: outlet.label, value: outlet.grandRevenueTotal, percentage: outlet.revenueSharePercentage })), formatAmount)}${stackedBarChartMarkup("Day-by-day stacked revenue by operating outlet", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet, index) => ({ label: outlet.label, color: CHART_COLORS[index % CHART_COLORS.length], values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })))}${stackedBarChartMarkup("Daily Front Office and food & beverage revenue composition", analysis.dailyDepartmentRevenue.map((day) => day.operationalDateKey), [{ label: "Front Office", color: "#162338", values: analysis.dailyDepartmentRevenue.map((day) => day.frontOfficeRevenue) }, { label: "Food & Beverage", color: "#a67c2e", values: analysis.dailyDepartmentRevenue.map((day) => day.foodBeverageRevenue) }])}${lineChartMarkup("Daily revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), [{ label: "Grand Revenue", values: analysis.dailyIncome.map((day) => day.grandRevenueTotal) }, { label: "Actual Revenue", values: analysis.dailyIncome.map((day) => day.actualRevenueTotal) }, { label: "Room Revenue", values: analysis.dailyIncome.map((day) => day.roomRevenue) }], formatAmount)}${lineChartMarkup("Daily outlet revenue trends", analysis.dailyIncome.map((day) => day.operationalDateKey), nightDutyOutletConfig.map((outlet) => ({ label: outlet.label, values: analysis.dailyIncome.map((day) => day.outlets[outlet.key]) })), formatAmount)}</section>
       ${revenueTargetHtml}
       ${hospitalityAccountingHtml}
+      ${monthToMonthHtml}
       <section class="analysis-section"><h2>Day-by-day revenue-source trends</h2><p>Each line represents a recorded revenue source within its operating outlet. Refunds remain outside revenue and are reported separately.</p>${revenueSourceChartsHtml}</section>
       <section><h2>Food and beverage analysis</h2><table><thead><tr><th>Account</th><th>Range total</th></tr></thead><tbody><tr><td>Food</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.food))}</td></tr><tr><td>Beverage</td><td>${escapeHtml(formatAmount(analysis.foodBeverageTotals.beverage))}</td></tr><tr><th>Combined</th><th>${escapeHtml(formatAmount(analysis.foodBeverageTotals.combined))}</th></tr></tbody></table><div class="summary"><strong>Reported F&amp;B revenue days:</strong> ${analysis.foodBeverageSummary.reportedDays}<br><strong>Average per reported day:</strong> ${escapeHtml(formatAmount(analysis.foodBeverageSummary.averagePerReportedDay))}<br><strong>Food / beverage mix:</strong> ${escapeHtml(formatPercentage(analysis.foodBeverageSummary.foodSharePercentage))} / ${escapeHtml(formatPercentage(analysis.foodBeverageSummary.beverageSharePercentage))}<br><strong>Best day:</strong> ${analysis.foodBeverageSummary.bestDay ? `${escapeHtml(formatDateKey(analysis.foodBeverageSummary.bestDay.operationalDateKey))} — ${escapeHtml(formatAmount(analysis.foodBeverageSummary.bestDay.combined))}` : "Nil"}</div>${lineChartMarkup("Daily food and beverage trend", analysis.dailyFoodBeverage.map((day) => day.operationalDateKey), [{ label: "Food", values: analysis.dailyFoodBeverage.map((day) => day.food) }, { label: "Beverage", values: analysis.dailyFoodBeverage.map((day) => day.beverage) }], formatAmount)}<table><thead><tr><th>Date</th><th>Food</th><th>Beverage</th><th>Combined</th></tr></thead><tbody>${dailyFoodBeverageRows}</tbody></table></section>
       ${brunchRangeHtml}
@@ -2274,6 +2375,7 @@ export default function NightDutyPanel({
 
     const rangeStart = dateKeys[0];
     const rangeEnd = dateKeys[dateKeys.length - 1];
+    setTargetMonth(rangeEnd.slice(0, 7));
     setLoadingRangeReports(true);
     setRangeReportLoaded(false);
     setFeedback({ type: "", message: "" });
@@ -2298,8 +2400,7 @@ export default function NightDutyPanel({
         .map((inHouseReport) => ({
           operationalDateKey: inHouseReport.operationalDateKey,
           frontOfficeOccupancyByFloor: buildOccupancyByFloor(inHouseReport),
-          frontOfficeOccupancyReport: buildFrontOfficeOccupancyReport(inHouseReport) ??
-            report.frontOfficeOccupancyReport,
+          frontOfficeOccupancyReport: buildFrontOfficeOccupancyReport(inHouseReport),
         }));
       const reportsWithFrontOfficeRooms = reports.map((report) => {
         const inHouseReport = inHouseByDate.get(report.operationalDateKey);
@@ -2331,6 +2432,16 @@ export default function NightDutyPanel({
   async function loadMonthToDateAnalysis() {
     const endDate = rangeEndDate || latestNightDutyReportDateKey;
     const startDate = `${endDate.slice(0, 7)}-01`;
+    setRangeStartDate(startDate);
+    setRangeEndDate(endDate);
+    await loadReportRange({ startDate, endDate });
+  }
+
+  async function loadMonthToMonthAnalysis() {
+    const endDate = rangeEndDate || latestNightDutyReportDateKey;
+    const endMonthStart = new Date(`${endDate.slice(0, 7)}-01T00:00:00Z`);
+    endMonthStart.setUTCMonth(endMonthStart.getUTCMonth() - 1);
+    const startDate = `${endMonthStart.toISOString().slice(0, 7)}-01`;
     setRangeStartDate(startDate);
     setRangeEndDate(endDate);
     await loadReportRange({ startDate, endDate });
@@ -2794,11 +2905,12 @@ export default function NightDutyPanel({
                   : "D1 is not connected in this Hostinger build. Add NEXT_PUBLIC_CLOUDFLARE_ARCHIVE_URL in Hostinger and rebuild; Firebase remains available meanwhile."}
               </p>
             </div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto_auto] xl:items-end">
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto_auto_auto] xl:items-end">
               <label className="field"><span>Start date</span><input type="date" value={rangeStartDate} max={latestNightDutyReportDateKey} onChange={(event) => { setRangeStartDate(event.target.value); setRangeReportLoaded(false); }} /></label>
               <label className="field"><span>End date</span><input type="date" value={rangeEndDate} max={latestNightDutyReportDateKey} onChange={(event) => { setRangeEndDate(event.target.value); setRangeReportLoaded(false); }} /></label>
               <button type="button" className="button-primary" onClick={loadReportRange} disabled={loadingRangeReports}>{loadingRangeReports ? "Loading analysis..." : "Run management analysis"}</button>
               <button type="button" className="button-secondary" onClick={loadMonthToDateAnalysis} disabled={loadingRangeReports || !rangeEndDate}>{loadingRangeReports ? "Loading..." : "Get month-to-date analysis"}</button>
+              <button type="button" className="button-secondary" onClick={loadMonthToMonthAnalysis} disabled={loadingRangeReports || !rangeEndDate || latestNightDutyReportDateKey < "2026-08-31"}>{loadingRangeReports ? "Loading..." : "Get month-to-month analysis"}</button>
             </div>
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
@@ -2859,6 +2971,13 @@ export default function NightDutyPanel({
                     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                       <table className="min-w-[1420px] text-base"><caption className="p-4 text-left text-lg font-semibold text-[#162338]">Daily room availability and occupancy rate</caption><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-3 py-3">Date</th><th className="px-3 py-3">Occupancy source</th><th className="px-3 py-3">Total rooms</th><th className="px-3 py-3">Out of Order count</th><th className="px-3 py-3">Out of Order room numbers</th><th className="px-3 py-3">Available rooms</th><th className="px-3 py-3">Occupied</th><th className="px-3 py-3">Occupancy rate</th><th className="px-3 py-3">60% target</th><th className="px-3 py-3">Variance</th></tr></thead><tbody>{rangeAnalytics.dailyOccupancy.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-3 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-3">{formatOccupancySource(day.occupancySource)}</td><td className="px-3 py-3 font-semibold">{rangeAnalytics.hotelRoomCapacity}</td><td className="px-3 py-3 font-semibold text-amber-700">{day.outOfOrderRooms}</td><td className="px-3 py-3">{day.outOfOrderRoomNumbers.join(", ") || "Nil"}</td><td className="px-3 py-3">{day.availableRooms}</td><td className="px-3 py-3">{day.occupiedRooms}</td><td className="px-3 py-3 font-semibold">{formatPercentage(day.occupancyPercentage)}</td><td className="px-3 py-3">{day.targetOccupiedRooms}</td><td className="px-3 py-3">{formatTargetVariance(day.targetVarianceRooms)}</td></tr>)}</tbody></table>
                     </div>
+                    <RangeLineChart
+                      title="Daily Out-of-Order room trend"
+                      labels={rangeAnalytics.dailyOutOfOrder.map((day) => day.operationalDateKey)}
+                      series={[{ key: "out-of-order", label: "Out-of-Order rooms", color: "#b45309", values: rangeAnalytics.dailyOutOfOrder.map((day) => day.outOfOrderRooms) }]}
+                      xAxisLabel="Activity date"
+                      yAxisLabel="Out-of-Order rooms"
+                    />
                     <div className="grid gap-4 xl:grid-cols-2">
                       <RangeBarChart
                         title="Total occupants by floor"
@@ -2892,6 +3011,7 @@ export default function NightDutyPanel({
                         { label: "Latest month-to-date", ...rangeAnalytics.monthToDateTargetAnalysis },
                       ].map((entry) => <tr key={entry.label} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{entry.label}</td><td className="px-3 py-2">{formatAmount(entry.roomActual)} / {formatAmount(entry.roomTarget)}</td><td className="px-3 py-2 font-semibold">{formatPercentage(entry.roomAttainmentPercentage)}</td><td className="px-3 py-2">{formatAmount(entry.foodBeverageActual)} / {formatAmount(entry.foodBeverageTarget)}</td><td className="px-3 py-2 font-semibold">{formatPercentage(entry.foodBeverageAttainmentPercentage)}</td></tr>)}</tbody></table></div>
                       <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[900px] text-base"><caption className="p-4 text-left text-lg font-semibold text-[#162338]">Weekly target analysis</caption><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-3 py-3">Week starting</th><th className="px-3 py-3">Room actual / target</th><th className="px-3 py-3">Room attainment</th><th className="px-3 py-3">F&amp;B actual / target</th><th className="px-3 py-3">F&amp;B attainment</th></tr></thead><tbody>{rangeAnalytics.weeklyTargetAnalysis.map((week) => <tr key={week.key} className="border-t border-slate-100"><td className="px-3 py-3 font-semibold">{formatDateKey(week.key)}</td><td className="px-3 py-3">{formatAmount(week.roomActual)} / {formatAmount(week.roomTarget)}</td><td className="px-3 py-3">{formatPercentage(week.roomAttainmentPercentage)}</td><td className="px-3 py-3">{formatAmount(week.foodBeverageActual)} / {formatAmount(week.foodBeverageTarget)}</td><td className="px-3 py-3">{formatPercentage(week.foodBeverageAttainmentPercentage)}</td></tr>)}</tbody></table></div>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[900px] text-base"><caption className="p-4 text-left text-lg font-semibold text-[#162338]">Monthly target analysis</caption><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-3 py-3">Month</th><th className="px-3 py-3">Room actual / target</th><th className="px-3 py-3">Room attainment</th><th className="px-3 py-3">F&amp;B actual / target</th><th className="px-3 py-3">F&amp;B attainment</th></tr></thead><tbody>{rangeAnalytics.monthlyTargetAnalysis.map((month) => <tr key={month.key} className="border-t border-slate-100"><td className="px-3 py-3 font-semibold">{formatDateKey(`${month.key}-01`, { month: "long", year: "numeric" })}</td><td className="px-3 py-3">{formatAmount(month.roomActual)} / {formatAmount(month.roomTarget)}</td><td className="px-3 py-3">{formatPercentage(month.roomAttainmentPercentage)}</td><td className="px-3 py-3">{formatAmount(month.foodBeverageActual)} / {formatAmount(month.foodBeverageTarget)}</td><td className="px-3 py-3">{formatPercentage(month.foodBeverageAttainmentPercentage)}</td></tr>)}</tbody></table></div>
                     </div> : <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-base leading-7 text-amber-900"><strong>Revenue target analysis is ready.</strong> Save the room and F&amp;B monthly targets above for the selected month to activate daily, weekly, selected-range, month-to-date and monthly comparisons.</div>}
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-5"><h4 className="text-lg font-semibold text-[#162338]">Hospitality accounting summary</h4><p className="mt-1 text-sm text-slate-600">Executive room, revenue, occupancy and F&amp;B performance indicators for the selected period.</p><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-base">{[
@@ -2902,12 +3022,16 @@ export default function NightDutyPanel({
                       ["Average daily actual revenue", rangeAnalytics.hospitalityAccounting.averageDailyActualRevenue, "Recorded report days"],
                     ].map(([label, value, note]) => <div key={label} className="rounded-xl bg-slate-50 p-4">{label}<br /><strong className="text-xl text-[#162338]">{formatAmount(value)}</strong><br /><span className="text-sm text-slate-500">{note}</span></div>)}<div className="rounded-xl bg-slate-50 p-4">Occupied room-nights<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.totalInHouse}</strong><br /><span className="text-sm text-slate-500">Across reported occupancy days</span></div><div className="rounded-xl bg-slate-50 p-4">Combined F&amp;B revenue<br /><strong className="text-xl text-[#162338]">{formatAmount(rangeAnalytics.foodBeverageTotals.combined)}</strong><br /><span className="text-sm text-slate-500">Food and beverage total</span></div><div className="rounded-xl bg-slate-50 p-4">Report coverage<br /><strong className="text-xl text-[#162338]">{rangeAnalytics.reportCount} / {rangeAnalytics.selectedDayCount}</strong><br /><span className="text-sm text-slate-500">Saved reports / selected dates</span></div></div></div>
 
+                    {rangeAnalytics.hasMonthToMonthAnalysis ? <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5"><div><h4 className="text-lg font-semibold text-[#162338]">Month-to-month management analysis</h4><p className="mt-1 text-sm text-slate-600">Available from 1 September when the selected range contains at least two calendar months.</p></div><div className="overflow-x-auto rounded-xl border border-slate-200"><table className="min-w-[1200px] text-base"><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-3 py-3">Month</th><th className="px-3 py-3">Report days</th><th className="px-3 py-3">Occupied room-nights</th><th className="px-3 py-3">Average occupancy</th><th className="px-3 py-3">Room revenue</th><th className="px-3 py-3">F&amp;B revenue</th><th className="px-3 py-3">Actual revenue</th><th className="px-3 py-3">Actual revenue change</th></tr></thead><tbody>{rangeAnalytics.monthlyPerformanceAnalysis.map((month) => <tr key={month.monthKey} className="border-t border-slate-100"><td className="px-3 py-3 font-semibold">{formatDateKey(`${month.monthKey}-01`, { month: "long", year: "numeric" })}</td><td className="px-3 py-3">{month.reportDays}</td><td className="px-3 py-3">{month.occupiedRoomNights}</td><td className="px-3 py-3">{formatPercentage(month.averageOccupancyPercentage)}</td><td className="px-3 py-3">{formatAmount(month.roomRevenue)}</td><td className="px-3 py-3">{formatAmount(month.foodBeverageRevenue)}</td><td className="px-3 py-3 font-semibold">{formatAmount(month.actualRevenue)}</td><td className="px-3 py-3">{month.actualRevenueChangePercentage === null ? "Baseline" : formatPercentage(month.actualRevenueChangePercentage)}</td></tr>)}</tbody></table></div><RangeLineChart title="Month-to-month revenue trend" labels={rangeAnalytics.monthlyPerformanceAnalysis.map((month) => `${month.monthKey}-01`)} series={[{ key: "room", label: "Room revenue", color: "#162338", values: rangeAnalytics.monthlyPerformanceAnalysis.map((month) => month.roomRevenue) }, { key: "fnb", label: "Food & Beverage", color: "#a67c2e", values: rangeAnalytics.monthlyPerformanceAnalysis.map((month) => month.foodBeverageRevenue) }, { key: "actual", label: "Actual revenue", color: "#0f766e", values: rangeAnalytics.monthlyPerformanceAnalysis.map((month) => month.actualRevenue) }]} xAxisLabel="Month" yAxisLabel="Revenue amount" /></div> : null}
+
                     <div className="grid gap-4 xl:grid-cols-2">
                       <RangeLineChart
                         title="Daily occupancy rate"
                         labels={rangeAnalytics.dailyOccupancy.map((day) => day.operationalDateKey)}
                         series={[{ key: "occupancy", label: "Occupancy %", color: "#a67c2e", values: rangeAnalytics.dailyOccupancy.map((day) => Number(day.occupancyPercentage.toFixed(2))) }, { key: "target", label: "60% target", color: "#162338", values: rangeAnalytics.dailyOccupancy.map(() => rangeAnalytics.targetOccupancyPercentage) }]}
                         valueSuffix="%"
+                        xAxisLabel="Activity date"
+                        yAxisLabel="Occupancy rate (%)"
                       />
                       <RangeLineChart
                         title="Daily revenue trends"
@@ -2917,6 +3041,8 @@ export default function NightDutyPanel({
                           { key: "actual", label: "Actual Revenue", color: "#162338", values: rangeAnalytics.dailyIncome.map((day) => day.actualRevenueTotal) },
                           { key: "room", label: "Room Revenue", color: "#0f766e", values: rangeAnalytics.dailyIncome.map((day) => day.roomRevenue) },
                         ]}
+                        xAxisLabel="Activity date"
+                        yAxisLabel="Revenue amount"
                       />
                     </div>
 
@@ -2945,6 +3071,8 @@ export default function NightDutyPanel({
                         color: ["#a67c2e", "#162338", "#0f766e", "#7c3aed"][index % 4],
                         values: rangeAnalytics.dailyIncome.map((day) => day.outlets[outlet.key]),
                       }))}
+                      xAxisLabel="Activity date"
+                      yAxisLabel="Revenue amount"
                     />
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -3008,11 +3136,13 @@ export default function NightDutyPanel({
                                     (day) => day.values[source.sourceKey],
                                   ),
                                 }))}
+                                xAxisLabel="Activity date"
+                                yAxisLabel="Revenue amount"
                               />
                             );
                           })}
                         </div>
-                        <RangeLineChart title="Daily food and beverage trend" labels={rangeAnalytics.dailyFoodBeverage.map((day) => day.operationalDateKey)} series={[{ key: "food", label: "Food", color: "#0f766e", values: rangeAnalytics.dailyFoodBeverage.map((day) => day.food) }, { key: "beverage", label: "Beverage", color: "#7c3aed", values: rangeAnalytics.dailyFoodBeverage.map((day) => day.beverage) }]} />
+                        <RangeLineChart title="Daily food and beverage trend" labels={rangeAnalytics.dailyFoodBeverage.map((day) => day.operationalDateKey)} series={[{ key: "food", label: "Food", color: "#0f766e", values: rangeAnalytics.dailyFoodBeverage.map((day) => day.food) }, { key: "beverage", label: "Beverage", color: "#7c3aed", values: rangeAnalytics.dailyFoodBeverage.map((day) => day.beverage) }]} xAxisLabel="Activity date" yAxisLabel="Revenue amount" />
                         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-max text-xs"><caption className="p-3 text-left text-sm font-semibold text-[#162338]">Day-by-day value of every revenue source</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="sticky left-0 bg-slate-50 px-3 py-2">Date</th>{rangeAnalytics.revenueSources.map((source) => <th key={source.sourceKey} className="min-w-32 px-3 py-2">{source.outletLabel}<br />{source.fieldLabel}</th>)}</tr></thead><tbody>{rangeAnalytics.dailyRevenueSources.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="sticky left-0 bg-white px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey, { month: "short", day: "numeric", year: "numeric" })}</td>{rangeAnalytics.revenueSources.map((source) => <td key={source.sourceKey} className="px-3 py-2">{formatAmount(day.values[source.sourceKey])}</td>)}</tr>)}</tbody></table></div>
                       </div>
                     ) : null}
@@ -3024,8 +3154,8 @@ export default function NightDutyPanel({
                           <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm">Guest refunds<br /><strong className="text-xl text-rose-800">{formatAmount(rangeAnalytics.guestRefundsTotal)}</strong><br /><span className="text-xs text-rose-700">Excluded from all revenue totals</span></div>
                         </div>
                         {rangeAnalytics.dailyBrunch.length > 0 ? <>
-                          <RangeLineChart title="Brunch day-by-day revenue" labels={rangeAnalytics.dailyBrunch.map((day) => day.operationalDateKey)} series={[{ key: "brunch-revenue", label: "Brunch revenue", color: "#a67c2e", values: rangeAnalytics.dailyBrunch.map((day) => day.revenue) }]} />
-                          <RangeLineChart title="Brunch attendance against target" labels={rangeAnalytics.dailyBrunch.map((day) => day.operationalDateKey)} series={[{ key: "brunch-attendees", label: "Attendees", color: "#a67c2e", values: rangeAnalytics.dailyBrunch.map((day) => day.attendees) }, { key: "brunch-target", label: `${rangeAnalytics.brunchAttendanceTarget} target`, color: "#162338", values: rangeAnalytics.dailyBrunch.map((day) => day.targetAttendees) }]} />
+                          <RangeLineChart title="Brunch day-by-day revenue" labels={rangeAnalytics.dailyBrunch.map((day) => day.operationalDateKey)} series={[{ key: "brunch-revenue", label: "Brunch revenue", color: "#a67c2e", values: rangeAnalytics.dailyBrunch.map((day) => day.revenue) }]} xAxisLabel="Activity date" yAxisLabel="Brunch revenue" />
+                          <RangeLineChart title="Brunch attendance against target" labels={rangeAnalytics.dailyBrunch.map((day) => day.operationalDateKey)} series={[{ key: "brunch-attendees", label: "Attendees", color: "#a67c2e", values: rangeAnalytics.dailyBrunch.map((day) => day.attendees) }, { key: "brunch-target", label: `${rangeAnalytics.brunchAttendanceTarget} target`, color: "#162338", values: rangeAnalytics.dailyBrunch.map((day) => day.targetAttendees) }]} xAxisLabel="Activity date" yAxisLabel="Attendees" />
                           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-[#162338]">Brunch entries — unreported days excluded</caption><thead><tr className="bg-slate-50 text-left text-slate-500"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Revenue</th><th className="px-3 py-2">Attendees</th><th className="px-3 py-2">Target</th><th className="px-3 py-2">Variance</th></tr></thead><tbody>{rangeAnalytics.dailyBrunch.map((day) => <tr key={day.operationalDateKey} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2">{formatAmount(day.revenue)}</td><td className="px-3 py-2">{day.attendees}</td><td className="px-3 py-2">{day.targetAttendees}</td><td className={`px-3 py-2 font-semibold ${day.targetReached ? "text-emerald-700" : "text-amber-700"}`}>{formatTargetVarianceShort(day.attendeeVariance)}</td></tr>)}</tbody></table></div>
                         </> : null}
                         <div className="overflow-x-auto rounded-xl border border-rose-200 bg-white"><table className="min-w-full text-sm"><caption className="p-3 text-left font-semibold text-rose-800">Guest refund entries</caption><thead><tr className="bg-rose-50 text-left text-rose-700"><th className="px-3 py-2">Date</th><th className="px-3 py-2">Guest refunds</th></tr></thead><tbody>{rangeAnalytics.dailyGuestRefunds.length > 0 ? rangeAnalytics.dailyGuestRefunds.map((day) => <tr key={day.operationalDateKey} className="border-t border-rose-100"><td className="px-3 py-2 font-semibold">{formatDateKey(day.operationalDateKey)}</td><td className="px-3 py-2 text-rose-700">{formatAmount(day.amount)}</td></tr>) : <tr><td colSpan={2} className="px-3 py-4 text-slate-500">No guest refund entries in this range.</td></tr>}</tbody></table></div>

@@ -926,6 +926,7 @@ export default function OperationsPanel({
   onSaveFrontOffice,
   onSaveHousekeeping,
   onLoadInHouseReport,
+  onLoadInHouseReportsInRange,
   onSaveInHouseReport,
 }) {
   const access = getOperationsAccess(profile);
@@ -974,6 +975,8 @@ export default function OperationsPanel({
   const [datedGuestType, setDatedGuestType] = useState("walk_in");
   const [datedBreakfastIncluded, setDatedBreakfastIncluded] = useState(false);
   const [datedBreakfastCount, setDatedBreakfastCount] = useState("1");
+  const [datedOutOfOrderFloor, setDatedOutOfOrderFloor] = useState("");
+  const [datedOutOfOrderRoom, setDatedOutOfOrderRoom] = useState("");
   const [feedback, setFeedback] = useState({
     frontOffice: { type: "", message: "" },
     housekeeping: { type: "", message: "" },
@@ -1111,6 +1114,22 @@ export default function OperationsPanel({
       ...eventSpaceRoomNumbers,
     ]),
     [datedOccupiedRoomNumbers, datedOutOfOrderRoomNumbers, datedRoomFloor],
+  );
+  const datedOutOfOrderFloors = useMemo(
+    () => getFloorsWithAvailableRooms([
+      ...datedOccupiedRoomNumbers,
+      ...datedOutOfOrderRoomNumbers,
+      ...eventSpaceRoomNumbers,
+    ]),
+    [datedOccupiedRoomNumbers, datedOutOfOrderRoomNumbers],
+  );
+  const datedOutOfOrderRooms = useMemo(
+    () => getRoomOptionsForFloor(datedOutOfOrderFloor, [
+      ...datedOccupiedRoomNumbers,
+      ...datedOutOfOrderRoomNumbers,
+      ...eventSpaceRoomNumbers,
+    ]),
+    [datedOccupiedRoomNumbers, datedOutOfOrderFloor, datedOutOfOrderRoomNumbers],
   );
   const dailyReportLines = useMemo(
     () => buildDailyReportLines({ operations, eventsBookings, propertyStatus }),
@@ -1295,6 +1314,24 @@ export default function OperationsPanel({
           legacySnapshot?.occupiedRooms ?? legacySnapshot?.occupiedRoomNumbers ?? [],
           selectedInHouseDate,
         ));
+        if (onLoadInHouseReportsInRange) {
+          const timeline = await onLoadInHouseReportsInRange(
+            selectedInHouseDate,
+            selectedInHouseDate,
+          );
+          if (cancelled) return;
+          const priorPosition = [...timeline]
+            .filter((entry) => entry.operationalDateKey < selectedInHouseDate)
+            .sort((left, right) => right.operationalDateKey.localeCompare(left.operationalDateKey))[0];
+          if (priorPosition) {
+            setDatedInHouseMeta({
+              operationalDateKey: selectedInHouseDate,
+              outOfOrderRoomNumbers: priorPosition.outOfOrderRoomNumbers ?? [],
+              availableRooms: priorPosition.availableRooms ?? guestRoomCount,
+              inheritedOutOfOrderDateKey: priorPosition.operationalDateKey,
+            });
+          }
+        }
       } catch (error) {
         if (cancelled) return;
         setDatedInHouseRooms([]);
@@ -1311,7 +1348,7 @@ export default function OperationsPanel({
     return () => {
       cancelled = true;
     };
-  }, [onLoadInHouseReport, operations?.reportHistory, selectedInHouseDate]);
+  }, [onLoadInHouseReport, onLoadInHouseReportsInRange, operations?.reportHistory, selectedInHouseDate]);
 
   useEffect(() => {
     if (
@@ -1322,6 +1359,16 @@ export default function OperationsPanel({
       setDatedRoomNumber("");
     }
   }, [datedAvailableFloors, datedRoomFloor]);
+
+  useEffect(() => {
+    if (
+      datedOutOfOrderFloor &&
+      !datedOutOfOrderFloors.some((floor) => floor.value === datedOutOfOrderFloor)
+    ) {
+      setDatedOutOfOrderFloor("");
+      setDatedOutOfOrderRoom("");
+    }
+  }, [datedOutOfOrderFloor, datedOutOfOrderFloors]);
 
   useEffect(() => {
     if (
@@ -1399,7 +1446,11 @@ export default function OperationsPanel({
     }
   }
 
-  async function persistDatedInHouseRooms(nextRooms, message) {
+  async function persistDatedInHouseRooms(
+    nextRooms,
+    message,
+    nextOutOfOrderRoomNumbers = datedOutOfOrderRoomNumbers,
+  ) {
     if (!onSaveInHouseReport) return;
 
     setDatedInHouseSaving(true);
@@ -1412,7 +1463,7 @@ export default function OperationsPanel({
       const storedReport = await onSaveInHouseReport({
         operationalDateKey: selectedInHouseDate,
         occupiedRooms: nextRooms,
-        outOfOrderRoomNumbers: datedOutOfOrderRoomNumbers,
+        outOfOrderRoomNumbers: nextOutOfOrderRoomNumbers,
       });
       setDatedInHouseRooms(storedReport?.occupiedRooms ?? nextRooms);
       setDatedInHouseMeta(storedReport ?? null);
@@ -1479,6 +1530,29 @@ export default function OperationsPanel({
     await persistDatedInHouseRooms(
       datedInHouseRooms.filter((room) => room.roomNumber !== roomNumber),
       `${roomNumber} removed from ${formatDateKey(selectedInHouseDate)}.`,
+    );
+  }
+
+  async function handleAddDatedOutOfOrderRoom(event) {
+    event.preventDefault();
+    if (!datedOutOfOrderRoom) return;
+    const nextOutOfOrderRoomNumbers = normalizeRoomNumbers([
+      ...datedOutOfOrderRoomNumbers,
+      datedOutOfOrderRoom,
+    ]);
+    await persistDatedInHouseRooms(
+      datedInHouseRooms,
+      `${datedOutOfOrderRoom} marked Out of Order for ${formatDateKey(selectedInHouseDate)}.`,
+      nextOutOfOrderRoomNumbers,
+    );
+    setDatedOutOfOrderRoom("");
+  }
+
+  async function handleRemoveDatedOutOfOrderRoom(roomNumber) {
+    await persistDatedInHouseRooms(
+      datedInHouseRooms,
+      `${roomNumber} removed from the Out-of-Order list for ${formatDateKey(selectedInHouseDate)}.`,
+      datedOutOfOrderRoomNumbers.filter((entry) => entry !== roomNumber),
     );
   }
 
@@ -1830,6 +1904,47 @@ export default function OperationsPanel({
               >
                 Download In-house PDF for selected date
               </button>
+            </div>
+          </div>
+
+          <div className="subpanel">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="metric-label">Out-of-Order rooms for this activity date</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">This dated position is stored with the In-house report and is carried forward in Operations Report calculations until a later dated position changes it.</p>
+                {datedInHouseMeta?.inheritedOutOfOrderDateKey ? <p className="mt-2 text-sm font-semibold text-amber-800">Starting from the latest earlier position saved on {formatDateKey(datedInHouseMeta.inheritedOutOfOrderDateKey)}. Saving a change creates the position for {formatDateKey(selectedInHouseDate)}.</p> : null}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-center text-sm">
+                <div className="rounded-xl bg-amber-50 px-4 py-3 text-amber-900">Out of Order<br /><strong className="text-xl">{datedOutOfOrderRoomNumbers.length}</strong></div>
+                <div className="rounded-xl bg-emerald-50 px-4 py-3 text-emerald-900">Available<br /><strong className="text-xl">{Math.max(guestRoomCount - datedOutOfOrderRoomNumbers.length, 0)}</strong></div>
+              </div>
+            </div>
+            {access.canEditFrontOffice ? (
+              <form onSubmit={handleAddDatedOutOfOrderRoom} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+                <FloorSelect
+                  label="Floor"
+                  value={datedOutOfOrderFloor}
+                  onChange={(event) => { setDatedOutOfOrderFloor(event.target.value); setDatedOutOfOrderRoom(""); }}
+                  floors={datedOutOfOrderFloors}
+                  disabled={datedInHouseLoading || datedInHouseSaving}
+                />
+                <RoomSelect
+                  label="Room to mark Out of Order"
+                  value={datedOutOfOrderRoom}
+                  onChange={(event) => setDatedOutOfOrderRoom(event.target.value)}
+                  rooms={datedOutOfOrderRooms}
+                  disabled={!datedOutOfOrderFloor || datedInHouseLoading || datedInHouseSaving}
+                />
+                <button type="submit" className="button-primary" disabled={!datedOutOfOrderRoom || datedInHouseLoading || datedInHouseSaving}>{datedInHouseSaving ? "Saving..." : "Add Out-of-Order room"}</button>
+              </form>
+            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {datedOutOfOrderRoomNumbers.length > 0 ? datedOutOfOrderRoomNumbers.map((roomNumber) => (
+                <span key={roomNumber} className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                  Room {roomNumber}
+                  {access.canEditFrontOffice ? <button type="button" className="rounded-full px-1 text-rose-700 hover:bg-rose-100" aria-label={`Remove room ${roomNumber} from Out of Order`} onClick={() => handleRemoveDatedOutOfOrderRoom(roomNumber)} disabled={datedInHouseSaving}>×</button> : null}
+                </span>
+              )) : <span className="text-sm text-slate-500">Nil - no Out-of-Order rooms saved for this date.</span>}
             </div>
           </div>
 

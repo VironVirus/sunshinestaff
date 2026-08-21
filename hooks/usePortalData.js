@@ -1701,6 +1701,16 @@ export function usePortalData(profile) {
       });
     });
 
+    setPortalState((current) => ({
+      ...current,
+      operationsTargets: {
+        monthlyTargets: {
+          ...(current.operationsTargets?.monthlyTargets ?? {}),
+          [monthKey]: target,
+        },
+      },
+    }));
+
     return target;
   }
 

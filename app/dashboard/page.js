@@ -519,6 +519,7 @@ export default function DashboardPage() {
                   onSaveFrontOffice={saveOperations}
                   onSaveHousekeeping={saveHousekeepingProgress}
                   onLoadInHouseReport={loadInHouseReport}
+                  onLoadInHouseReportsInRange={loadInHouseReportsInRange}
                   onSaveInHouseReport={saveInHouseReport}
                 />
               ),
